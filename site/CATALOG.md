@@ -46,6 +46,7 @@ szczegółowych, żeby żadna nie przytłaczała.
 | Dossier gracza | `spyglass-dossier` | | **drafted** | features/dashboard/dossier; domain/raidVerdict, threatModel, civilBaseline, lootRhythm |
 | Rutyna i okna offline | `spyglass-routine` | ★ | **drafted** | domain/routine, presence, presenceLedger, shiftPattern; state/activityObs |
 | Mapa pozycji i zasięg | `spyglass-map` | | **drafted** | features/dashboard/mapPrimitives; domain/geometry |
+| Straż domowa (Home watch) | `spyglass-home` | ★ | **drafted** | domain/homeWatch; features/homeWatch, features/dashboard/homeWatch; state/homeWatch |
 | Kto Cię szpieguje | `who-is-spying` | | **drafted** | features/whosSpyingPanel |
 
 ## Budzik i fleet-save (`alarms`)

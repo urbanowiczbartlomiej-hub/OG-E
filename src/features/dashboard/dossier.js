@@ -16,6 +16,7 @@
 
 import { scanStatus, rescanAtFor } from '../../domain/spyScan.js';
 import { motherPlanetOf } from '../../domain/lootRhythm.js';
+import { DANGER_LABELS } from '../../domain/dangerScore.js';
 import { dangerColor } from '../../lib/dangerColor.js';
 import { effectiveScan, ringKeyFor } from '../../domain/scanMode.js';
 import { FRESH_LOOK_MS } from '../../domain/fleetLanding.js';
@@ -109,9 +110,13 @@ function verdictBanner(verdict) {
 }
 
 /**
- * 3) DANGER line — "DANGER n/100" followed inline by the ACTIVE apex tells as
- * compact danger-tinted pills (the terse "why it's apex", right beside the
- * number). Only fired tells show — no N/6, no missing chips.
+ * 3) DANGER line — "DANGER n/100", the KIND of account in plain words, then the
+ * ACTIVE apex tells as compact danger-tinted pills (the terse "why it's apex",
+ * right beside the number). Only fired tells show — no N/6, no missing chips.
+ *
+ * The kind is the only place it appears. It used to sit in the Players table's
+ * Danger column as an invented archetype name; here it has the reasons list
+ * directly beneath it, which is what makes it readable at all.
  * @param {import('../../domain/dangerScore.js').DangerProfile} profile
  * @returns {HTMLDivElement}
  */
@@ -126,6 +131,14 @@ function dangerBlock(profile) {
   label.textContent = `DANGER ${d}/100`;
   label.style.cssText = `font-size:12px;font-weight:600;color:${col};`;
   wrap.appendChild(label);
+
+  const kind = DANGER_LABELS[profile.label];
+  if (kind && !profile.friendly) {
+    const kindEl = document.createElement('span');
+    kindEl.textContent = kind;
+    kindEl.style.cssText = 'font-size:11px;color:#8b95a0;';
+    wrap.appendChild(kindEl);
+  }
 
   // Active apex tells inline (capability first, then aggression). The lo/hi
   // mobile-fleet interval that used to render here was dropped long ago (it
@@ -459,8 +472,9 @@ function planetsBlock({
   if (!(hoardFleet > 0)) hoardCoord = undefined;
 
   // The loot HOARD ("mother") planet: the body whose peak loot towers over the
-  // empire — a collector farmer's accumulation point (🏦), distinct from ⭐ (most
-  // parked fleet); they often, but not always, coincide.
+  // empire — a collector farmer's accumulation point, distinct from the most
+  // parked fleet above; they often, but not always, coincide. Both are painted
+  // as gold on the deciding CELL, not as a badge on the coords.
   const motherCoord = motherPlanetOf(reports || {});
 
   // ── Per-BODY table — one row per planet plus an indented 🌙 row for its
@@ -669,20 +683,12 @@ function planetsBlock({
       link.addEventListener('click', (ev) => ev.stopPropagation());
     }
     body.appendChild(coordEl);
-    if (coord === hoardCoord) {
-      const star = document.createElement('span');
-      star.textContent = ' ⭐';
-      star.style.fontSize = '10px';
-      star.title = 'holds the most visible fleet';
-      body.appendChild(star);
-    }
-    if (isMother) {
-      const bank = document.createElement('span');
-      bank.textContent = ' 🏦';
-      bank.style.fontSize = '10px';
-      bank.title = 'hoard / mother planet — loot peak towers over the empire (collection point)';
-      body.appendChild(bank);
-    }
+    // No ⭐ / 🏦 badge on the coords: a glyph next to a coord says nothing about
+    // WHY it is there, and the reason is a number sitting three columns to the
+    // right. The verdict is painted on the CELL that earned it instead — gold on
+    // the fleet peak, gold on the loot peak (the legend under the table names
+    // the colour once). Same convention the moon rows already use for parked
+    // fleet, so one colour means one thing down the whole table.
     // HOMEWORLD tag — a keyword, not a glyph (see CLAUDE.md's iconography rule).
     // It is worth a tag of its own because of what activity ON it means: the
     // game activates the homeworld on EVERY login, so a lit main planet is the
@@ -708,15 +714,31 @@ function planetsBlock({
 
     if (r) {
       row.appendChild(cellEl(compact(Math.round(r.defPts)), `${NUM}color:#9fb0c0;`));
-      row.appendChild(cellEl(compact(Math.round(r.fleetPts)), `${NUM}color:#9fb0c0;`));
-      // Loot rhythm — gold on the 🏦 hoard/mother planet, whose peak towers
-      // over the empire.
+      // Fleet — gold on the empire's peak: THIS cell is why the body is the
+      // collection point (the old ⭐ said so beside the coords, where the number
+      // that decided it wasn't).
+      const isHoard = coord === hoardCoord;
+      const fleetCell = cellEl(compact(Math.round(r.fleetPts)),
+        `${NUM}color:${isHoard ? '#e0b45f' : '#9fb0c0'};font-weight:${isHoard ? '700' : '400'};`);
+      if (isHoard) {
+        fleetCell.title = 'The most visible fleet in this empire — their collection point';
+      }
+      row.appendChild(fleetCell);
+      // Loot rhythm — gold on the hoard/mother planet, whose peak towers over
+      // the empire (same reading, on the cells that prove it).
       const hasLoot = typeof r.maxLoot === 'number';
       const lootColor = hasLoot ? (isMother ? '#e0b45f' : '#9fb0c0') : DASH;
-      row.appendChild(cellEl(hasLoot ? compact(Math.round(r.avgLoot ?? 0)) : '—',
-        `${NUM}color:${lootColor};`));
-      row.appendChild(cellEl(hasLoot ? compact(Math.round(r.maxLoot ?? 0)) : '—',
-        `${NUM}color:${lootColor};font-weight:${isMother ? '700' : '400'};`));
+      const avgCell = cellEl(hasLoot ? compact(Math.round(r.avgLoot ?? 0)) : '—',
+        `${NUM}color:${lootColor};`);
+      const peakCell = cellEl(hasLoot ? compact(Math.round(r.maxLoot ?? 0)) : '—',
+        `${NUM}color:${lootColor};font-weight:${isMother ? '700' : '400'};`);
+      if (isMother && hasLoot) {
+        const tip = 'The loot peak of this empire — their hoard planet';
+        avgCell.title = tip;
+        peakCell.title = tip;
+      }
+      row.appendChild(avgCell);
+      row.appendChild(peakCell);
     } else {
       for (let i = 0; i < 4; i++) row.appendChild(cellEl('—', `${NUM}color:${DASH};`));
     }
@@ -764,6 +786,20 @@ function planetsBlock({
   tableScroller.className = 'table-scroll';
   tableScroller.appendChild(table);
   box.appendChild(tableScroller);
+
+  // One legend for the one colour in the table — named once, in text, instead of
+  // two badges each needing a hover to mean anything.
+  if (hoardCoord || motherCoord) {
+    const key = document.createElement('div');
+    key.style.cssText = 'margin-top:4px;font-size:11px;color:#66788a;';
+    const gold = document.createElement('span');
+    gold.style.cssText = 'color:#e0b45f;font-weight:700;';
+    gold.textContent = 'gold';
+    key.appendChild(gold);
+    key.appendChild(document.createTextNode(
+      ' = this empire’s peak — fleet: their collection point · loot: their hoard planet'));
+    box.appendChild(key);
+  }
 
   // Relocation hint: bodies we hold intel on (a report or moon report) whose
   // coords are NO LONGER in the player's current universe.xml occupancy — the

@@ -53,6 +53,19 @@
  */
 
 /**
+ * @typedef {object} Demo
+ * @property {string} id       Nazwa modułu w `site/demos/<id>.mjs`. Musi
+ *   eksportować `render(): Promise<string>` zwracające SAMOWYSTARCZALNY HTML
+ *   (style inline — strona nie nosi CSS-a dashboardu).
+ * @property {string} caption  Podpis PL — co ten komponent pokazuje.
+ *
+ *   Po co: makieta pisana ręcznie rozjeżdża się z komponentem następnego dnia.
+ *   Demo renderuje PRAWDZIWY komponent na fikstur w headless DOM, w czasie
+ *   builda — więc nie może się rozjechać. Dane w fiksturze są ZMYŚLONE (nicki,
+ *   tagi, koordynaty): dokumentacja nie publikuje pozycji realnych graczy.
+ */
+
+/**
  * @typedef {object} FairPlay
  * @property {string[]} summary   Argumenty ZA tym, że funkcja jest fair —
  *   pisane pod czytelnika publicznego (pozytywna interpretacja). Tu wplatamy też
@@ -88,6 +101,8 @@
  *   konkretniejszymi detalami. Dodawaj oszczędnie i tylko gdy wnoszą wartość
  *   (są bardziej podatne na dezaktualizację niż idea).
  * @property {Shot[]} screenshots  Lista zrzutów (min. 1; placeholder do czasu realnego).
+ * @property {Demo} [demo]         Opcjonalny ŻYWY komponent (zamiast/obok zrzutu)
+ *   generowany z prawdziwego kodu — patrz {@link Demo}.
  * @property {string[]} codeRefs   Pliki src/... (dla nas, do utrzymania).
  * @property {DocStatus} status    Stan dokumentacji tego feature'a.
  */
@@ -132,6 +147,14 @@ export const validateFeature = (f, slug, categoryIds, locale = 'pl') => {
 
   if (f.details !== undefined) {
     need(strArr(f.details), '"details" (jeśli podane) musi być niepustą tablicą stringów');
+  }
+  if (f.demo !== undefined) {
+    need(f.demo && typeof f.demo === 'object', '"demo" (jeśli podane) musi być obiektem {id, caption}');
+    if (f.demo && typeof f.demo === 'object') {
+      need(typeof f.demo.id === 'string' && /^[a-z0-9-]+$/.test(f.demo.id),
+        '"demo.id" musi być slugiem [a-z0-9-] wskazującym site/demos/<id>.mjs');
+      need(typeof f.demo.caption === 'string' && f.demo.caption.trim(), 'brak "demo.caption"');
+    }
   }
   need(Array.isArray(f.screenshots) && f.screenshots.length > 0, '"screenshots" musi mieć min. 1 pozycję');
   if (Array.isArray(f.screenshots)) {

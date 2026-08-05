@@ -155,8 +155,24 @@ const CSS = [
   'background:#0d151d;border:1px solid #26323f;border-left:3px solid var(--sp-accent);',
   'border-radius:6px;overflow:hidden;color:#93a3b3;',
   'font-family:Verdana,"Segoe UI",Tahoma,sans-serif;}',
+  // FOLD: quiet is the normal state and it is one line, so the panel keeps its
+  // body closed and speaks through the header. A NEW alert (newer than the one
+  // this panel last showed you) turns the edge alarm-red and opens it by itself;
+  // reading it puts the edge back to the spy gold.
+  `#${PANEL_ID}.hot{border-left-color:var(--sp-danger);}`,
+  `#${PANEL_ID}:not(.open) table{display:none;}`,
+  `#${PANEL_ID}:not(.open) .oge-sb-foot{display:none!important;}`,
   `#${PANEL_ID} .oge-sb-hdr{display:flex;align-items:center;gap:8px;padding:8px 12px;`,
-  'background:linear-gradient(90deg,#141d27,transparent);border-bottom:1px solid #1b2732;}',
+  'background:linear-gradient(90deg,#141d27,transparent);border-bottom:1px solid #1b2732;',
+  'cursor:pointer;user-select:none;}',
+  `#${PANEL_ID}:not(.open) .oge-sb-hdr{border-bottom:0;}`,
+  `#${PANEL_ID} .oge-sb-hdr:hover{background:linear-gradient(90deg,#1a2534,transparent);}`,
+  // CSS caret — right when folded, down when open (same language as the
+  // dashboard's disclosure cards; no glyph font involved).
+  `#${PANEL_ID} .oge-sb-caret{flex:0 0 auto;width:6px;height:6px;margin-right:2px;`,
+  'border-right:2px solid #7f8ea0;border-bottom:2px solid #7f8ea0;',
+  'transform:rotate(-45deg);transition:transform .15s ease;}',
+  `#${PANEL_ID}.open .oge-sb-caret{transform:rotate(45deg);margin-top:-3px;}`,
   // The Spyglass eye — our own SVG glyph (sendSpy's watermark), tinted to the
   // gold accent so the panel wears the one spy identity (was a 👁 emoji).
   `#${PANEL_ID} .oge-sb-eye{display:inline-flex;color:var(--sp-accent);}`,
@@ -448,6 +464,17 @@ const buildShell = (onToggleNames, onRange) => {
   panel.id = PANEL_ID;
 
   const hdr = el('div', 'oge-sb-hdr');
+  // The whole header strip is the fold toggle. The two control clusters inside it
+  // (Coords/Names, the range chips) stop propagation so using them never folds
+  // the panel under the user's finger.
+  hdr.title = 'Click to fold / unfold';
+  hdr.addEventListener('click', () => {
+    panel.classList.toggle('open');
+    // Unfolding is reading: mark the newest alert on screen as seen, so the edge
+    // drops back to gold and stays there until something genuinely newer lands.
+    if (panel.classList.contains('open')) markSeen(panel);
+  });
+  hdr.appendChild(el('span', 'oge-sb-caret'));
   const eye = el('span', 'oge-sb-eye');
   eye.setAttribute('aria-hidden', 'true');
   eye.appendChild(parseSvg(
@@ -457,12 +484,13 @@ const buildShell = (onToggleNames, onRange) => {
   const nameBtn = el('button', 'oge-sb-namebtn');
   nameBtn.setAttribute('type', 'button');
   nameBtn.title = 'Coords / names';
-  nameBtn.addEventListener('click', onToggleNames);
+  nameBtn.addEventListener('click', (ev) => { ev.stopPropagation(); onToggleNames(); });
   hdr.appendChild(nameBtn);
   // Date-range radio chips (1d/7d/1m/3m) — filter probers by how recently they
   // last scanned you. `renderInto` marks the active one.
   const rangeGroup = el('div', 'oge-sb-range');
   rangeGroup.title = 'Show probers seen within this window';
+  rangeGroup.addEventListener('click', (ev) => ev.stopPropagation());
   for (const [value, label] of RANGES) {
     const b = el('button', undefined, label);
     b.setAttribute('type', 'button');
@@ -497,6 +525,20 @@ const buildShell = (onToggleNames, onRange) => {
 };
 
 /**
+ * Remember the newest alert the panel currently holds as SEEN — the read-marker
+ * behind the fold's red/gold edge (settings.spySeenTs). Stamped when the user
+ * unfolds the panel, which is the moment the news is actually on screen.
+ * @param {HTMLElement} panel
+ * @returns {void}
+ */
+const markSeen = (panel) => {
+  const ts = Number(panel.dataset.lastTs) || 0;
+  if (ts > (settingsStore.get().spySeenTs || 0)) {
+    settingsStore.set({ ...settingsStore.get(), spySeenTs: ts });
+  }
+};
+
+/**
  * Paint the summary line, rows and footnote from a digest.
  * @param {HTMLElement} panel
  * @param {ReturnType<typeof digestProximityReports>} digest
@@ -504,6 +546,22 @@ const buildShell = (onToggleNames, onRange) => {
  * @returns {void}
  */
 const renderInto = (panel, digest, ctx) => {
+  // Fold state. "New" = an alert newer than the one this panel last showed
+  // (settings.spySeenTs): red edge + unfolded, so the user reads it and the edge
+  // returns to the spy gold. Nothing new = folded, gold, one header line. A
+  // manual fold is never overridden — `open` is only ever ADDED here.
+  const lastTs = Number(digest.lastTs) || 0;
+  panel.dataset.lastTs = String(lastTs);
+  if (lastTs > 0 && lastTs > (settingsStore.get().spySeenTs || 0)) {
+    // Stamp the marker straight away so the panel never re-nags on a later visit,
+    // but latch the RED on this panel instance: the messages page repaints on its
+    // own churn, and an edge that flicked back to gold mid-visit would hide the
+    // very alert it just announced. A page load builds a new panel → new latch.
+    panel.dataset.wasNew = '1';
+    panel.classList.add('open');
+    markSeen(panel);
+  }
+  panel.classList.toggle('hot', panel.dataset.wasNew === '1');
   const nb = panel.querySelector('.oge-sb-namebtn');
   if (nb) nb.textContent = ctx.showNames ? 'Names' : 'Coords';
   for (const b of panel.querySelectorAll('.oge-sb-range button')) {

@@ -20,7 +20,10 @@ import { scansStore } from '../../state/scans.js';
 import { bodiesStore } from '../../state/bodies.js';
 import { watchListStore } from '../../state/watchList.js';
 import { readHomeWatch, writeHomeWatch } from '../../state/homeWatch.js';
-import { homeSystemKeys, diffHomeSystems, mergeHomeArrivals } from '../../domain/homeWatch.js';
+import {
+  homeSystemKeys, diffHomeSystems, mergeHomeArrivals, friendlyNeighbourIds,
+} from '../../domain/homeWatch.js';
+import { playersStore } from '../../state/players.js';
 import { getApiContext } from '../shared/apiContextStore.js';
 import { debounce } from '../../lib/debounce.js';
 import { logger } from '../../lib/logger.js';
@@ -43,18 +46,29 @@ let running = false;
  */
 export const runHomeWatchPass = async () => {
   if (running) return;
-  if (watchListStore.get().homeWatch === false) return;
+  if (!((watchListStore.get().homeHours ?? 0) > 0)) return;
   const bodies = bodiesStore.get().bodies;
   if (!bodies || bodies.length === 0) return;
   running = true;
   try {
     const systems = homeSystemKeys(bodies);
     const state = await readHomeWatch();
+    const ctx = getApiContext();
+    const ownId = Number(ctx?.ownId) || null;
+    const apiPlayers = ctx?.players;
     const { arrivals, baseline, changed } = diffHomeSystems({
       systems,
       scans: scansStore.get(),
       baseline: state.baseline,
-      ownId: Number(getApiContext()?.ownId) || null,
+      ownId,
+      // Own alliance + buddy list: company, not exposure. Filtered here rather
+      // than at display time so they never enter the stored baseline either.
+      skip: friendlyNeighbourIds({
+        danger: ctx?.danger,
+        playerFlags: playersStore.get(),
+        apiPlayers,
+        ownAlliance: ownId != null ? apiPlayers?.[String(ownId)]?.alliance : undefined,
+      }),
     });
     if (!changed && arrivals.length === 0) return;
     await writeHomeWatch({

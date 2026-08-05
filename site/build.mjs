@@ -39,6 +39,7 @@ const ROOT = dirname(fileURLToPath(import.meta.url));
 const CONTENT_DIR = join(ROOT, 'content');
 const ASSETS_DIR = join(ROOT, 'assets');
 const SHOTS_DIR = join(ASSETS_DIR, 'shots');
+const DEMOS_DIR = join(ROOT, 'demos');
 const DIST = join(ROOT, 'dist');
 
 /** @typedef {'pl'|'en'} Locale */
@@ -97,6 +98,50 @@ const shotFigure = (slug, shot) => {
 };
 
 /**
+ * Wyrenderowane ŻYWE komponenty: demoId → HTML. Wypełniane raz, przed budowaniem
+ * stron (markup jest niezależny od języka — podpis przychodzi z treści).
+ * @type {Map<string, string>}
+ */
+const DEMO_HTML = new Map();
+
+/**
+ * Renderuje wszystkie demo z `site/demos/` użyte w treści. Gdy demo nie zbuduje
+ * się (brak headless DOM, zmiana sygnatury komponentu) — zostaje puste i strona
+ * po prostu pokazuje zrzuty; build nie umiera na elemencie dekoracyjnym.
+ * @param {Iterable<string>} ids
+ * @returns {Promise<string[]>} Ostrzeżenia (nie błędy).
+ */
+const renderDemos = async (ids) => {
+  /** @type {string[]} */
+  const warnings = [];
+  for (const id of new Set(ids)) {
+    let html = '';
+    try {
+      const mod = await import(pathToFileURL(join(DEMOS_DIR, `${id}.mjs`)).href);
+      html = typeof mod.render === 'function' ? String((await mod.render()) || '') : '';
+    } catch {
+      html = '';
+    }
+    if (html) DEMO_HTML.set(id, html);
+    else warnings.push(`⚠ demo "${id}" nie wyrenderowało się — strona pokaże tylko zrzuty`);
+  }
+  return warnings;
+};
+
+/**
+ * ŻYWY komponent: prawdziwy kod OG-E wklejony w stronę, zamiast zrzutu, który
+ * starzeje się w tym samym tempie co kod.
+ * @param {{id: string, caption: string} | undefined} demo
+ * @returns {string}
+ */
+const demoFigure = (demo) => {
+  const html = demo ? DEMO_HTML.get(demo.id) : '';
+  if (!demo || !html) return '';
+  return `<figure class="shot is-demo"><div class="shot-demo">${html}</div>`
+    + `<figcaption>${inline(demo.caption)}</figcaption></figure>`;
+};
+
+/**
  * Sekcja funkcji: labelowany blok prozy/listy.
  * @param {string} cls  Modyfikator klasy (fsec-idea | fsec-value | ...).
  * @param {string} label
@@ -126,6 +171,7 @@ const featureBlock = (f) => {
   </header>
 
   <div class="shots">
+    ${demoFigure(f.demo)}
     ${f.screenshots.map((s) => shotFigure(f.id, s)).join('\n')}
   </div>
 
@@ -439,6 +485,10 @@ const main = async () => {
     console.error('Walidacja treści nie powiodła się:\n' + allErrors.join('\n'));
     process.exit(1);
   }
+
+  // 2b. Żywe komponenty — raz dla wszystkich języków (markup jest wspólny).
+  const demoIds = [...byLocale.values()].flat().map((f) => f.demo?.id).filter(Boolean);
+  for (const w of await renderDemos(/** @type {string[]} */ (demoIds))) console.warn(w);
 
   // 3. Wyczyść i odbuduj dist (wszystkie języki + wspólne assets).
   await rm(DIST, { recursive: true, force: true });

@@ -60,7 +60,10 @@ import { axisDelta, flightDistance, niszczHours } from '../../domain/geometry.js
 import { renderTargets, DEFAULT_TARGET_SORT, TARGETS_NARROW_MQ } from './targets.js';
 import { ZONES } from '../../domain/zoneScore.js';
 import { buildOccupancyIndex } from '../../domain/apiOccupancy.js';
-import { buildTargetCandidates, playerPlanets, matchAllianceMembers } from '../../domain/targets.js';
+import {
+  buildTargetCandidates, playerPlanets, matchAllianceMembers, playerMatchesQuery,
+} from '../../domain/targets.js';
+import { parseHumanNumber, formatHumanNumber } from '../../lib/humanNumber.js';
 import { joinDangerProfiles } from '../../domain/dangerJoin.js';
 import { buildCivilBaseline, collectCivilCalibration } from '../../domain/civilBaseline.js';
 import { estimateHiddenFleet, estimateCombatShare } from '../../domain/threatModel.js';
@@ -72,8 +75,8 @@ import { summarizeRoutine, routineBodies } from '../../domain/routine.js';
 import { summarizePresence } from '../../domain/presence.js';
 import { detectAllLandings } from '../../domain/fleetLanding.js';
 import { patrolSystemKeys, patrolOccupants, patrolPlayers } from '../../domain/patrol.js';
-import { homeSystemKeys, systemOccupants } from '../../domain/homeWatch.js';
-import { readHomeWatch, openHomeArrivals, dismissHomeArrivals, emptyHomeWatch } from '../../state/homeWatch.js';
+import { homeSystemKeys, systemOccupants, friendlyNeighbourIds } from '../../domain/homeWatch.js';
+import { readHomeWatch, openHomeArrivals, markHomeArrivalsShown, emptyHomeWatch } from '../../state/homeWatch.js';
 import { renderPatrolCard } from './patrol.js';
 import { renderHomeWatchCard } from './homeWatch.js';
 import { bracketFsArcs } from '../../domain/fsBracket.js';
@@ -88,7 +91,7 @@ import { presenceLedgerKeyFor } from '../../state/presenceLedger.js';
 import { mergePresenceLedgers } from '../../domain/presenceLedger.js';
 import { allianceIntelKeyFor } from '../../state/allianceShare.js';
 import { normalizeAllianceDoc, allianceLedgerForPid } from '../../domain/allianceIntel.js';
-import { watchListKeyFor, normalizeWatchList, writeWatchListConfig, DEFAULT_SPY_PROBES, DEFAULT_CADENCE, DEFAULT_MOON_STRIKE, DEFAULT_PROBE_SOURCE, normalizeCadence } from '../../state/watchList.js';
+import { watchListKeyFor, normalizeWatchList, writeWatchListConfig, DEFAULT_SPY_PROBES, DEFAULT_CADENCE, DEFAULT_MOON_STRIKE, DEFAULT_PROBE_SOURCE, DEFAULT_HOME_HOURS, HOME_HOURS_MAX, normalizeCadence } from '../../state/watchList.js';
 import { syncRequestKeyFor } from '../../sync/scheduler.js';
 import { formatBytes, parsePerUniverseKey } from './syncInventory.js';
 import { galaxyStaleMs } from '../../domain/galaxyWatch.js';
@@ -358,10 +361,16 @@ let ownBodies = [];
 /**
  * Home-watch state for the selected universe (per-device baseline + arrival log,
  * written in-game by features/homeWatch). Reloaded by loadAll; the Home watch
- * card and its "seen it" button are its only readers.
+ * card and its "clear NEW" button are its only readers.
  * @type {import('../../state/homeWatch.js').HomeWatchState}
  */
 let homeWatchState = emptyHomeWatch();
+/**
+ * The arrival set the Home watch fold was last auto-opened for ("sys|pid,…").
+ * Guards the auto-open against the repaint cadence (see repaintHomeWatch).
+ * @type {string}
+ */
+let lastHomeArrivalKey = '';
 /** Device-local coords↔names toggle for the proximity strip (localStorage). */
 const PROX_NAMES_KEY = 'oge_proxNames';
 let proximityShowNames = safeLS.get(PROX_NAMES_KEY) === '1';
@@ -503,20 +512,29 @@ let presenceHistories = {};
 /** Reach overlay toggle — a chip pill (`.on` is its state), not a checkbox. */
 /** @type {HTMLElement | null} */ let spyMapReach;
 /** @type {HTMLElement | null} */ let spyMapPlayersEl;
-/** @type {HTMLInputElement} */ let tgtMinMilitary;
+/**
+ * Military-range boxes. TEXT inputs, not number: they take the magnitudes
+ * players actually write (`15M`, `2.5b`, `15kk`, `1 250 000`) via
+ * {@link parseHumanNumber}. What was typed stays put — {@link tgtMilitaryNote}
+ * reads back how it was understood.
+ * @type {HTMLInputElement}
+ */
+let tgtMinMilitary;
 /** @type {HTMLInputElement | null} */ let tgtMaxMilitary;
+/** @type {HTMLElement | null} */ let tgtMilitaryNote;
 /** Show-limit seg chip-group (was a <select>); `data-value` = row cap. */
 /** @type {HTMLElement | null} */ let tgtLimitChips;
 /** @type {HTMLInputElement | null} */ let tgtSearch;
-/** Current Spyglass nickname search (Etap D); '' = no search. */
+/**
+ * The Players finder's query — ONE box covering nickname, alliance name and
+ * alliance tag (it was two boxes; that made the user classify their own query
+ * before typing it). '' = no search.
+ */
 let targetSearchQuery = '';
-/** @type {HTMLInputElement | null} */ let tgtAllySearch;
 /** @type {HTMLButtonElement | null} */ let tgtWatchAll;
-/** Current alliance search (name OR tag); '' = no alliance search. */
-let targetAllyQuery = '';
-/** Player ids currently listed under an alliance search — the "watch all"
- *  button's payload, filled by the last {@link repaintTargets}. */
-let allySearchIds = /** @type {string[]} */ ([]);
+/** Player ids the current search lists (nickname hits ∪ alliance members) — the
+ *  "watch all" button's payload, filled by the last {@link repaintTargets}. */
+let searchHitIds = /** @type {string[]} */ ([]);
 /** Player ids force-included past the filters via search "show anyway". */
 const forceIncludeIds = new Set();
 /**
@@ -532,7 +550,7 @@ const pinnedTargetIds = new Set();
 // read via toggleChipOn where `.checked` used to be.
 /** @type {HTMLElement | null} */ let tgtWatchedOnly;
 /** @type {HTMLElement | null} */ let tgtMinersOnly;
-/** @type {HTMLElement | null} */ let tgtHomeWatch;
+/** @type {HTMLInputElement | null} */ let tgtHomeHours;
 /** @type {HTMLInputElement | null} */ let tgtProbes;
 /** @type {HTMLElement | null} */ let tgtScanBodies;
 /** @type {HTMLElement | null} */ let tgtMoonStrike;
@@ -550,6 +568,15 @@ const pinnedTargetIds = new Set();
 /** @type {HTMLButtonElement | null} */ let tgtConfigToggle;
 /** @type {HTMLElement | null} */ let tgtConfigCard;
 /** @type {HTMLElement | null} */ let tgtCountInfoEl;
+/** @type {HTMLElement | null} */ let proximityCardEl;
+/** @type {HTMLElement | null} */ let proximityStateEl;
+/**
+ * The alert set the "Who's spying on you" fold was last auto-opened for
+ * ("count|lastTs|sameSystem"). Guards the auto-open against the repaint cadence,
+ * exactly like {@link lastHomeArrivalKey}.
+ * @type {string}
+ */
+let lastProximityKey = '';
 /** @type {HTMLElement | null} */ let proximityStripEl;
 /** @type {HTMLElement | null} */ let proximityCountsEl;
 /** @type {HTMLElement | null} */ let proximityAlertEl;
@@ -865,11 +892,11 @@ const wireDom = () => {
   tgtMaxMilitary = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtMaxMilitary'));
   tgtLimitChips = document.getElementById('tgtLimitChips');
   tgtSearch = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtSearch'));
-  tgtAllySearch = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtAllySearch'));
   tgtWatchAll = /** @type {HTMLButtonElement | null} */ (document.getElementById('tgtWatchAll'));
+  tgtMilitaryNote = document.getElementById('tgtMilitaryNote');
   tgtWatchedOnly = document.getElementById('tgtWatchedOnly');
   tgtMinersOnly = document.getElementById('tgtMinersOnly');
-  tgtHomeWatch = document.getElementById('tgtHomeWatch');
+  tgtHomeHours = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtHomeHours'));
   tgtProbes = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtProbes'));
   tgtScanBodies = document.getElementById('tgtScanBodies');
   tgtMoonStrike = document.getElementById('tgtMoonStrike');
@@ -887,6 +914,8 @@ const wireDom = () => {
   tgtConfigToggle = /** @type {HTMLButtonElement | null} */ (document.getElementById('tgtConfigToggle'));
   tgtConfigCard = document.getElementById('tgtConfigCard');
   tgtCountInfoEl = document.getElementById('tgtCountInfo');
+  proximityCardEl = document.getElementById('proximityCard');
+  proximityStateEl = document.getElementById('proximityState');
   proximityStripEl = document.getElementById('proximityStrip');
   proximityCountsEl = document.getElementById('proximityCounts');
   proximityAlertEl = document.getElementById('proximityAlert');
@@ -1112,7 +1141,7 @@ const loadWatched = async () => {
   if (tgtProbeSource) setChipValue(tgtProbeSource, cfg.probeSource ?? DEFAULT_PROBE_SOURCE);
   updateMoonStrikeNote();
   if (tgtPatrolSystems) tgtPatrolSystems.value = String(cfg.patrolSystems ?? 0);
-  if (tgtHomeWatch) setChipValue(tgtHomeWatch, cfg.homeWatch === false ? 'off' : 'on');
+  if (tgtHomeHours) tgtHomeHours.value = String(cfg.homeHours ?? DEFAULT_HOME_HOURS);
   hydrateCadenceInputs();
 };
 
@@ -1165,6 +1194,20 @@ const pokeSyncSoon = (uni) => {
  *
  * @returns {void}
  */
+/**
+ * The Home cadence as stored: whole hours, 0 = off, clamped to the state's cap.
+ * An empty or junk box reads as the default rather than as "off" — a stray
+ * keystroke must not silently disarm the defensive watch.
+ * @returns {number}
+ */
+const homeHoursValue = () => {
+  const raw = tgtHomeHours ? tgtHomeHours.value.trim() : '';
+  if (raw === '') return DEFAULT_HOME_HOURS;
+  const n = Math.floor(Number(raw));
+  if (!Number.isFinite(n) || n < 0) return DEFAULT_HOME_HOURS;
+  return Math.min(HOME_HOURS_MAX, n);
+};
+
 const writeWatchConfig = () => {
   if (!selectedUniverseId) return;
   const uni = selectedUniverseId;
@@ -1175,7 +1218,7 @@ const writeWatchConfig = () => {
     moonStrike: chipValue(tgtMoonStrike) || DEFAULT_MOON_STRIKE,
     probeSource: chipValue(tgtProbeSource) || DEFAULT_PROBE_SOURCE,
     patrolSystems: Number(tgtPatrolSystems?.value) || 0,
-    homeWatch: chipValue(tgtHomeWatch) !== 'off',
+    homeHours: homeHoursValue(),
     rescan: rescanMap,
     colors: watchColors,
     mapHidden: mapHiddenIds,
@@ -1245,17 +1288,43 @@ const sysLookSecFromScans = () => {
  * missing from a snapshot-only list for up to seven days — the card would report
  * "NEW: pentagon" above a system it claimed was empty.
  *
+ * The card is a fold: quiet is the normal state and has nothing to read, so it
+ * stays closed and speaks through the bar's state word. Only NEWS opens it —
+ * keyed on the arrival SET, so a repaint (they run on every data change) can
+ * never re-open a card the user has just folded on the same arrivals.
+ *
  * @param {number} nowMs
  * @returns {void}
  */
 const repaintHomeWatch = (nowMs) => {
   if (!homeWatchCardEl) return;
-  const on = chipValue(tgtHomeWatch) !== 'off';
-  if (!on || !ownBodies.length) {
+  // Same reader the config write uses, so a half-typed box can never make the
+  // card disagree with what is actually stored.
+  const homeHours = homeHoursValue();
+  if (homeHours <= 0 || !ownBodies.length) {
     homeWatchCardEl.style.display = 'none';
     return;
   }
   homeWatchCardEl.style.display = '';
+  // Own alliance + buddies are company, not exposure — dropped from the arrivals
+  // AND from the occupant picture below (the in-game diff filters them too, but a
+  // log written before this rule, or before the danger join was warm, can still
+  // hold them).
+  const friendly = friendlyNeighbourIds({
+    danger: dangerProfiles,
+    apiPlayers: apiCache.players ? apiCache.players.players : undefined,
+    ownAlliance: ownProfile.id != null
+      ? apiCache.players?.players?.[String(ownProfile.id)]?.alliance
+      : undefined,
+  });
+  const openArrivals = openHomeArrivals(homeWatchState, nowMs)
+    .filter((a) => !friendly.has(String(a.playerId)));
+  const arrivalKey = openArrivals.map((a) => `${a.system}|${a.playerId}`).join(',');
+  homeWatchCardEl.classList.toggle('hot', openArrivals.length > 0);
+  if (arrivalKey && arrivalKey !== lastHomeArrivalKey) {
+    /** @type {HTMLDetailsElement} */ (homeWatchCardEl).open = true;
+  }
+  lastHomeArrivalKey = arrivalKey;
   const systems = homeSystemKeys(ownBodies);
   const planets = apiCache.universe ? apiCache.universe.planets : [];
   const apiPlayers = apiCache.players ? apiCache.players.players : {};
@@ -1264,32 +1333,57 @@ const repaintHomeWatch = (nowMs) => {
   const occupants = {};
   for (const key of systems) {
     const sc = scans[/** @type {keyof typeof scans} */ (key)];
-    const live = sc?.positions ? systemOccupants(sc.positions, ownProfile.id ?? null) : null;
-    occupants[key] = live
+    // A live scan counts only while it still CARRIES its slots. `state/scans`
+    // persists the look time but not the 15-slot map (they are ephemeral by
+    // design), so after a reload every system reads `{scannedAt, positions:{}}` —
+    // and an empty map is "I know nothing here", not "the system is empty". Read
+    // the other way round, this card announced a neighbour under a row claiming
+    // the system was empty. Fall back to the API snapshot instead.
+    const hasSlots = !!sc?.positions && Object.keys(sc.positions).length > 0;
+    const live = hasSlots
+      ? systemOccupants(/** @type {NonNullable<typeof sc>['positions']} */ (sc.positions),
+        ownProfile.id ?? null)
+      : null;
+    const slots = live
       ? live.map((o) => ({ playerId: String(o.id), position: o.position }))
       : (snapshotOcc[key] || []);
+    occupants[key] = slots.filter((s) => !friendly.has(String(s.playerId)));
   }
   renderHomeWatchCard({
     summaryEl: homeWatchSummaryEl,
     hostEl: homeWatchBodyEl,
     systems,
     occupants,
-    arrivals: openHomeArrivals(homeWatchState),
+    arrivals: openArrivals,
     names: apiPlayers || {},
+    // alliances.xml — the neighbour rows' [TAG] chip and the coalition read
+    // (two members of one alliance inside our space can strike together).
+    alliances: apiCache.alliances ? apiCache.alliances.alliances : {},
     danger: dangerProfiles,
     scans,
-    staleMs: (cadenceCfg.galaxyHours || 1) * 3600 * 1000,
+    // Home watch's OWN cadence — the coverage read must use the window the plan
+    // actually walks, not the galaxy one (a 24 h home look is not "stale"
+    // because the hourly galaxy window elapsed).
+    staleMs: homeHours * 3600 * 1000,
     nowMs,
     linkBase: gameLinkBase() || undefined,
-    onDismiss: () => {
-      if (!selectedUniverseId) return;
-      const at = Date.now();
-      homeWatchState = { ...homeWatchState, dismissedAt: at };
-      void dismissHomeArrivals(selectedUniverseId, at);
-      repaintHomeWatch(Date.now());
-    },
     onOpenPlayer: (pid) => openSpyglassFor(Number(pid)),
   });
+
+  // Reading IS the acknowledgement: stamp the arrivals we just painted so their
+  // NEW flag expires on its own (state/homeWatch.markHomeArrivalsShown — this is
+  // what retired the "clear NEW" button). Only when the card is actually UNFOLDED:
+  // a fold the user never opened has shown them nothing.
+  if (selectedUniverseId && openArrivals.length
+    && /** @type {HTMLDetailsElement} */ (homeWatchCardEl).open) {
+    const uni = selectedUniverseId;
+    void markHomeArrivalsShown(uni, Date.now()).then((written) => {
+      // Re-read only when something was actually stamped, so the in-memory copy
+      // agrees with storage on the next repaint (and never loops: a second pass
+      // finds every arrival stamped and writes nothing).
+      if (written) readHomeWatch(uni).then((s) => { homeWatchState = s; }).catch(() => {});
+    }).catch(() => {});
+  }
 };
 
 /**
@@ -1467,6 +1561,8 @@ const loadAll = async () => {
     proximityReports = [];
     ownBodies = [];
     homeWatchState = emptyHomeWatch();
+    lastHomeArrivalKey = '';
+    lastProximityKey = '';
     activityObs = {};
     presenceHistories = {};
     planetCountByPlayer = {};
@@ -1875,17 +1971,25 @@ const repaintTargets = () => {
     onRescan: markRescan,
   });
 
-  // Alliance finder: resolve "name or tag" → the member ids, once per repaint.
-  // The result also feeds the "+ watch all" button (its count and its payload),
+  // The finder, resolved once per repaint: the same string is matched against
+  // nicknames AND against alliance names/tags, and the union is what the table
+  // reveals. It also feeds the "+ watch all" button (its count and its payload),
   // so the button can never disagree with the rows on screen.
   const allianceRows = apiCache.alliances ? apiCache.alliances.alliances : {};
-  const allyMatch = matchAllianceMembers(targetCandidates, allianceRows, targetAllyQuery);
-  allySearchIds = [...allyMatch.ids];
+  const findQuery = targetSearchQuery.trim().toLowerCase();
+  const allyMatch = matchAllianceMembers(targetCandidates, allianceRows, findQuery);
+  searchHitIds = findQuery
+    ? [...new Set([
+      ...targetCandidates.filter((c) => playerMatchesQuery(c, findQuery)).map((c) => c.id),
+      ...allyMatch.ids,
+    ])]
+    : [];
   if (tgtWatchAll) {
-    const unwatched = allySearchIds.filter((pid) => !watchedPlayers.has(pid)).length;
-    tgtWatchAll.style.display = targetAllyQuery.trim() && unwatched ? '' : 'none';
+    const unwatched = searchHitIds.filter((pid) => !watchedPlayers.has(pid)).length;
+    tgtWatchAll.style.display = unwatched ? '' : 'none';
     tgtWatchAll.textContent = `+ watch all ${unwatched}`;
   }
+  const milRange = militaryRange();
 
   renderTargets({
     containerEl: targetsContainer,
@@ -1894,8 +1998,8 @@ const repaintTargets = () => {
       ownPlayerId: ownId,
       ownTotalScore,
       ownAlliance,
-      minMilitary: Number(tgtMinMilitary?.value) || 0,
-      maxMilitary: Number(tgtMaxMilitary?.value) || 0,
+      minMilitary: milRange.min,
+      maxMilitary: milRange.max,
       // No attack-band filter — every player is treated as reachable.
       protectionFactor: 0,
       excludeVacation: true,
@@ -1949,8 +2053,9 @@ const repaintTargets = () => {
     landingSignals,
     // Nickname search (Etap D): reveals name-matches incl. excluded players.
     searchQuery: targetSearchQuery,
-    // Alliance search: the same reveal, scoped to one alliance's members.
-    allianceSearch: { ids: allyMatch.ids, labels: allyMatch.labels, query: targetAllyQuery },
+    // The alliance half of the same query: the resolved member ids + the matched
+    // alliances' labels for the result caption.
+    allianceSearch: { ids: allyMatch.ids, labels: allyMatch.labels, query: targetSearchQuery },
     alliances: allianceRows,
     onShowAnyway: (/** @type {string} */ id) => { forceIncludeIds.add(id); repaintTargets(); },
     pinIds: pinnedTargetIds,
@@ -2103,6 +2208,7 @@ const proximityFromEl = (coords, moon, linkBase) => {
 const renderProximityStrip = () => {
   if (!proximityStripEl) return;
   proximityStripEl.textContent = '';
+  proximityStripEl.style.display = '';
   // Head tool slot (Coords/Names) — cleared with the strip so an emptied
   // digest never leaves a stale toggle riding the title line.
   if (proximityHeadToolsEl) proximityHeadToolsEl.textContent = '';
@@ -2118,18 +2224,36 @@ const renderProximityStrip = () => {
   // Game origin for the "from" click-through to the in-game galaxy view.
   const linkBase = gameLinkBase();
   if (proximityCountsEl) {
-    // No leading dash — the card head's flex gap already separates this from
-    // the title.
+    // No leading dash — the fold bar's flex gap already separates this from the
+    // title. Empty is not an option here: this text IS the folded card, so the
+    // quiet case has to say so out loud.
     proximityCountsEl.textContent = digest.totalReports
       ? `${digest.playerCount} ${digest.playerCount === 1 ? 'prober' : 'probers'}`
         + ` · ${digest.totalReports} ${digest.totalReports === 1 ? 'alert' : 'alerts'}`
         + (digest.lastTs != null ? ` · last ${proximityAge(digest.lastTs, nowMs)}` : '')
-      : '';
+      : (proximityReports.length ? 'none in this window' : 'quiet');
   }
   if (proximityAlertEl) {
+    // Leads the bar (see the markup): a prober living in one of your systems is
+    // the verdict, the counts are its context.
     proximityAlertEl.textContent = digest.sameSystemCount > 0
-      ? ` · ⚠ ${digest.sameSystemCount} from your system`
+      ? `${digest.sameSystemCount} in your system ·`
       : '';
+  }
+  // Fold state (same grammar as Home watch): the bar says it, the body holds it.
+  // "hot" = a prober with a body in one of YOUR systems — the case that changes
+  // what you do tonight — and that is also the only thing that unfolds the card
+  // on a fresh load. Otherwise it opens when the alert SET changes while the page
+  // is open (never on a plain repaint, which would fight the user's fold).
+  if (proximityCardEl) {
+    const hot = digest.sameSystemCount > 0;
+    proximityCardEl.classList.toggle('hot', hot);
+    proximityStateEl?.classList.toggle('hot', hot);
+    const key = `${digest.totalReports}|${digest.lastTs ?? 0}|${digest.sameSystemCount}`;
+    if (key !== lastProximityKey && (hot || (lastProximityKey !== '' && digest.totalReports > 0))) {
+      /** @type {HTMLDetailsElement} */ (proximityCardEl).open = true;
+    }
+    lastProximityKey = key;
   }
   // Head tools ride the card head's right-edge slot. Built whenever ANY alert
   // exists in the raw log (not just the filtered window) so the date-range chip
@@ -2447,15 +2571,55 @@ const handleTargetSort = (key) => {
 };
 
 /**
+ * Read the military-range boxes, paint the readout, and return the bounds the
+ * filter should apply.
+ *
+ * The boxes take shorthand (`15M`, `2.5b`, `15kk`, `1 250 000`) and are NEVER
+ * rewritten under the user's cursor — snapping `123456` to `123K` would silently
+ * change their filter. Instead the note line states the parse ("15M – 2.5B"),
+ * and a box holding something unparseable is marked and treated as "no bound"
+ * rather than as zero.
+ *
+ * @returns {{ min: number, max: number }}
+ */
+const militaryRange = () => {
+  /** @param {HTMLInputElement | null | undefined} el @returns {number | null} */
+  const read = (el) => {
+    if (!el) return null;
+    const raw = el.value.trim();
+    const n = parseHumanNumber(raw);
+    el.classList.toggle('bad', raw !== '' && n == null);
+    return n;
+  };
+  const min = read(tgtMinMilitary);
+  const max = read(tgtMaxMilitary);
+  if (tgtMilitaryNote) {
+    const lo = min && min > 0 ? formatHumanNumber(min) : '';
+    const hi = max && max > 0 ? formatHumanNumber(max) : '';
+    tgtMilitaryNote.textContent = lo && hi
+      ? `${lo} – ${hi}`
+      : lo ? `${lo} and up`
+        : hi ? `up to ${hi}`
+          : 'any military score';
+  }
+  return { min: min ?? 0, max: max ?? 0 };
+};
+
+/**
  * Snapshot the Targets sort + filter controls to device-local storage so they
  * survive a reload. Called on every sort/filter change.
+ *
+ * The military bounds persist as PARSED NUMBERS, not as the typed text: the
+ * stored pref is the filter, and a number reloads identically whatever shorthand
+ * produced it (older prefs already stored digits, so they load unchanged).
  * @returns {void}
  */
 const saveTargetPrefs = () => {
+  const mil = militaryRange();
   safeLS.setJSON(TARGET_PREFS_KEY, {
     sort: targetSort,
-    minMilitary: tgtMinMilitary?.value,
-    maxMilitary: tgtMaxMilitary?.value,
+    minMilitary: mil.min,
+    maxMilitary: mil.max,
     hideInactive: tgtHideInactive ? toggleChipOn(tgtHideInactive) : true,
     minersOnly: toggleChipOn(tgtMinersOnly),
     showLimit: chipValue(tgtLimitChips),
@@ -2474,8 +2638,15 @@ const loadTargetPrefs = () => {
   if (sort && ['hiddenFleet', 'military', 'totalRank', 'ships', 'destroyed', 'danger', 'fleet'].includes(sort.key)) {
     targetSort = { key: sort.key, dir: sort.dir === 'asc' ? 'asc' : 'desc' };
   }
-  if (p.minMilitary != null && tgtMinMilitary) tgtMinMilitary.value = String(p.minMilitary);
-  if (p.maxMilitary != null && tgtMaxMilitary) tgtMaxMilitary.value = String(p.maxMilitary);
+  // Shown back as shorthand ("15M"), which is also what the boxes accept — the
+  // stored value is a number, so there is no typed text to preserve here.
+  if (p.minMilitary != null && tgtMinMilitary) {
+    tgtMinMilitary.value = formatHumanNumber(parseHumanNumber(p.minMilitary));
+  }
+  if (p.maxMilitary != null && tgtMaxMilitary) {
+    tgtMaxMilitary.value = formatHumanNumber(parseHumanNumber(p.maxMilitary));
+  }
+  militaryRange(); // paint the readout for the restored bounds
   setToggleChip(tgtHideInactive, p.hideInactive !== false); // default ON
   setToggleChip(tgtMinersOnly, p.minersOnly === true); // default OFF
   // setChipValue refuses values no chip carries — the phantom-option guard the
@@ -3172,8 +3343,12 @@ const wireListeners = () => {
   // already loaded; only the filter/limit we apply to it changed). Filter
   // controls also persist so the choice survives a reload.
   const onTargetFilterChange = () => { saveTargetPrefs(); repaintTargets(); };
-  tgtMinMilitary.addEventListener('change', onTargetFilterChange);
-  tgtMaxMilitary?.addEventListener('change', onTargetFilterChange);
+  // Military bounds: `input` so the readout tracks typing (it is the feedback
+  // that the shorthand was understood), `change` to persist + refilter on commit.
+  for (const el of [tgtMinMilitary, tgtMaxMilitary]) {
+    el?.addEventListener('input', () => { militaryRange(); });
+    el?.addEventListener('change', onTargetFilterChange);
+  }
   wireToggleChip(tgtHideInactive, onTargetFilterChange);
   // Probe count is shared with the in-game scan FAB via chrome.storage, so it
   // persists through the watch-config write rather than the localStorage prefs.
@@ -3190,39 +3365,27 @@ const wireListeners = () => {
   // Moon-strike aggressiveness — same write; repaint recomputes the landing
   // signals (the 🎯 markers + dossier banners follow the new mode live).
   wireChips(tgtMoonStrike, () => { updateMoonStrikeNote(); writeWatchConfig(); repaintTargets(); });
-  wireChips(tgtHomeWatch, () => { writeWatchConfig(); repaintHomeWatch(Date.now()); });
+  tgtHomeHours?.addEventListener('change', () => { writeWatchConfig(); repaintHomeWatch(Date.now()); });
   // Probe launch source — persist only; the FAB reads it live from the store
   // (no dashboard repaint depends on it).
   wireChips(tgtProbeSource, () => { writeWatchConfig(); });
   wireChips(tgtLimitChips, onTargetFilterChange);
+  // The one finder — nickname, alliance name and tag are matched from the same
+  // string (repaintTargets unions them), so there is nothing to clear or
+  // arbitrate between two boxes any more.
   tgtSearch?.addEventListener('input', () => {
     targetSearchQuery = tgtSearch ? tgtSearch.value : '';
-    if (targetSearchQuery.trim() && tgtAllySearch && tgtAllySearch.value) {
-      tgtAllySearch.value = '';
-      targetAllyQuery = '';
-    }
     repaintTargets();
   });
-  // Alliance finder — the second scope of the same control. The two searches
-  // are exclusive on purpose: "this name inside that alliance" is a filter
-  // nobody asked for, and one active finder keeps the result set explainable.
-  tgtAllySearch?.addEventListener('input', () => {
-    targetAllyQuery = tgtAllySearch ? tgtAllySearch.value : '';
-    if (targetAllyQuery.trim() && tgtSearch && tgtSearch.value) {
-      tgtSearch.value = '';
-      targetSearchQuery = '';
-    }
-    repaintTargets();
-  });
-  // "+ watch all N" — the whole point of searching by alliance: walk every
-  // member onto the watch list (and so onto the positions map) in one go. Only
-  // ever offered for the players the current alliance search actually lists.
+  // "+ watch all N" — the reason to search an alliance at all: walk every member
+  // onto the watch list (and so onto the positions map) in one go. Offered for
+  // whatever the current search lists, alliance members or name matches alike.
   tgtWatchAll?.addEventListener('click', () => {
     // Batch: mutate the set for the whole alliance, then persist + repaint ONCE.
     // Routing each id through `toggleWatched` would run a config write and three
     // repaints per member — seconds of churn on a 60-player alliance.
     let added = 0;
-    for (const pid of allySearchIds) {
+    for (const pid of searchHitIds) {
       if (watchedPlayers.has(pid)) continue;
       watchedPlayers.add(pid);
       if (!watchColors[pid]) watchColors[pid] = WATCH_COLOR_PALETTE[0].hex;
@@ -3387,6 +3550,8 @@ export const _resetDashboardForTest = () => {
   proximityReports = [];
   ownBodies = [];
   homeWatchState = emptyHomeWatch();
+  lastHomeArrivalKey = '';
+  lastProximityKey = '';
   activityObs = {};
   compositeCache = null;
   scoreFieldCache = null;
@@ -3397,8 +3562,7 @@ export const _resetDashboardForTest = () => {
   routines = {};
   focusedTargetId = null;
   targetSearchQuery = '';
-  targetAllyQuery = '';
-  allySearchIds = [];
+  searchHitIds = [];
   spyMapOpen = false;
   // DOM refs filled by wireDom(); wireDom re-resolves them on the next
   // install, but null them now so nothing reads a detached node in between.
@@ -3434,11 +3598,11 @@ export const _resetDashboardForTest = () => {
     tgtMaxMilitary =
     tgtLimitChips =
     tgtSearch =
-    tgtAllySearch =
+    tgtMilitaryNote =
     tgtWatchAll =
     tgtWatchedOnly =
     tgtMinersOnly =
-    tgtHomeWatch =
+    tgtHomeHours =
     tgtProbes =
     tgtScanBodies =
     tgtMoonStrike =
@@ -3451,6 +3615,8 @@ export const _resetDashboardForTest = () => {
     tgtConfigToggle =
     tgtConfigCard =
     tgtCountInfoEl =
+    proximityCardEl =
+    proximityStateEl =
     proximityStripEl =
     proximityCountsEl =
     proximityAlertEl =

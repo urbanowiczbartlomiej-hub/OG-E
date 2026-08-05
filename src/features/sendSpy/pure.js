@@ -78,6 +78,7 @@ export const BG_SPY_STRIKE = '#d1571f';
  *       sweeps?: Record<string, import('../../domain/fleetLanding.js').LandingSweep>,
  *       sentAt?: Record<string, number>,
  *       sysLookSec?: Record<string, number>,
+ *       homeUnread?: number,
  *       patrolLooks?: import('../../domain/galaxyWatch.js').GalaxyPlanEntry[] }} SpyEnv
  *   The planner env (see domain/scanPriority.js): watched players, universe
  *   planet rows, per-coord report freshness (planets AND moons), rescan flags,
@@ -177,11 +178,12 @@ export const nearestLaunchPlanet = (target, bodies, bounds = {}) => {
 
 /**
  * @typedef {object} SpyContext
- * @property {'probe'|'look'|'reports'|null} proposal  Which action the button
- *   proposes: a probe send (courier flow), a galaxy look (one-tap
+ * @property {'probe'|'look'|'reports'|'homeReport'|null} proposal  Which action
+ *   the button proposes: a probe send (courier flow), a galaxy look (one-tap
  *   navigation), reading the fresh espionage reports (one-tap navigation to
- *   messages — the loop's closing step once both plans are empty), or
- *   null when everything is done ("all scanned" end state).
+ *   messages — the loop's closing step once both plans are empty), opening the
+ *   dashboard on an unread home-watch arrival once the own-system sweep is
+ *   complete ('homeReport'), or null when everything is done ("all scanned").
  * @property {SpyTarget | null} candidate   Next body to probe, or null.
  * @property {SpyLook | null} look          Top galaxy-look system, or null.
  * @property {number} remaining             Bodies + systems still needing attention.
@@ -193,6 +195,8 @@ export const nearestLaunchPlanet = (target, bodies, bounds = {}) => {
  * @property {number} [pendingReports]      Session probe sends whose report
  *   isn't ingested yet (see {@link countPendingReports}) — set with the
  *   'reports' proposal.
+ * @property {number} [homeUnread]          Home-watch arrivals still flagged NEW
+ *   — set with the 'homeReport' proposal.
  * @property {string} [why]                 The proposal's wording-safe reason line.
  */
 
@@ -252,6 +256,27 @@ export function deriveSpy(env) {
 
   const top = entries.length ? entries[0] : null;
   const lookTop = looks.length ? looks[0] : null;
+
+  // Home report: the defensive loop's LAST step. It fires only once the sweep of
+  // our own systems is complete (no home look left in the plan) and nothing else
+  // is proposed — so the button points at the dashboard exactly once, at the end,
+  // instead of after every system. One tap opens the Spyglass tab, which paints
+  // the arrivals and stamps them as seen, and the nudge is gone for good.
+  //
+  // Deliberately gated on an otherwise-idle button (the same rule the reports
+  // nudge follows): a defensive read that is already gathered must never take the
+  // button away from work that still needs doing.
+  const homeLooksLeft = (env.patrolLooks || []).filter((e) => e.home).length;
+  if (!top && !lookTop && (env.homeUnread || 0) > 0 && homeLooksLeft === 0) {
+    return {
+      proposal: 'homeReport',
+      candidate: null,
+      look: null,
+      remaining: 0,
+      hasWatched: (env.players || []).length > 0,
+      homeUnread: env.homeUnread,
+    };
+  }
 
   // Reports close the loop: both plans empty + session probe-sends whose
   // report isn't ingested yet → one tap navigates to messages (which is also
@@ -326,6 +351,19 @@ export function renderSpy(ctx, preflight) {
   if (!ctx.proposal) {
     return { text: 'Reports', subtext: 'all scanned ✓', bg: BG_SPY_DONE };
   }
+  // Home watch has unread news and the own-system sweep is finished — the one
+  // moment the button points at the dashboard (see deriveSpy). Pulses: somebody
+  // moved in next to you and you have not read it yet.
+  if (ctx.proposal === 'homeReport') {
+    const n = ctx.homeUnread ?? 0;
+    return {
+      text: 'Home',
+      subtext: `${n} new`,
+      hint: 'tap → dashboard',
+      bg: BG_SPY_LOOK,
+      pulse: true,
+    };
+  }
   // Fresh reports await ingest — the loop's closing step (tap → messages).
   // Calm paint (no pulse): the intel is already yours.
   if (ctx.proposal === 'reports') {
@@ -349,11 +387,13 @@ export function renderSpy(ctx, preflight) {
         ? 'moon order? · look now'
         : l.sweep
           ? 'strike? · sweep account'
-          // Home watch: the defensive look. A system carrying an unacknowledged
-          // arrival was boosted to the front of the plan, so say what is waiting
-          // instead of a generic remaining count.
+          // Home watch: the defensive look. A system carrying a fresh arrival
+          // was boosted to the front of the plan, so ask the question the look
+          // answers instead of showing a generic remaining count. Kept SHORT —
+          // the hint is the 0.34em line on a round rim, so anything wordier
+          // bleeds outside the button (see shared/button.js labelLines).
           : l.home
-            ? 'your system · who moved in?'
+            ? 'who moved in?'
             : `${ctx.remaining} left`,
       bg: BG_SPY_LOOK,
       // A queued galaxy-look is exactly as actionable as a queued probe scan —

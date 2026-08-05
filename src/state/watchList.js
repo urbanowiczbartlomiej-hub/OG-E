@@ -113,12 +113,21 @@ import {
  *   body whose neighbourhood the Look plan walks and the moon-strike
  *   detector hunts. 0 = patrol off (the default). Synced (a strategy knob);
  *   clamped to 0..{@link import('../domain/patrol.js').PATROL_SYSTEMS_MAX}.
- * @property {boolean} [homeWatch]
- *   Home watch (domain/homeWatch): walk our OWN systems in the Look plan and
- *   diff their occupants, so a stranger colonising next to us is reported.
- *   Defaults to {@link DEFAULT_HOME_WATCH}. LOCAL-ONLY (not in the sync ledger,
- *   like /): the baseline it drives is a per-device memory of
- *   what this device last browsed, so the switch belongs to the device too.
+ * @property {number} [homeHours]
+ *   Home watch (domain/homeWatch): how many HOURS a look at one of our own
+ *   systems stays fresh before the Look plan proposes it again — its own cadence,
+ *   not the galaxy one. 0 = home watch off. Defaults to
+ *   {@link DEFAULT_HOME_HOURS}.
+ *
+ *   Its own knob because the two questions have nothing in common: `galaxyHours`
+ *   is "how stale may a WATCHED player's sighting get" (hourly is reasonable —
+ *   fleets move), while this is "how often do I re-check who LIVES next to me",
+ *   and colonisation next door happens on a scale of days. Sharing the galaxy
+ *   cadence put our own systems in the plan every hour to re-learn the same
+ *   neighbours.
+ *
+ *   LOCAL-ONLY (not in the sync ledger): the baseline it drives is a per-device
+ *   memory of what this device last browsed, so the knob belongs to the device.
  * @property {ProbeSource} [probeSource]
  *   Which own body a probe fleet launches from: 'nearest' (the own planet at
  *   the smallest flight distance to the target — the default, minimises probe
@@ -157,12 +166,38 @@ const moonStrikeField = (v) =>
 export const DEFAULT_PATROL_SYSTEMS = 0;
 
 /**
- * Home watch defaults ON. Unlike the patrol (an offensive opt-in that widens
- * what the FAB proposes), this only ever looks at systems we already live in —
- * the cheapest possible defensive read, and the one a player would be sorry to
- * have had switched off when a hunter moved in next door.
+ * Home watch defaults ON, at a DAILY cadence. Unlike the patrol (an offensive
+ * opt-in that widens what the FAB proposes), this only ever looks at systems we
+ * already live in — the cheapest possible defensive read, and the one a player
+ * would be sorry to have had switched off when a hunter moved in next door.
+ *
+ * 24 h because the event it watches for is a colonisation next door: checking
+ * hourly cannot catch it sooner in any way that matters, and it costs a Look
+ * proposal per own system per hour.
  */
-export const DEFAULT_HOME_WATCH = true;
+export const DEFAULT_HOME_HOURS = 24;
+
+/** Cap on the home cadence — a month, past which "watching" means nothing. */
+export const HOME_HOURS_MAX = 720;
+
+/**
+ * Coerce a raw config object into a valid home cadence in hours.
+ *
+ * Migrates the pre-1.57 boolean switch: `homeWatch: false` was off (→ 0),
+ * anything else was on at the galaxy cadence (→ the daily default, which is what
+ * that setting SHOULD have meant).
+ *
+ * @param {{ homeHours?: unknown, homeWatch?: unknown }} o
+ * @returns {number}
+ */
+const homeHoursField = (o) => {
+  if (o.homeHours !== undefined) {
+    const n = Math.floor(Number(o.homeHours));
+    return Number.isFinite(n) && n >= 0 ? Math.min(HOME_HOURS_MAX, n) : DEFAULT_HOME_HOURS;
+  }
+  if (o.homeWatch === false) return 0;
+  return DEFAULT_HOME_HOURS;
+};
 
 /**
  * Default probe launch source: 'nearest' — the historical behaviour (hop to
@@ -272,7 +307,7 @@ const LEGACY_TAG_COLORS = Object.freeze({ enemy: '#e2726a', friend: '#7fd6a8' })
 export const normalizeWatchList = (raw) => {
   if (Array.isArray(raw)) {
     return {
-      players: raw.map(String), probes: DEFAULT_SPY_PROBES, scanBodies: 'planets', rescan: {}, colors: {}, mapHidden: {}, scanMode: {}, galaxyMode: {}, cadence: { ...DEFAULT_CADENCE }, moonStrike: DEFAULT_MOON_STRIKE, patrolSystems: DEFAULT_PATROL_SYSTEMS, probeSource: DEFAULT_PROBE_SOURCE, homeWatch: DEFAULT_HOME_WATCH,
+      players: raw.map(String), probes: DEFAULT_SPY_PROBES, scanBodies: 'planets', rescan: {}, colors: {}, mapHidden: {}, scanMode: {}, galaxyMode: {}, cadence: { ...DEFAULT_CADENCE }, moonStrike: DEFAULT_MOON_STRIKE, patrolSystems: DEFAULT_PATROL_SYSTEMS, probeSource: DEFAULT_PROBE_SOURCE, homeHours: DEFAULT_HOME_HOURS,
     };
   }
   const o = raw && typeof raw === 'object' ? /** @type {any} */ (raw) : {};
@@ -353,9 +388,9 @@ export const normalizeWatchList = (raw) => {
   const moonStrike = moonStrikeField(o.moonStrike);
   const patrolSystems = patrolField(o.patrolSystems);
   const probeSource = probeSourceField(o.probeSource);
-  const homeWatch = o.homeWatch === undefined ? DEFAULT_HOME_WATCH : o.homeWatch !== false;
+  const homeHours = homeHoursField(o);
   return {
-    players, probes, scanBodies, rescan, colors, mapHidden, scanMode, galaxyMode, cadence, moonStrike, patrolSystems, probeSource, homeWatch,
+    players, probes, scanBodies, rescan, colors, mapHidden, scanMode, galaxyMode, cadence, moonStrike, patrolSystems, probeSource, homeHours,
   };
 };
 
@@ -375,7 +410,7 @@ export const watchListStore = createStore(/** @type {WatchListConfig} */ ({
   moonStrike: DEFAULT_MOON_STRIKE,
   patrolSystems: DEFAULT_PATROL_SYSTEMS,
   probeSource: DEFAULT_PROBE_SOURCE,
-  homeWatch: DEFAULT_HOME_WATCH,
+  homeHours: DEFAULT_HOME_HOURS,
 }));
 
 /** @type {(() => void) | null} */

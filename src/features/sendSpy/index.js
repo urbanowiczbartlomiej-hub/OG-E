@@ -74,6 +74,7 @@ import { SHIP_ESPIONAGE_PROBE, TARGET_PLANET, TARGET_MOON, MISSION_ESPIONAGE } f
 import { OWNER_SPY } from '../../domain/fleetOwnership.js';
 import { ingameComponentUrl } from '../../domain/ogameUrl.js';
 import { clock } from '../../lib/clock.js';
+import { parseUniverseId } from '../../lib/universeId.js';
 import { readSpySentMap, markSpySent } from '../../lib/spySentSession.js';
 import { readCurrentBody } from '../shared/currentBody.js';
 import {
@@ -223,10 +224,56 @@ const refreshHomeSnapshot = () => {
 };
 
 /**
- * Systems holding an unacknowledged arrival — the look plan's boost set.
- * @returns {Set<string>}
+ * Systems holding an unacknowledged arrival → the newest such arrival's sighting
+ * time. Feeds the look plan's ONE-SHOT boost: `buildHomeLookPlan` drops it as
+ * soon as the system has a sighting newer than the arrival, so the nudge costs
+ * one look and never wedges the button on one system (see there).
+ * @param {number} nowMs
+ * @returns {Map<string, number>}
  */
-const homeAlertSystems = () => new Set(openHomeArrivals(homeSnapshot).map((a) => a.system));
+const homeAlerts = (nowMs) => {
+  /** @type {Map<string, number>} */
+  const out = new Map();
+  for (const a of openHomeArrivals(homeSnapshot, nowMs)) {
+    const at = Number(a.atMs) || 0;
+    const cur = out.get(a.system);
+    if (cur == null || at > cur) out.set(a.system, at);
+  }
+  return out;
+};
+
+/**
+ * URL of the OG-E Dashboard extension page, resolved once via
+ * `browser/chrome.runtime.getURL`. Empty when the runtime API isn't present
+ * (test environments). Kept local — a feature must not import another feature
+ * (same resolver as abandon/colonyFab.js and dailyRun/index.js).
+ * @type {string}
+ */
+const DASHBOARD_URL = (() => {
+  try {
+    const g = /** @type {any} */ (/** @type {unknown} */ (globalThis));
+    const ns = g.browser ?? g.chrome;
+    const url = ns?.runtime?.getURL?.('dashboard.html');
+    return typeof url === 'string' ? url : '';
+  } catch {
+    return '';
+  }
+})();
+
+/**
+ * Open the dashboard's Spyglass tab (where the Home watch card lives) in a new
+ * tab, pre-selecting the current universe.
+ * @returns {boolean} Whether the dashboard was opened.
+ */
+const openDashboardSpyglass = () => {
+  if (!DASHBOARD_URL) return false;
+  const universeId = parseUniverseId(location.host);
+  window.open(
+    `${DASHBOARD_URL}?tab=spyglass${universeId ? `&host=${encodeURIComponent(universeId)}` : ''}`,
+    '_blank',
+  );
+  return true;
+};
 
 /**
  * Snapshot every input of {@link deriveSpy}.
@@ -337,19 +384,28 @@ const captureEnv = () => {
           staleMs: galaxyStaleMs(cfg.cadence),
         }).entries
         : []),
-      ...(cfg.homeWatch !== false
+      // Home looks run on their OWN cadence (hours; 0 = off), not the galaxy
+      // one: "who lives next to me" changes over days, so borrowing the hourly
+      // look window put every own system in the plan every hour to re-learn the
+      // same neighbours.
+      ...((cfg.homeHours ?? 0) > 0
         ? buildHomeLookPlan({
           systems: homeSystemKeys(bodiesStore.get().bodies),
           scans: scansStore.get(),
           nowMs,
-          staleMs: galaxyStaleMs(cfg.cadence),
-          alertSystems: homeAlertSystems(),
+          staleMs: (cfg.homeHours ?? 0) * 3600_000,
+          alerts: homeAlerts(nowMs),
         }).entries
         : []),
     ],
     dangerByPlayer: dangerByPlayer(),
     activityByPlayer: activityByPlayer(nowMs),
     playerNames: ctx?.players ?? {},
+    // Unread home-watch arrivals — drives the end-of-sweep "tap → dashboard"
+    // nudge (see deriveSpy's homeReport proposal).
+    homeUnread: (cfg.homeHours ?? 0) > 0
+      ? openHomeArrivals(homeSnapshot, nowMs).length
+      : 0,
   };
 };
 
@@ -535,6 +591,14 @@ const onSpyClick = async () => {
   }
 
   const ctx = deriveSpy(captureEnv());
+
+  // Home watch has news and the own-system sweep is done → open the dashboard's
+  // Spyglass tab, where the Home watch card lives. Painting it there stamps the
+  // arrivals as seen, so this nudge appears once and then retires itself.
+  if (ctx.proposal === 'homeReport') {
+    if (!openDashboardSpyglass()) location.reload();
+    return;
+  }
 
   // Fresh reports await ingest → ONE tap = ONE navigation to messages
   // (opening them is what ingests the reports and advances the button).

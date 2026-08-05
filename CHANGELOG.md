@@ -4,6 +4,57 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.57.0] — 2026-08-05
+
+### Added
+
+- **Home watch now reads the THREAT, not the address.** The card groups by
+  NEIGHBOUR instead of by system: an account sitting in three of your systems
+  is one fleet permanently inside your space, not three ordinary sightings, and
+  it now shows as one danger-coloured row with a `×N` reach pill and the coord
+  list behind it. A new coalition check reports an alliance whose members
+  TOGETHER reach more of your systems than any of them reaches alone — the
+  case none of them could pull off solo. Your own alliance and buddy list are
+  excluded; they were never the threat.
+- **"clear NEW" is gone — reading the card is the acknowledgement.** An arrival
+  stays flagged for 24 h after you've actually seen it (or 7 days if you never
+  open the dashboard), then clears itself. The Spy FAB now points at the
+  dashboard exactly once, at the end of a Look sweep, when there's unread home
+  news and nothing else to propose.
+- **Home watch gets its own cadence.** Under **Settings → Home** on the
+  Spyglass tab, how often your own systems get re-looked-at is now an hours box
+  (0 = off, default 24 h) instead of a plain on/off switch — colonisation next
+  door happens on a scale of days, not the hourly rhythm a watched player's
+  fleet needs. The old switch migrates automatically.
+- **"Who's spying on you" folds like Home watch.** Both defensive cards now
+  share one state language: a state word on the bar when there's nothing new,
+  the left edge turns red on an unread alert, and only real news unfolds the
+  card by itself.
+- **The Danger archetype name moved to one place.** `Apex hunter` / `Turtle` /
+  `Economist` and friends no longer float unexplained on the map badge, the
+  free-streak threat rows, or the Home watch pill — they show once, in plain
+  keywords, on the dossier's DANGER line above the reasons that produced them.
+- **One finder for player, alliance or tag.** The Players panel's separate
+  player and alliance boxes became a single `find player, alliance or tag…`
+  search; `+ watch all N` now covers whatever it lists.
+- **Military range takes what you'd actually type.** `15M`, `2.5b`, `800k`,
+  `15kk`, `1 250 000` all parse; the box never silently rewrites what you
+  typed, and a note line reads back the bound it understood.
+
+### Fixed
+
+- **Home watch no longer re-announces the same neighbours on every galaxy
+  walk.** `state/scans` only persists each system's look TIME, not who was
+  there — that was being read as "the system is empty", re-seeding the
+  baseline and turning every real look into a fresh wave of "arrivals" while
+  the card, in the same breath, listed those same neighbours as already known.
+- **Home watch's danger colouring.** Every neighbour was painted the same safe
+  green regardless of actual Danger, because the card handed the shared colour
+  helper a 0..1 fraction where it expected 0..100.
+- **A cleared arrival could come back as new.** Re-deriving the same sighting
+  was allowed to refresh the "first seen" timestamp the NEW flag compares
+  against; the stored timestamp now always wins.
+
 ## [1.56.0] — 2026-08-04
 
 ### Added

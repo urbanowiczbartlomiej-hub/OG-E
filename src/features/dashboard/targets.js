@@ -15,8 +15,9 @@
 
 import {
   buildTargetList, sortTargetList, playerPlanets, targetExclusionReason,
+  playerMatchesQuery,
 } from '../../domain/targets.js';
-import { DANGER_LABELS, isMinerProfile } from '../../domain/dangerScore.js';
+import { isMinerProfile } from '../../domain/dangerScore.js';
 import { dangerColor } from '../../lib/dangerColor.js';
 import { compact } from './format.js';
 import { buildDossier } from './dossier.js';
@@ -311,8 +312,15 @@ function shipsCell(c, prof, narrow = false) {
 
 /**
  * Danger cell (v2) — the free whole-server verdict: D 0–100 (green → amber →
- * red) + the archetype label, from the danger profile (no spy needed). The
- * headline the fleet-finder sorts by; the tooltip spells out WHY.
+ * red), from the danger profile (no spy needed). The headline the fleet-finder
+ * sorts by; the tooltip spells out WHY.
+ *
+ * The archetype name that used to ride a second line here is gone: it was
+ * invented vocabulary ("Bandit raider", "Turtle") in the one column the eye goes
+ * to first, and it needed a hover to mean anything. The plain-words reading now
+ * lives on the dossier's DANGER line, beside the reasons that produced it — one
+ * click away, where there is room to explain it (see domain/dangerScore's
+ * DANGER_LABELS).
  * @param {import('../../domain/dangerScore.js').DangerProfile | undefined} prof
  * @returns {HTMLTableCellElement}
  */
@@ -326,16 +334,7 @@ function dangerCell(prof) {
   val.style.color = col;
   val.style.fontWeight = '600';
   td.append(val);
-  // Archetype label on its own dim second line (the Player cell's sub-line
-  // language) — but not for friendlies, whose value already reads "friendly"
-  // (else "friendly / Friendly").
-  if (!prof.friendly) {
-    const lab = document.createElement('span');
-    lab.textContent = DANGER_LABELS[prof.label];
-    lab.style.cssText = 'display:block;font-size:11px;line-height:1.3;color:#8a97a3;font-weight:400;';
-    td.append(lab);
-  }
-  td.title = `Danger ${d}/100 — ${[DANGER_LABELS[prof.label], ...prof.reasons].filter(Boolean).join(' · ')}`;
+  td.title = `Danger ${d}/100 — ${prof.reasons.join(' · ')}`;
   return td;
 }
 
@@ -370,8 +369,9 @@ function fleetCell(prof) {
  * @param {TargetCandidate} c
  * @param {import('../../domain/fleetLanding.js').FleetLandingSignal} [landing]
  * @param {{ name?: string, tag?: string }} [ally]  The player's alliance
- *   (alliances.xml row), when the feed knows it — rendered as a dim `[TAG]`
- *   after the nick so an alliance sweep is checkable row by row.
+ *   (alliances.xml row), when the feed knows it — rendered on the dim second
+ *   line after the rank, so an alliance sweep is checkable row by row without
+ *   the tag pushing the nick around on the line that identifies the player.
  * @returns {HTMLTableCellElement}
  */
 function playerCell(c, landing, ally) {
@@ -379,13 +379,6 @@ function playerCell(c, landing, ally) {
   const label = document.createElement('span');
   label.textContent = c.name || `#${c.id}`;
   td.appendChild(label);
-  if (ally && (ally.tag || ally.name)) {
-    const tagEl = document.createElement('span');
-    tagEl.textContent = ` [${ally.tag || ally.name}]`;
-    tagEl.style.cssText = 'color:#6b7782;font-size:11px;';
-    tagEl.title = ally.name || '';
-    td.appendChild(tagEl);
-  }
   if (landing) {
     const st = document.createElement('span');
     st.textContent = ' 🎯';
@@ -399,13 +392,26 @@ function playerCell(c, landing, ally) {
         + `(${landing.quiet}/${landing.total} bodies). Spy to confirm.`;
     td.appendChild(st);
   }
-  // Overall (total) highscore rank on a dim second line — the "how big is this
-  // player server-wide" anchor, beside the nick.
-  if (typeof c.totalRank === 'number') {
+  // Dim second line — the "who is this, server-wide" anchor: overall highscore
+  // rank, then the alliance tag. Both are context for the nick above, so they
+  // share one line and leave the name line to the name.
+  const hasAlly = !!(ally && (ally.tag || ally.name));
+  if (typeof c.totalRank === 'number' || hasAlly) {
     const sub = document.createElement('span');
     sub.style.cssText = 'display:block;font-size:11px;line-height:1.3;color:#6b7782;';
-    sub.textContent = `#${c.totalRank}`;
-    sub.title = `overall highscore rank #${c.totalRank}`;
+    if (typeof c.totalRank === 'number') {
+      const rank = document.createElement('span');
+      rank.textContent = `#${c.totalRank}`;
+      rank.title = `overall highscore rank #${c.totalRank}`;
+      sub.appendChild(rank);
+    }
+    if (hasAlly) {
+      const tagEl = document.createElement('span');
+      const tag = /** @type {{ name?: string, tag?: string }} */ (ally);
+      tagEl.textContent = `${sub.childNodes.length ? ' ' : ''}[${tag.tag || tag.name}]`;
+      tagEl.title = tag.name || '';
+      sub.appendChild(tagEl);
+    }
     td.appendChild(sub);
   }
   return td;
@@ -574,27 +580,28 @@ export function renderTargets({
     }
   }
 
-  // Search mode overrides the filter: match by name across the WHOLE candidate
-  // set (incl. excluded players), so a hidden player is findable — with the
-  // reason it's hidden + a "show anyway" override. Empty query = the normal
-  // filter / watched-scope / limit flow.
+  // Search mode overrides the filter: match across the WHOLE candidate set
+  // (incl. excluded players), so a hidden player is findable — with the reason
+  // it's hidden + a "show anyway" override. Empty query = the normal filter /
+  // watched-scope / limit flow.
+  //
+  // ONE finder, two predicates unioned: the nickname/id match and alliance
+  // membership (resolved upstream by domain/targets.matchAllianceMembers over
+  // the same string). Two boxes used to split this, and the split was the
+  // problem — the user has one question ("show me this thing") and had to know
+  // in advance whether what they were typing was a nick, an alliance name or a
+  // tag to pick a box.
   const query = searchQuery.trim().toLowerCase();
-  // Alliance search — the SAME "reveal everything that matches" mode as the
-  // nickname search, only the predicate differs (membership, resolved upstream
-  // by domain/targets.matchAllianceMembers). Never both at once: the control
-  // line clears one when the other is typed into.
-  const allyQuery = (allianceSearch?.query || '').trim();
   const allyIds = allianceSearch?.ids;
-  const inSearch = !!query || !!allyQuery;
+  const inSearch = !!query;
   /** @type {Array<{ c: TargetCandidate, reason: string }>} */
   const excludedMatches = [];
   /** @type {TargetCandidate[]} */
   let list;
   if (inSearch) {
     /** @type {(c: TargetCandidate) => boolean} */
-    const matches = query
-      ? (c) => (c.name || '').toLowerCase().includes(query) || String(c.id) === query
-      : (c) => !!allyIds && allyIds.has(String(c.id));
+    const matches = (c) => playerMatchesQuery(c, query)
+      || !!(allyIds && allyIds.has(String(c.id)));
     /** @type {TargetCandidate[]} */
     const kept = [];
     for (const c of candidates) {
@@ -638,18 +645,15 @@ export function renderTargets({
     const p = document.createElement('p');
     p.style.color = '#888';
     p.style.fontSize = '13px';
-    // An alliance query that matched no ALLIANCE reads differently from one
-    // whose alliance exists but is empty in this universe's feeds — say which.
+    // One box, so one message — plus the alliance caveat when the miss could be
+    // a cold cache rather than a real miss (the alliances feed rides the same
+    // daily cadence as players.xml, so a cache warmed before this feature
+    // existed simply has no alliances in it yet).
     const noAllianceFeed = !alliances || Object.keys(alliances).length === 0;
-    p.textContent = query
-      ? `No player matches “${searchQuery.trim()}”.`
-      : (noAllianceFeed
-        // The feed is fetched on the same daily cadence as players.xml, so a
-        // cache warmed before this feature existed simply has no alliances yet.
-        ? 'No alliance list cached for this universe yet — hit ⟳ Refresh above, then search again.'
-        : (allianceSearch && allianceSearch.labels.length
-          ? `No players found in ${allianceSearch.labels.join(', ')}.`
-          : `No alliance matches “${allyQuery}” — search by its tag or full name.`));
+    p.textContent = `No player or alliance matches “${searchQuery.trim()}”.`
+      + (noAllianceFeed
+        ? ' No alliance list is cached for this universe yet — press ⟳ Refresh above, then search again.'
+        : '');
     containerEl.appendChild(p);
     if (countInfoEl) countInfoEl.textContent = '';
     return;
@@ -680,7 +684,9 @@ export function renderTargets({
   const hr = document.createElement('tr');
   /** @param {TargetSortKey} key */
   const sortable = (key) => ({ sortKey: key, sort, onSort });
-  if (!narrow) hr.appendChild(headCell('⭐'));
+  // The watch column's header is the WORD, not a star: the pills below it say
+  // "+ watch" / "watched", so a glyph here named nothing (CLAUDE.md iconography).
+  if (!narrow) hr.appendChild(headCell('watch'));
   hr.appendChild(headCell('Player'));
   hr.appendChild(headCell('Danger', 'right', sortable('danger')));
   hr.appendChild(headCell('Fleet', 'right', sortable('fleet')));
@@ -813,9 +819,10 @@ export function renderTargets({
   if (countInfoEl) {
     if (inSearch) {
       const hid = excludedMatches.length;
-      // Under an alliance search, name the alliances that matched — the count
-      // alone can't tell "one alliance" from "three that share a substring".
-      const scope = !query && allianceSearch && allianceSearch.labels.length
+      // When the query hit ALLIANCES, name them — the count alone can't tell
+      // "one alliance" from "three that share a substring", and with one merged
+      // box it also can't tell an alliance hit from a nickname hit.
+      const scope = allianceSearch && allianceSearch.labels.length
         ? `${allianceSearch.labels.join(', ')} — `
         : '';
       countInfoEl.textContent = `${scope}${shown.length} match${shown.length === 1 ? '' : 'es'}`

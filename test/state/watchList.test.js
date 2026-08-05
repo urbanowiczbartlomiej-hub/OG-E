@@ -56,9 +56,9 @@ const fullCfg = (over = {}) => ({
   moonStrike: 'newest',
   patrolSystems: 0,
   probeSource: 'nearest',
-  // Home watch defaults ON (defensive, own systems only) — unlike the patrol,
-  // which is an offensive opt-in.
-  homeWatch: true,
+  // Home watch defaults ON (defensive, own systems only) at a DAILY cadence —
+  // unlike the patrol, which is an offensive opt-in.
+  homeHours: 24,
   ...over,
 });
 
@@ -190,12 +190,23 @@ describe('normalizeWatchList', () => {
     expect(normalizeWatchList({ players: [] }).probeSource).toBe('nearest');
   });
 
-  it('defaults homeWatch ON and only an explicit false turns it off', () => {
-    expect(normalizeWatchList({ players: [] }).homeWatch).toBe(true);
-    expect(normalizeWatchList({ players: [], homeWatch: false }).homeWatch).toBe(false);
-    // Anything else present-but-not-false reads as on (a stored 1 / 'on' from a
-    // hand-edited blob must not silently disable a defensive watch).
-    expect(normalizeWatchList({ players: [], homeWatch: 1 }).homeWatch).toBe(true);
+  it('defaults the home cadence to 24 h, clamps it, and 0 means off', () => {
+    expect(normalizeWatchList({ players: [] }).homeHours).toBe(24);
+    expect(normalizeWatchList({ players: [], homeHours: 6 }).homeHours).toBe(6);
+    expect(normalizeWatchList({ players: [], homeHours: 0 }).homeHours).toBe(0);
+    expect(normalizeWatchList({ players: [], homeHours: 9999 }).homeHours).toBe(720);
+    // Junk falls back to the default rather than to 0 — a stray keystroke must
+    // not silently disarm a defensive watch.
+    expect(normalizeWatchList({ players: [], homeHours: 'x' }).homeHours).toBe(24);
+  });
+
+  it('migrates the legacy homeWatch boolean into the cadence', () => {
+    // false was "off"; anything else was "on at the galaxy cadence", which the
+    // daily default is the honest reading of.
+    expect(normalizeWatchList({ players: [], homeWatch: false }).homeHours).toBe(0);
+    expect(normalizeWatchList({ players: [], homeWatch: true }).homeHours).toBe(24);
+    // An explicit cadence always wins over the legacy flag.
+    expect(normalizeWatchList({ players: [], homeWatch: false, homeHours: 12 }).homeHours).toBe(12);
   });
 });
 

@@ -39,7 +39,7 @@ beforeEach(() => {
   stored = { baseline: {}, arrivals: [] };
   scansStore.set(/** @type {any} */ ({}));
   bodiesStore.set(/** @type {any} */ ({ bodies: [{ galaxy: 4, system: 151 }] }));
-  watchListStore.update((c) => ({ ...c, homeWatch: true }));
+  watchListStore.update((c) => ({ ...c, homeHours: 24 }));
 });
 
 describe('runHomeWatchPass', () => {
@@ -74,7 +74,7 @@ describe('runHomeWatchPass', () => {
   });
 
   it('is a no-op while the mode is off', async () => {
-    watchListStore.update((c) => ({ ...c, homeWatch: false }));
+    watchListStore.update((c) => ({ ...c, homeHours: 0 }));
     scansStore.set(/** @type {any} */ ({
       '4:151': { scannedAt: 1000, positions: { 3: occ(207) } },
     }));

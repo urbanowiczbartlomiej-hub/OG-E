@@ -790,16 +790,30 @@ export const isMinerProfile = (profile) => {
     && profile.spread <= MINER_SPREAD_MAX;
 };
 
-/** Human-facing label text for a {@link DangerLabel}. */
+/**
+ * Human-facing text for a {@link DangerLabel} — what the bucket MEANS, in words
+ * anyone reading a galaxy view already knows.
+ *
+ * These used to be invented archetype names ("Apex hunter", "Bandit raider",
+ * "Turtle", "Economist"). They were shown in the Players table's Danger column,
+ * where they were dead weight: none of them is a term the game uses, so the only
+ * way to learn one was to hover it, and the number beside it already carried the
+ * ranking. The buckets themselves are real logic (the score's shape differs a
+ * lot between defence-only and fleet-heavy), so the taxonomy stays — it is just
+ * phrased plainly and shown in ONE place, the dossier, next to the reasons that
+ * explain it.
+ *
+ * Keep these short: they render inline on the dossier's DANGER line.
+ */
 export const DANGER_LABELS = /** @type {Record<DangerLabel, string>} */ ({
-  apex: 'Apex hunter',
-  raider: 'Bandit raider',
-  declawed: 'Declawed bandit',
-  fortress: 'Fortress',
-  turtle: 'Turtle',
-  fleeter: 'Fleeter',
-  cargo: 'Cargo swarm',
-  eco: 'Economist',
-  friendly: 'Friendly',
-  unknown: 'Unknown',
+  apex: 'top aggressor',
+  raider: 'active bandit',
+  declawed: 'bandit, no fleet left',
+  fortress: 'defence-heavy',
+  turtle: 'defence only',
+  fleeter: 'fleet-heavy',
+  cargo: 'cargo/probe swarm',
+  eco: 'miner',
+  friendly: 'friendly',
+  unknown: 'unknown',
 });

@@ -49,7 +49,6 @@ import { ZONES, HARM_WEIGHTS, annotateAndSortByZone } from '../../domain/zoneSco
 import { buildThreatFarmField, sampleField } from '../../domain/heatField.js';
 import { classifyCell, cellColor, fieldColor } from '../../domain/cellClass.js';
 import { STRIP_PRIORITY, bestStatusInSystem } from '../../domain/histogram.js';
-import { DANGER_LABELS } from '../../domain/dangerScore.js';
 import {
   STATUS_COLORS, STATUS_LABELS, STRENGTH_COLORS,
   HONOR_TIER_LABELS, UNSCANNED_COLOR,
@@ -1184,7 +1183,8 @@ const buildTopThreats = (region, scans, { danger, spied, galaxyMax, players, onO
     if (a.prof) {
       const why = document.createElement('span');
       why.className = 'gv-threat-why';
-      why.textContent = [DANGER_LABELS[a.prof.label], a.prof.reasons[0]].filter(Boolean).join(' · ');
+      // The concrete reason, not the archetype name (dangerScore's DANGER_LABELS).
+      why.textContent = a.prof.reasons[0] || '';
       row.appendChild(why);
     }
     const prov = document.createElement('span');

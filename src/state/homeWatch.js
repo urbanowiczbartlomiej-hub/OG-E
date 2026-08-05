@@ -20,6 +20,7 @@
 // @ts-check
 
 import { chromeStore } from '../lib/storage.js';
+import { NEW_ARRIVAL_TTL_MS, NEW_ARRIVAL_MAX_MS } from '../domain/homeWatch.js';
 import { currentUniverseKey } from './universeKey.js';
 
 /**
@@ -33,9 +34,10 @@ import { currentUniverseKey } from './universeKey.js';
  *   of the last sighting.
  * @property {HomeArrival[]} arrivals  Newest-first log of strangers who showed
  *   up in one of our systems (see domain/homeWatch.mergeHomeArrivals).
- * @property {number} [dismissedAt]  ms of the user's last "I've seen these"
- *   click in the dashboard. Arrivals older than it stop counting as NEW; the
- *   rows stay (the neighbour is still there — only the alarm is silenced).
+ * @property {number} [dismissedAt]  LEGACY: ms of the user's last "clear NEW"
+ *   click, from before the flag expired on its own. Still honoured on read so an
+ *   install that had cleared its arrivals does not see them light up again; no
+ *   code writes it any more.
  */
 
 /** Suffix of the per-universe chrome.storage.local key. */
@@ -88,24 +90,62 @@ export const writeHomeWatch = (state, universeId) => {
 };
 
 /**
- * Silence the current alerts without deleting them (see `dismissedAt`).
+ * Stamp `shownAt` on every arrival that is still NEW and has never been
+ * displayed — the dashboard calls this right after painting them, which starts
+ * each one's {@link NEW_ARRIVAL_TTL_MS} countdown.
+ *
+ * This is what replaced the old "clear NEW" button: reading the news IS the
+ * acknowledgement, so nothing has to be clicked. Best-effort and idempotent —
+ * a no-op (no write at all) once every open arrival carries a stamp.
  *
  * @param {string} universeId
  * @param {number} nowMs
- * @returns {Promise<void>}
+ * @returns {Promise<boolean>} Whether anything was written.
  */
-export const dismissHomeArrivals = async (universeId, nowMs) => {
+export const markHomeArrivalsShown = async (universeId, nowMs) => {
   const cur = await readHomeWatch(universeId);
-  await writeHomeWatch({ ...cur, dismissedAt: nowMs }, universeId);
+  let touched = false;
+  const arrivals = (cur.arrivals || []).map((a) => {
+    if (a.shownAt != null) return a;
+    if (!isArrivalNew(a, cur, nowMs)) return a;
+    touched = true;
+    return { ...a, shownAt: nowMs };
+  });
+  if (!touched) return false;
+  await writeHomeWatch({ ...cur, arrivals }, universeId);
+  return true;
 };
 
 /**
- * Arrivals the user hasn't acknowledged yet.
+ * Is this arrival still NEW at `nowMs`? Three gates, all of which must hold:
+ *
+ *   1. it postdates any legacy "clear NEW" click (`dismissedAt`, kept only so
+ *      already-cleared arrivals on an existing install stay cleared),
+ *   2. it was either never displayed, or displayed less than
+ *      {@link NEW_ARRIVAL_TTL_MS} ago,
+ *   3. it is younger than {@link NEW_ARRIVAL_MAX_MS} — the ceiling that stops an
+ *      arrival nobody ever looked at from flagging forever.
+ *
+ * @param {HomeArrival} a
+ * @param {HomeWatchState} state
+ * @param {number} nowMs
+ * @returns {boolean}
+ */
+const isArrivalNew = (a, state, nowMs) => {
+  const at = a.atMs || 0;
+  if (at <= (state.dismissedAt ?? 0)) return false;
+  if (nowMs - at >= NEW_ARRIVAL_MAX_MS) return false;
+  if (a.shownAt != null && nowMs - a.shownAt >= NEW_ARRIVAL_TTL_MS) return false;
+  return true;
+};
+
+/**
+ * Arrivals still flagged NEW (see {@link isArrivalNew}).
  *
  * @param {HomeWatchState} state
+ * @param {number} nowMs
  * @returns {HomeArrival[]}
  */
-export const openHomeArrivals = (state) => {
-  const since = state.dismissedAt ?? 0;
-  return (state.arrivals || []).filter((a) => (a.atMs || 0) > since);
-};
+export const openHomeArrivals = (state, nowMs) => (
+  (state.arrivals || []).filter((a) => isArrivalNew(a, state, nowMs))
+);

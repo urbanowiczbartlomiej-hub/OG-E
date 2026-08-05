@@ -20,7 +20,7 @@ export default {
 
   idea: [
     'Tabela `Players` to cały serwer poukładany według kolumny `Danger`. Ta liczba nie mierzy „ile ktoś ma punktów", tylko **ile z tych punktów może po Ciebie przylecieć**: punkty wojskowe zawierają obronę, a obrona nie atakuje — więc OG-E rozdziela je na część mobilną i nieruchomą, ocenia jakość kadłubów (koszt jednego statku) i porównuje wynik z całym serwerem. Do tego dokłada sygnały drapieżnika: procent zniszczeń, tier bandyty, rozrzut kolonii (ile serwera realnie dosięga) i klasę sojuszu.',
-    'Obok liczby stoi **archetyp** — jedno słowo zamiast tabelki: `Apex hunter`, `Bandit raider`, `Fleeter`, `Cargo swarm`, `Fortress`, `Turtle`, `Economist`, `Declawed bandit`, `Friendly`. Kolumna `Fleet` pokazuje `≤`, bo to **sufit, nie pomiar** — dopiero komplet Twoich własnych raportów zbija go do dokładnej liczby i znak `≤` znika.',
+    'W kolumnie stoi sama liczba. **Rodzaj konta** — „fleet-heavy", „defence only", „active bandit", „miner", „cargo/probe swarm" — czeka w dossier gracza, tuż nad listą powodów, które go wyznaczyły: tam jest miejsce, żeby to wyjaśnić, a w kolumnie było tylko słowem do najechania kursorem. Kolumna `Fleet` pokazuje `≤`, bo to **sufit, nie pomiar** — dopiero komplet Twoich własnych raportów zbija go do dokładnej liczby i znak `≤` znika.',
   ],
 
   value: [
@@ -38,12 +38,13 @@ export default {
     'Zero statków to zawsze `Danger 0`; własny sojusz i buddy również 0. Każdy, kto ma czym latać, ma co najmniej 8.',
     'Koszt jednego kadłuba dzieli flotę na klasy: poniżej ~20 tys. surowców — `civilian` (transportery, sondy), 20–100 tys. — `combat`, powyżej — `capitals` albo `defence?`, jeśli skany jeszcze tego nie potwierdziły.',
     'Bonusy agresora (bandyta, zasięg, klasa wojownik) **nie sumują się w nieskończoność** — wypełniają zapas do 100. Dzięki temu spokojny gigant nigdy nie zostanie „apexem".',
-    '`Apex hunter` wymaga co najmniej dwóch z sześciu sygnałów, w tym **przynajmniej jednego agresywnego** (zniszczenia, zasięg, ustawienie kolonii) — sama wielkość floty nie wystarczy.',
-    'Filtry: ukryj nieaktywnych, tylko lista obserwowanych, widełki punktów wojskowych, `top 50 / 100 / 200 / all`. Wyszukiwanie po nazwie znajduje też graczy odfiltrowanych i pokazuje, dlaczego byli ukryci.',
+    'Najwyższy stopień agresora (w dossier: „top aggressor") wymaga co najmniej dwóch z sześciu sygnałów, w tym **przynajmniej jednego agresywnego** (zniszczenia, zasięg, ustawienie kolonii) — sama wielkość floty nie wystarczy.',
+    'Filtry: ukryj nieaktywnych, tylko lista obserwowanych, tylko skupione konta (`miners`), widełki punktów wojskowych — przyjmują `15M`, `2.5b`, `800k`, `15kk` — oraz `top 50 / 100 / 200 / all`. Konta na wakacjach, zbanowane i administracyjne są ukryte zawsze.',
+    '**Jedna wyszukiwarka** obsługuje nick, nazwę sojuszu i tag: znajduje też graczy odfiltrowanych (z powodem, dlaczego byli ukryci), a `+ watch all` dopisuje całą znalezioną listę do obserwowanych za jednym kliknięciem.',
   ],
 
   screenshots: [
-    { id: 'players', caption: 'Ranking graczy posortowany po kolumnie Danger — obok liczby archetyp, dalej sufit floty, punkty wojskowe i klasa kadłubów.' },
+    { id: 'players', caption: 'Ranking graczy posortowany po kolumnie Danger — dalej sufit floty, punkty wojskowe i klasa kadłubów.' },
     { id: 'breakdown', caption: 'Rozbicie oceny w dossier: z czego wzięła się liczba i które sygnały ją podniosły.' },
   ],
 

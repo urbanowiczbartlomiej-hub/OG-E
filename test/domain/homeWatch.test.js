@@ -14,6 +14,9 @@ import {
   diffHomeSystems,
   mergeHomeArrivals,
   buildHomeLookPlan,
+  friendlyNeighbourIds,
+  rankHomeNeighbours,
+  findHomeCoalitions,
 } from '../../src/domain/homeWatch.js';
 
 /** An occupied slot owned by `id`. @param {number} id */
@@ -132,13 +135,16 @@ describe('mergeHomeArrivals', () => {
   /** @param {string} system @param {number} playerId @param {number} atMs */
   const arr = (system, playerId, atMs) => ({ system, coord: `${system}:5`, playerId, atMs });
 
-  it('keeps one entry per (system, player), newest first, fresh side winning', () => {
+  it('keeps one entry per (system, player), newest first, the STORED side winning', () => {
+    // A re-derived arrival must NOT refresh atMs: acknowledgement compares
+    // against it, so a fresh copy would resurrect a neighbour the user cleared
+    // every time they walked the galaxy. 555 keeps its original 1000.
     const stored = [arr('4:151', 555, 1000), arr('2:8', 9, 900)];
     const fresh = [arr('4:151', 555, 3000), arr('4:151', 777, 2000)];
     const out = mergeHomeArrivals(stored, fresh);
     expect(out.map((a) => [a.system, a.playerId, a.atMs])).toEqual([
-      ['4:151', 555, 3000],
       ['4:151', 777, 2000],
+      ['4:151', 555, 1000],
       ['2:8', 9, 900],
     ]);
   });
@@ -187,7 +193,8 @@ describe('buildHomeLookPlan', () => {
       scans,
       nowMs: NOW,
       staleMs: STALE,
-      alertSystems: new Set(['4:151']),
+      // The arrival was logged FROM that sighting, so the boost is still owed.
+      alerts: new Map([['4:151', NOW - 60_000]]),
     });
     expect(entries[0].label).toBe('4:151');
     expect(entries[0].why).toBe('home · new neighbour');
@@ -196,9 +203,190 @@ describe('buildHomeLookPlan', () => {
     expect(HOME_ALERT_BOOST).toBeGreaterThan(HOME_LOOK_WEIGHT);
   });
 
+  it('drops the boost once the system has been looked at since the arrival', () => {
+    // The one-shot rule: the alert buys ONE look. Keyed to acknowledgement
+    // instead, the Spy button would re-propose this system forever (tap → look →
+    // same proposal) until the user found the dashboard's "clear NEW".
+    const scans = { '4:151': { scannedAt: NOW - 30_000 } };
+    const { entries } = buildHomeLookPlan({
+      systems: new Set(['4:151']),
+      scans,
+      nowMs: NOW,
+      staleMs: STALE,
+      alerts: new Map([['4:151', NOW - 60_000]]),
+    });
+    expect(entries).toEqual([]);
+  });
+
   it('returns nothing for an empty home set', () => {
     expect(buildHomeLookPlan({
       systems: new Set(), scans: {}, nowMs: NOW, staleMs: STALE,
     }).entries).toEqual([]);
+  });
+});
+
+describe('friendlyNeighbourIds', () => {
+  it('collects ids from the danger profiles’ friendly verdict', () => {
+    const danger = new Map([
+      [100, { friendly: true }],
+      [200, { friendly: false }],
+    ]);
+    expect(friendlyNeighbourIds({ danger })).toEqual(new Set(['100']));
+  });
+
+  it('collects ids flagged buddy or allianceMember in the player cache', () => {
+    /** @type {Record<string, { flags?: { buddy?: true, allianceMember?: true } }>} */
+    const playerFlags = {
+      100: { flags: { buddy: true } },
+      200: { flags: { allianceMember: true } },
+      300: { flags: {} },
+      400: {},
+    };
+    expect(friendlyNeighbourIds({ playerFlags })).toEqual(new Set(['100', '200']));
+  });
+
+  it('collects ids sharing our own alliance on the public players feed', () => {
+    const apiPlayers = {
+      100: { alliance: '77' },
+      200: { alliance: '88' },
+    };
+    expect(friendlyNeighbourIds({ apiPlayers, ownAlliance: '77' })).toEqual(new Set(['100']));
+  });
+
+  it('ignores the public feed when our own alliance is unknown', () => {
+    const apiPlayers = { 100: { alliance: '77' } };
+    expect(friendlyNeighbourIds({ apiPlayers })).toEqual(new Set());
+  });
+
+  it('unions all three sources and returns empty for no input', () => {
+    const danger = new Map([[100, { friendly: true }]]);
+    /** @type {Record<string, { flags?: { buddy?: true, allianceMember?: true } }>} */
+    const playerFlags = { 200: { flags: { buddy: true } } };
+    const apiPlayers = { 300: { alliance: '77' } };
+    expect(friendlyNeighbourIds({
+      danger, playerFlags, apiPlayers, ownAlliance: '77',
+    })).toEqual(new Set(['100', '200', '300']));
+    expect(friendlyNeighbourIds({})).toEqual(new Set());
+  });
+});
+
+describe('rankHomeNeighbours', () => {
+  it('folds per-system slots into one row per player, systems sorted ascending', () => {
+    const occupants = {
+      '4:151': [{ playerId: '100' }],
+      '2:8': [{ playerId: '100' }],
+    };
+    const [row] = rankHomeNeighbours({ occupants });
+    expect(row.playerId).toBe('100');
+    expect(row.systems).toEqual(['2:8', '4:151']);
+    expect(row.danger).toBeNull();
+    expect(row.isNew).toBe(false);
+    expect(row.allianceId).toBeUndefined();
+  });
+
+  it('orders worst danger first, reach as the tiebreaker, unknown danger last', () => {
+    const occupants = {
+      '1:1': [{ playerId: '100' }, { playerId: '200' }],
+      '1:2': [{ playerId: '200' }],
+      '1:3': [{ playerId: '300' }],
+    };
+    const dangerByPlayer = { 100: 0.2, 200: 0.9 };
+    const rows = rankHomeNeighbours({ occupants, dangerByPlayer });
+    expect(rows.map((r) => r.playerId)).toEqual(['200', '100', '300']);
+    expect(rows[2].danger).toBeNull();
+  });
+
+  it('breaks a danger tie by reach (systems.length), not insertion order', () => {
+    const occupants = {
+      '1:1': [{ playerId: '100' }],
+      '1:2': [{ playerId: '200' }],
+      '1:3': [{ playerId: '200' }],
+    };
+    const dangerByPlayer = { 100: 0.5, 200: 0.5 };
+    const rows = rankHomeNeighbours({ occupants, dangerByPlayer });
+    expect(rows.map((r) => r.playerId)).toEqual(['200', '100']);
+  });
+
+  it('marks isNew when any of the player’s slots is in newKeys, and carries the alliance id', () => {
+    const occupants = { '4:151': [{ playerId: '100' }] };
+    const allianceByPlayer = { 100: '55' };
+    const newKeys = new Set(['4:151|100']);
+    const [row] = rankHomeNeighbours({
+      occupants, allianceByPlayer, newKeys,
+    });
+    expect(row.isNew).toBe(true);
+    expect(row.allianceId).toBe('55');
+  });
+
+  it('returns nothing for no occupants', () => {
+    expect(rankHomeNeighbours({ occupants: {} })).toEqual([]);
+  });
+});
+
+describe('findHomeCoalitions', () => {
+  it('reports an alliance whose members TOGETHER reach more systems than any solo member', () => {
+    // 100 alone reaches 1:1 and 1:2 (solo best = 2); 200 only reaches 1:3.
+    // Together the alliance covers 3 systems — lift = 3 - 2 = 1.
+    const occupants = {
+      '1:1': [{ playerId: '100' }],
+      '1:2': [{ playerId: '100' }],
+      '1:3': [{ playerId: '200' }],
+    };
+    const allianceByPlayer = { 100: '77', 200: '77' };
+    const coalitions = findHomeCoalitions({ occupants, allianceByPlayer });
+    expect(coalitions).toEqual([{
+      allianceId: '77',
+      playerIds: ['100', '200'],
+      systems: ['1:1', '1:2', '1:3'],
+      soloBest: 2,
+      lift: 1,
+    }]);
+  });
+
+  it('does not report two members sharing the SAME system only (no lift)', () => {
+    const occupants = { '1:1': [{ playerId: '100' }, { playerId: '200' }] };
+    const allianceByPlayer = { 100: '77', 200: '77' };
+    expect(findHomeCoalitions({ occupants, allianceByPlayer })).toEqual([]);
+  });
+
+  it('does not report a member whose systems are a subset of an ally’s (no lift)', () => {
+    // 100 reaches 1:1 and 1:2; 200 only reaches 1:1 (a subset) — union stays 2,
+    // equal to 100's solo reach, so lift is 0.
+    const occupants = {
+      '1:1': [{ playerId: '100' }, { playerId: '200' }],
+      '1:2': [{ playerId: '100' }],
+    };
+    const allianceByPlayer = { 100: '77', 200: '77' };
+    expect(findHomeCoalitions({ occupants, allianceByPlayer })).toEqual([]);
+  });
+
+  it('requires at least two members — a lone alliance member never qualifies', () => {
+    const occupants = { '1:1': [{ playerId: '100' }], '1:2': [{ playerId: '100' }] };
+    const allianceByPlayer = { 100: '77' };
+    expect(findHomeCoalitions({ occupants, allianceByPlayer })).toEqual([]);
+  });
+
+  it('ignores players with no known alliance', () => {
+    const occupants = { '1:1': [{ playerId: '100' }], '1:2': [{ playerId: '200' }] };
+    expect(findHomeCoalitions({ occupants, allianceByPlayer: undefined })).toEqual([]);
+  });
+
+  it('orders widest joint reach first, lift breaking ties', () => {
+    // Alliance 'AA': 100 -> 1:1,1:2 ; 200 -> 1:3 (union 3, solo 2, lift 1).
+    // Alliance 'BB': 300 -> 2:1 ; 400 -> 2:2,2:3 (union 3, solo 2, lift 1) — tie
+    // on systems.length AND lift, so alphabetical id order breaks it.
+    const occupants = {
+      '1:1': [{ playerId: '100' }],
+      '1:2': [{ playerId: '100' }],
+      '1:3': [{ playerId: '200' }],
+      '2:1': [{ playerId: '300' }],
+      '2:2': [{ playerId: '400' }],
+      '2:3': [{ playerId: '400' }],
+    };
+    const allianceByPlayer = {
+      100: 'AA', 200: 'AA', 300: 'BB', 400: 'BB',
+    };
+    const coalitions = findHomeCoalitions({ occupants, allianceByPlayer });
+    expect(coalitions.map((c) => c.allianceId)).toEqual(['AA', 'BB']);
   });
 });

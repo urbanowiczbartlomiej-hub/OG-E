@@ -319,6 +319,26 @@ export function matchAllianceMembers(candidates, alliances, query) {
 }
 
 /**
+ * Does this candidate match a typed finder query by NICKNAME (substring, case
+ * insensitive) or by exact player id? The other half of the finder — alliance
+ * membership — is {@link matchAllianceMembers}; the UI unions the two so ONE box
+ * answers "who is this?" whether the user typed a nick, an alliance name or a
+ * tag.
+ *
+ * Exported (rather than inlined in the renderer) because two callers need the
+ * SAME predicate: the table decides which rows to reveal, and the control line
+ * decides how many players "+ watch all" would add. Two copies would drift.
+ *
+ * @param {TargetCandidate} c
+ * @param {string} query  Already-trimmed, lowercased query. Empty = no match.
+ * @returns {boolean}
+ */
+export function playerMatchesQuery(c, query) {
+  if (!query) return false;
+  return (c.name || '').toLowerCase().includes(query) || String(c.id) === query;
+}
+
+/**
  * Minimal shape of a players.xml row (name + status + alliance).
  * @typedef {object} ApiPlayerLite
  * @property {string} [name]

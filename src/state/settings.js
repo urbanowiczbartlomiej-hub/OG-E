@@ -111,11 +111,19 @@ export const SETTINGS_PREFIX = 'oge_';
  * @property {boolean} threatHighlight
  * @property {boolean} showWhosSpying
  * @property {string}  spyRange
+ * @property {number}  spySeenTs
  * @property {boolean} alarmClockMasterEnabled
  * @property {string}  alarmClockNtfyToken
  *
  *   spyRange                '1m'  — Who's-spying date window (1d/7d/1m/3m),
  *                                   shared by the in-game panel + dashboard strip
+ *   spySeenTs               0     — newest spy-alert timestamp (epoch s) the
+ *                                   in-game panel has SHOWN you. Anything newer
+ *                                   is "new": the panel unfolds itself and its
+ *                                   edge turns red; equal or older means quiet,
+ *                                   so it stays folded and gold. Device-local and
+ *                                   universe-agnostic on purpose — it is a
+ *                                   read-marker for a UI affordance, not intel.
  */
 
 /**
@@ -172,6 +180,7 @@ export const SETTINGS_SCHEMA = {
   threatHighlight:            { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'threatHighlight' },
   showWhosSpying:             { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'showWhosSpying' },
   spyRange:                   { type: 'string', default: '1m',  key: SETTINGS_PREFIX + 'spyRange' },
+  spySeenTs:                  { type: 'int',    default: 0,     key: SETTINGS_PREFIX + 'spySeenTs' },
   alarmClockMasterEnabled: { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'alarmClockMasterEnabled' },
   alarmClockNtfyToken:      { type: 'string', default: '',    key: SETTINGS_PREFIX + 'alarmClockNtfyToken' },
 };

@@ -662,9 +662,47 @@
      inside it scrolls) even when the grid row stretches this card taller. */
   .spy-watch-card { display: flex; flex-direction: column; }
   .spy-watch-card > #watchCards { flex: 1; }
+  /* The defensive column: "who's spying on you" + "home watch" stacked. Own
+     wrapper (not two grid children) so the two cards share ONE column against
+     the watchlist hero instead of each claiming a grid cell. */
+  .spy-side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .spy-side > .gv-card { margin: 0; }
   /* Who's-spying card wears the spy gold on its left edge — the Spyglass
      identity, echoing the in-game panel's gold rule. */
   .spy-back-card { border-left: 3px solid #e6c054; }
+  /* The two defensive cards are FOLDS: "nobody probed me" and "nobody moved in"
+     are the normal states and each is one word, not a panel. One class set for
+     both so they read identically — padding moves to the parts (the summary bar
+     spans the card and stays a tap target, same treatment as .spy-map-panel),
+     and the left edge turns alarm-red while something unread sits inside, so the
+     state is legible before anything is unfolded or hovered. */
+  .spy-fold-card { padding: 0; }
+  .spy-fold-card.hot { border-left-color: #e06c5f; }
+  .spy-fold-body { padding: 0 14px 12px; }
+  /* Home watch wears the same spy gold as its sibling — it is the other half of
+     the defensive read. */
+  .spy-home-card { border-left: 3px solid #e6c054; }
+  /* The bar's state text ("2 new" / "quiet · 3/5 fresh" / "3 probers · 5 alerts")
+     is the whole content of the folded card — unlike the map's decorative hint it
+     must NEVER hide, on any width (a verdict behind a hover does not exist on
+     touch). */
+  .spy-fold-state {
+    margin-left: auto; display: inline-flex; align-items: baseline; gap: 4px;
+    min-width: 0; font-size: 11px; color: #8a97a3; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .spy-fold-state.hot { color: #e06c5f; font-weight: 600; }
+  @media (max-width: 640px) {
+    /* Narrow: the state WRAPS to its own line under the title instead of being
+       clipped by the ellipsis. Clipping would drop the tail of the verdict, and
+       the tail is where the counts live — on touch there is no tooltip to
+       recover them from. */
+    .spy-fold-card > .spy-map-summary { flex-wrap: wrap; }
+    .spy-fold-card > .spy-map-summary > .spy-fold-state {
+      flex: 1 0 100%; margin-left: 0; padding-left: 16px;
+      white-space: normal; overflow: visible;
+    }
+  }
   /* Scan settings — the in-game Spy button's knobs, always visible as the
      watchlist card's footer COMMAND BLOCK (phase D): keyword captions +
      controls in hairlined cells. Negative margins mirror .gv-card's
@@ -860,15 +898,35 @@
   .gv-threat-ignored-tag { font-size: 11px; color: #c98a4b; border: 1px solid #5a4415; border-radius: 8px; padding: 0 6px; }
 
   /* Colony Scout → server map: binned temperature field (whole server). */
-  /* The two Players finders (by player name, by alliance name/tag) — same
-     control, two scopes, so they sit side by side and look identical. They
-     shrink together on a phone instead of pushing the row into a scroll. */
+  /* The Players finder — ONE box for nick · alliance name · tag (the two boxes
+     it replaced forced the user to classify their own query before typing it).
+     Grows to fill the control line, shrinks on a phone instead of pushing the
+     row into a scroll. */
   .tgt-find {
-    flex: 1 1 190px; min-width: 0; max-width: 240px; padding: 5px 9px;
+    flex: 1 1 190px; min-width: 0; max-width: 280px; padding: 5px 9px;
     background: #0e141b; border: 1px solid #2a3542; border-radius: 4px;
     color: #cfd6dd; font-size: 13px;
   }
   .tgt-find:focus { outline: none; border-color: #4a9eff; }
+  /* Players → ⚙ Filters, as a command block (.cmd-grid) inside the card: the
+     negative side margins bleed it to the card's inner edges, exactly like the
+     watchlist card's scan Settings footer, so both panels on the tab are the
+     same object. */
+  .tgt-filters {
+    margin: -4px -14px 12px; border-top: 1px solid #223044;
+    border-bottom: 1px solid #223044; background: #0e151e;
+  }
+  /* Magnitude boxes (military range) — text, not number: they accept 15M / 2.5b
+     / 15kk, and a spinner on a value like that is meaningless. Tabular figures
+     keep the two boxes the same visual width as digits are typed. */
+  .tgt-num {
+    width: 5.5em; min-width: 0; padding: 4px 7px;
+    background: #0e141b; border: 1px solid #2a3542; border-radius: 4px;
+    color: #cfd6dd; font-size: 13px; font-variant-numeric: tabular-nums;
+  }
+  .tgt-num:focus { outline: none; border-color: #4a9eff; }
+  /* An unparseable box is not silently ignored — it says so. */
+  .tgt-num.bad { border-color: #7a4038; color: #f0b8b0; }
   .server-map-panel { margin: 10px 0; }
   /* Spyglass positions map — a disclosure CARD, not a chip-toggled block. The
      header bar is always on screen (that is the whole point: the old 🗺 chip in
@@ -1385,7 +1443,7 @@
       <details class="spy-scan-prefs" id="spyScanPrefs">
         <summary class="spy-scan-summary">
           <span class="spy-scan-summary-title">Settings</span>
-          <span class="spy-scan-summary-hint">Probes · Scan · Probe from · Re-scan · Re-look · Moon strike · Patrol</span>
+          <span class="spy-scan-summary-hint">Probes · Scan · Probe from · Re-scan · Re-look · Home · Moon strike · Patrol</span>
         </summary>
         <div class="cmd-grid">
         <label class="cmd-cell" title="How many espionage probes the in-game scan button pre-arms per body.">
@@ -1417,20 +1475,24 @@
           <span class="cmd-unit">h</span>
           <span class="cmd-note"><span class="via-probes">watch via probes</span> — reports older than this re-enter the scan plan</span>
         </label>
-        <label class="cmd-cell cmd-wide" title="Galaxy-sighting freshness for bodies watched via the galaxy (passive, undetectable).">
+        <label class="cmd-cell" title="Galaxy-sighting freshness for bodies watched via the galaxy (passive, undetectable).">
           <span class="cmd-cap">Re-look</span>
           <input id="cadGalaxyHours" type="number" min="1" max="336" step="1" value="1" size="3">
           <span class="cmd-unit">h</span>
           <span class="cmd-note"><span class="via-galaxy">watch via galaxy</span> — sightings older than this re-enter the look plan</span>
         </label>
-        <div class="cmd-cell cmd-wide" title="Home watch: your OWN systems join the Look plan, and every look compares who lives there against the last one. A stranger who colonises next to your planet or moon is reported — they see your bodies from now on, they are one system away, and if their Danger is high the fleet-save you fly to that moon needs rethinking.">
+        <!-- Home watch has its OWN cadence, in hours, because it answers a
+             different question from Re-look: "who lives next to me" changes over
+             DAYS (somebody has to colonise), while a watched player's sighting
+             goes stale in an hour. Sharing Re-look's window put every own system
+             in the Look plan hourly to re-learn the same neighbours. 0 = off, the
+             same grammar as Patrol. -->
+        <label class="cmd-cell" title="Home watch: your OWN systems join the Look plan on this cadence, and every look compares who lives there against the last one. A stranger who colonises next to your planet or moon is reported once — they see your bodies from now on, they are one system away, and if their Danger is high the fleet-save you fly to that moon needs rethinking. 0 = off.">
           <span class="cmd-cap">Home</span>
-          <span class="chip-group seg" id="tgtHomeWatch" data-value="on">
-            <button type="button" data-value="on">on</button>
-            <button type="button" data-value="off">off</button>
-          </span>
-          <span class="cmd-note"><span class="via-galaxy">watch via galaxy</span> — walks your own systems and reports new neighbours</span>
-        </div>
+          <input id="tgtHomeHours" type="number" min="0" max="720" step="1" value="24" size="3">
+          <span class="cmd-unit">h</span>
+          <span class="cmd-note"><span class="via-galaxy">watch via galaxy</span> — re-checks who lives in your own systems this often · 0 = off</span>
+        </label>
         <div class="cmd-cell" title="When a moon's activity pattern suggests a parked fleet, the scan plan flags it first (spy to confirm — it never sends by itself). lone = only the moon is lit and the rest is confirmed quiet · newest = the moon holds the account's newest activity, or the last trace before it went quiet · any = any lit moon, even beside active planets (owner may be around).">
           <span class="cmd-cap">Moon strike</span>
           <span class="chip-group seg" id="tgtMoonStrike" data-value="newest">
@@ -1453,19 +1515,41 @@
         </div>
       </details>
     </div>
-    <div class="gv-card spy-back-card">
-      <!-- The head's right edge is a tool slot (Coords/Names toggle) — riding the
-           title line instead of spending the strip's first row on it. -->
-      <div class="gv-card-head"><span class="gv-card-title" title="Probers from the alerts you opened, within the selected date window.">Who's spying on you</span><span id="proximityCounts" style="color:#8a97a3;"></span><span id="proximityAlert" style="color:#e06c5f;font-weight:600;"></span><span id="proximityHeadTools" style="margin-left:auto;display:inline-flex;gap:6px;align-items:center;"></span></div>
-      <div id="proximityStrip"></div>
+    <!-- The DEFENSIVE column: who probed you (alerts) and who moved in next to
+         you (home watch), stacked. One question, two channels — so one column. -->
+    <div class="spy-side">
+      <!-- Who's spying on you — a fold, for the same reason as Home watch below
+           it: the normal state is "nobody probed me", which is one word, not a
+           panel. The bar carries the verdict (prober/alert counts + the ⚠ same-
+           system flag) and an unread-worthy count opens it by itself.
+           The date-range chips and the Coords/Names toggle live INSIDE the body,
+           not on the bar: controls in a <summary> fight the fold for the click. -->
+      <details class="gv-card spy-back-card spy-fold-card" id="proximityCard">
+        <summary class="spy-map-summary" title="Probers from the alerts you opened, within the selected date window.">
+          <span class="spy-map-summary-title">Who's spying on you</span>
+          <!-- Same-system flag FIRST: it is the verdict, and on a narrow bar
+               whatever comes last is what gets clipped. -->
+          <span class="spy-fold-state" id="proximityState"><span id="proximityAlert" style="color:#e06c5f;font-weight:600;"></span><span id="proximityCounts"></span></span>
+        </summary>
+        <div class="spy-fold-body">
+          <div id="proximityHeadTools" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px;"></div>
+          <div id="proximityStrip"></div>
+        </div>
+      </details>
+      <!-- Home watch (defensive mode) — our OWN systems and who else lives in
+           them. Shown while Home watch is on in the Settings block and we know at
+           least one own body. A DISCLOSURE: quiet is the normal state and has
+           nothing to read, so the standing picture stays folded behind the bar;
+           the bar's state word carries the verdict, and a fresh arrival unfolds
+           the card by itself (index.js repaintHomeWatch). -->
+      <details class="gv-card spy-home-card spy-fold-card" id="homeWatchCard" style="display:none;">
+        <summary class="spy-map-summary" title="Who shares the systems you live in — and who has just moved in. A neighbour next to your planet or moon sees your bodies and reaches them in minutes.">
+          <span class="spy-map-summary-title">Home watch</span>
+          <span class="spy-fold-state" id="homeWatchSummary"></span>
+        </summary>
+        <div class="spy-fold-body" id="homeWatchBody"></div>
+      </details>
     </div>
-  </div>
-  <!-- Home watch (defensive mode) — our OWN systems and who else lives in them.
-       Visible while Home watch is on in the scan prefs above and we know at
-       least one own body. New arrivals lead; the standing picture follows. -->
-  <div class="gv-card" id="homeWatchCard" style="display:none;">
-    <div class="gv-card-head"><span class="gv-card-title" title="Who shares the systems you live in — and who has just moved in. A stranger next to your planet or moon sees your bodies from now on and reaches them in minutes; if their Danger is high, the fleet-save you fly to that moon needs rethinking.">Home watch</span><span id="homeWatchSummary" style="color:#8a97a3;"></span></div>
-    <div id="homeWatchBody"></div>
   </div>
   <!-- Patrol (territory mode) — visible only while a patrol radius is set in
        the scan prefs below. Strikes here are the SAME signals the in-game Spy
@@ -1496,21 +1580,20 @@
   </details>
   <!-- Players card — the control line, the toggleable filters panel and the
        ranked table live in ONE gv-card zone (mirrors the Galaxy Viewer's
-       Results card). Control line: the two finders (player · alliance) on the
-       left, ⚙ Filters · row cap on the right; ⚙ opens its panel BELOW. The
-       map is no longer a chip here — it is the disclosure card ABOVE.
-       (Scan settings live in the watchlist card's footer, not here.) -->
+       Results card). Control line: ONE finder (nick · alliance name · tag — the
+       user has one question and shouldn't have to know which kind of thing they
+       are typing) on the left, ⚙ Filters · row cap on the right; ⚙ opens its
+       panel BELOW. The map is no longer a chip here — it is the disclosure card
+       ABOVE. (Scan settings live in the watchlist card's footer, not here.) -->
   <div class="gv-card">
   <div class="controls" style="align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
     <span class="gv-card-title">Players</span>
-    <input id="tgtSearch" type="search" class="tgt-find" placeholder="🔍 player name…"
-      title="Find any player by nickname — including ones the filters hide (with the reason why).">
-    <input id="tgtAllySearch" type="search" class="tgt-find" placeholder="🔍 alliance name / tag…"
-      title="Find every player of one alliance by its name or tag — the fast way to walk a whole alliance onto the watch list (and onto the map).">
+    <input id="tgtSearch" type="search" class="tgt-find" placeholder="find player, alliance or tag…"
+      title="One finder: type a nickname, an alliance name or an alliance tag. Matches include players the filters hide (with the reason why).">
     <button type="button" id="tgtWatchAll" class="spy-toolbtn" style="display:none;"
-      title="Put every player currently listed on the watch list."></button>
+      title="Put every player this search lists on the watch list."></button>
     <button type="button" id="tgtConfigToggle" class="spy-toolbtn" aria-expanded="false" aria-controls="tgtConfigCard"
-      title="Filters: hide inactive · watch list only · military range"
+      title="Filters: show scope · military range"
       style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;">⚙ Filters</button>
     <div class="chip-group seg" id="tgtLimitChips" data-value="100" title="How many rows to show.">
       <button type="button" data-value="50">top 50</button>
@@ -1519,22 +1602,39 @@
       <button type="button" data-value="0">all</button>
     </div>
   </div>
-  <div id="tgtConfigCard" style="display:none;background:#0b1118;border:1px solid #2b3a4d;border-radius:8px;padding:10px 14px;margin:-4px 0 14px;width:100%;box-sizing:border-box;font-size:13px;color:#8b99a8;">
-    <div class="chip-group" style="margin-bottom:10px;">
-      <button type="button" id="tgtHideInactive" class="on"
-        title="Hide inactive / long-inactive accounts.">😴 hide inactive</button>
-      <button type="button" id="tgtWatchedOnly"
-        title="Show only the players on your watch list.">⭐ watch list</button>
-      <button type="button" id="tgtMinersOnly"
-        title="Show only huddled empires — 3+ planets packed within 25 systems, at most 2 galaxies. The mirror image of the spread-out aggressor: miners optimise for short hauls, so one colony next door watches their whole account (and puts their moons in reach).">huddled (miners)</button>
+  <!-- Filters — the SAME command block as the scan Settings (keyword caption,
+       control, one-line note per cell), so the two panels on this tab read as
+       one interface instead of two. Was: a loose chip row + a bare
+       "Military: [n] – [n]" label in an inline-styled box. -->
+  <div id="tgtConfigCard" class="cmd-grid tgt-filters" style="display:none;">
+    <div class="cmd-cell" title="Which players the list may show at all.">
+      <span class="cmd-cap">Show</span>
+      <span class="chip-group">
+        <button type="button" id="tgtHideInactive" class="on"
+          title="Hide accounts the API flags inactive (7 d) or long-inactive (28 d).">hide inactive</button>
+        <button type="button" id="tgtWatchedOnly"
+          title="Show only the players on your watch list.">watch list</button>
+        <button type="button" id="tgtMinersOnly"
+          title="Only huddled empires: 3+ planets packed inside 25 systems, at most 2 galaxies — the miner pattern.">miners</button>
+      </span>
+      <!-- These three are not the whole truth about what the list drops, and a
+           filter you can't see is indistinguishable from a bug — so say it. -->
+      <span class="cmd-note">vacation, banned and admin accounts are always hidden · a search still finds them</span>
     </div>
-    <label style="margin-right:14px;">Military:
-      <input id="tgtMinMilitary" type="number" min="0" value="0" size="8"
-        title="Hide players whose military score is below this value.">
-      <span style="color:#666;">–</span>
-      <input id="tgtMaxMilitary" type="number" min="0" value="0" size="8"
-        title="Hide players whose military score is above this value (0 = no upper cap).">
-    </label>
+    <div class="cmd-cell" title="Keep only players whose military score falls in this range. Accepts 15M, 2.5b, 800k, 15kk or plain digits; leave a box empty for no bound.">
+      <span class="cmd-cap">Military</span>
+      <input id="tgtMinMilitary" type="text" class="tgt-num" inputmode="decimal"
+        autocomplete="off" placeholder="min" size="6"
+        title="Lower bound — e.g. 15M. Empty = no lower bound.">
+      <span class="cmd-unit">–</span>
+      <input id="tgtMaxMilitary" type="text" class="tgt-num" inputmode="decimal"
+        autocomplete="off" placeholder="max" size="6"
+        title="Upper bound — e.g. 2.5B. Empty = no upper bound.">
+      <!-- Reads back how the two boxes were UNDERSTOOD ("15M – 2.5B"), which is
+           where the shorthand earns its keep: the boxes keep exactly what was
+           typed, this line is the parse. -->
+      <span class="cmd-note" id="tgtMilitaryNote">any military score</span>
+    </div>
   </div>
   <div id="targetsContainer"></div>
   </div>

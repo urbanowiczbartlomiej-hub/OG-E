@@ -179,7 +179,17 @@ export const labelLines = ({ main, sub, hint }) => {
     lines.push({ text: sub, em: '0.5em', opacity: 0.85, marginTop: 2, letterSpacing: 0.5 });
   }
   if (hint != null && hint !== '') {
-    lines.push({ text: hint, em: '0.34em', opacity: 0.55, marginTop: 2, letterSpacing: 0.5 });
+    // The hint is one nowrap line across a ROUND rim, so its length — not just
+    // its size — decides whether it stays inside the button. Past this many
+    // characters it steps down a size instead of bleeding outside the outline.
+    // A backstop, not a licence: keep hints short at the call site.
+    lines.push({
+      text: hint,
+      em: hint.length > 18 ? '0.28em' : '0.34em',
+      opacity: 0.55,
+      marginTop: 2,
+      letterSpacing: 0.5,
+    });
   }
   return lines;
 };

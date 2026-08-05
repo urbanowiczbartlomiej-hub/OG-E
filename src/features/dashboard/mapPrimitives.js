@@ -15,7 +15,6 @@
 import { buildScanMapFromIndex } from '../../domain/apiOccupancy.js';
 import { buildThreatFarmField } from '../../domain/heatField.js';
 import { occupantStrength, honorRank } from '../../domain/players.js';
-import { DANGER_LABELS } from '../../domain/dangerScore.js';
 import { dangerColor } from '../../lib/dangerColor.js';
 import {
   STATUS_COLORS, STATUS_LABELS, STRENGTH_COLORS, STRENGTH_LABELS,
@@ -124,8 +123,9 @@ export const dangerBadge = (prof) => {
   const col = dangerColor(d);
   badge.style.cssText = `margin-left:6px;font-weight:700;color:${col};`;
   badge.textContent = prof.friendly ? 'D 0 friendly' : `D ${d}`;
-  const why = [DANGER_LABELS[prof.label], ...prof.reasons].filter(Boolean).join(' · ');
-  badge.title = `Danger ${d}/100 — ${why}`;
+  // Reasons only — the archetype name that used to lead this list said nothing
+  // the reasons don't say concretely (see domain/dangerScore's DANGER_LABELS).
+  badge.title = `Danger ${d}/100 — ${prof.reasons.join(' · ')}`;
   return badge;
 };
 
