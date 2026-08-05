@@ -102,6 +102,34 @@ export const withStage = async (fn) => {
 };
 
 /**
+ * Escape'uje wartości WSZYSTKICH atrybutów w poddrzewie.
+ *
+ * Musi tu być, bo serializator happy-doma nie escape'uje w atrybutach NICZEGO
+ * — ani `&`, ani `"`. Wystarczy jeden cudzysłów w `title=` (a komponenty OG-E
+ * cytują w podpowiedziach: „«Nh» = quiet at every look"), żeby atrybut urwał
+ * się w połowie, a jego reszta wylała się na stronę jako goły tekst.
+ *
+ * Podmieniamy w DOM przed serializacją: skoro serializator przepisuje wartość
+ * bajt w bajt, wstawiona encja trafia do wyjścia dosłownie i przeglądarka
+ * czyta ją poprawnie. Kolejność ma znaczenie — `&` musi iść pierwsze.
+ * @param {any} root
+ * @returns {void}
+ */
+const escapeAttrs = (root) => {
+  for (const el of [root, ...root.querySelectorAll('*')]) {
+    for (const name of el.getAttributeNames()) {
+      const v = el.getAttribute(name);
+      if (typeof v !== 'string' || !/[&"<>]/.test(v)) continue;
+      el.setAttribute(name, v
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;'));
+    }
+  }
+};
+
+/**
  * Sprząta element przed wypuszczeniem na stronę:
  * - zdejmuje `display:none` z korzenia (na dashboardzie karty startują ukryte
  *   i odsłania je repaint, którego tu nie ma),
@@ -123,6 +151,7 @@ export const out = (el) => {
   if (el.tagName === 'DETAILS') el.setAttribute('open', '');
   for (const x of el.querySelectorAll('[data-demo-drop]')) x.remove();
   for (const h of el.querySelectorAll('[style*="display: none"], [style*="display:none"]')) h.remove();
+  escapeAttrs(el);
   // Statyczna strona nie ma stanu: pola i przyciski są dekoracją, więc niech
   // nie łapią fokusu ani nie udają działających.
   for (const c of el.querySelectorAll('button, input, select, textarea')) {

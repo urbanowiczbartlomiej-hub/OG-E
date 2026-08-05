@@ -45,11 +45,10 @@ export default {
 
   demo: {
     id: 'spy-fab-faces',
-    caption: 'Trzy prawdziwe twarze przycisku Spy — napisy pochodzą z tego samego kodu, który maluje go w grze. Przycisk zawsze mówi, co zrobi NASTĘPNE tapnięcie, i nigdy nie twierdzi więcej, niż widać w sygnałach: „fresh landing?" to pytanie, nie werdykt.',
+    caption: 'Cztery prawdziwe twarze przycisku Spy — napisy pochodzą z tego samego kodu, który maluje go w grze. Przycisk zawsze mówi, co zrobi NASTĘPNE tapnięcie, i nigdy nie twierdzi więcej, niż widać w sygnałach: „fresh landing?" to pytanie, nie werdykt. Uzbrojony `Spy` pokazuje, do kogo poleci sonda, zanim ją wyślesz.',
   },
 
   screenshots: [
-    { id: 'spy', caption: 'Twarz „Spy" po uzbrojeniu: widzisz, do kogo lecisz — drugie tapnięcie wysyła sondę.' },
     { id: 'settings', caption: 'Ustawienia skanów: liczba sond, planety/księżyce, punkt startu, terminy odświeżania, tryb polowania na księżyce.' },
   ],
 

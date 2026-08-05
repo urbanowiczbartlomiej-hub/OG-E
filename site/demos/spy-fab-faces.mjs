@@ -7,8 +7,9 @@
 // signals support). So the docs must not PARAPHRASE it: each face below is the
 // real `renderSpy()` verdict, painted onto the real `createButton()` chrome.
 //
-// Three states, in the order a round actually goes: a queued galaxy look, a
-// catchable moon, and Home watch calling you back to the dashboard.
+// Four states, in the order a round actually goes: a queued galaxy look, a
+// catchable moon, a queued probe scan, and Home watch calling you back to the
+// dashboard.
 
 import { withStage } from './_kit.mjs';
 
@@ -36,6 +37,15 @@ const FACES = [
       strike: true,
       strikeTier: 'lone',
       remaining: 9,
+    },
+  },
+  {
+    label: 'a queued probe scan',
+    ctx: {
+      hasWatched: true,
+      proposal: 'probe',
+      candidate: { galaxy: 5, system: 233, position: 7, playerId: '303', bodyType: 1, name: 'Boro' },
+      remaining: 22,
     },
   },
   {
@@ -86,9 +96,14 @@ export const render = () => withStage(async ({ doc, load }) => {
 
     // Przycisk w grze jest `position:fixed` i przyklejony do rogu ekranu —
     // w dokumentacji ma stać w rzędzie. To JEDYNA rzecz, którą demo nadpisuje.
+    //
+    // `relative`, nie `static`: wnętrze przycisku (powierzchnia, etykieta,
+    // pierścień) jest pozycjonowane absolutnie względem hosta. Przy `static`
+    // host przestaje być dla nich układem odniesienia i całe wnętrze ucieka na
+    // rozmiar strony — zostają puste kółka.
     const el = doc.getElementById(id);
     if (!el) return;
-    el.style.position = 'static';
+    el.style.position = 'relative';
     el.style.right = '';
     el.style.bottom = '';
     el.style.zIndex = '';

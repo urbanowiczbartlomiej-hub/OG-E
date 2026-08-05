@@ -27,7 +27,7 @@
 // .github/workflows/pages.yml (patrz site/README.md § Publikacja).
 
 import { readdir, mkdir, writeFile, readFile, copyFile, rm } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -83,6 +83,29 @@ const paras = (arr) => arr.map((p) => `<p>${inline(p)}</p>`).join('\n');
 const list = (arr) => `<ul>${arr.map((x) => `<li>${inline(x)}</li>`).join('')}</ul>`;
 
 /**
+ * Wymiary PNG-a prosto z nagłówka (IHDR: szerokość i wysokość jako big-endian
+ * uint32 na bajtach 16..24). Osiem linijek zamiast dekodera obrazów — zero
+ * zależności, więc działa też na CI Pages.
+ *
+ * Po co: zrzuty ładują się leniwie i renderują w swoich proporcjach, więc bez
+ * podanych z góry wymiarów przeglądarka rezerwuje 0 px i strona skacze przy
+ * każdym doczytanym obrazku.
+ * @param {string} path
+ * @returns {{w: number, h: number} | null}
+ */
+const pngSize = (path) => {
+  try {
+    const b = readFileSync(path);
+    if (b.length < 24 || b.readUInt32BE(0) !== 0x89504e47) return null;
+    const w = b.readUInt32BE(16);
+    const h = b.readUInt32BE(20);
+    return w > 0 && h > 0 ? { w, h } : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
  * Zrzut/makieta: realny <img> jeśli plik istnieje, inaczej ramka-placeholder
  * (makieta do podmiany). Konwencja pliku: assets/shots/<slug>--<shotId>.png
  * — zrzuty są WSPÓLNE dla języków (podpisy są per język w treści).
@@ -93,8 +116,10 @@ const list = (arr) => `<ul>${arr.map((x) => `<li>${inline(x)}</li>`).join('')}</
 const shotFigure = (slug, shot) => {
   const file = `${slug}--${shot.id}.png`;
   const real = existsSync(join(SHOTS_DIR, file));
+  const size = real ? pngSize(join(SHOTS_DIR, file)) : null;
+  const dims = size ? ` width="${size.w}" height="${size.h}"` : '';
   const media = real
-    ? `<button class="shot-zoom" type="button" data-full="${BASE}assets/shots/${esc(file)}" data-caption="${esc(shot.caption)}"><img src="${BASE}assets/shots/${esc(file)}" alt="${esc(shot.caption)}" loading="lazy"></button>`
+    ? `<button class="shot-zoom" type="button" data-full="${BASE}assets/shots/${esc(file)}" data-caption="${esc(shot.caption)}"><img src="${BASE}assets/shots/${esc(file)}" alt="${esc(shot.caption)}"${dims} loading="lazy"></button>`
     : `<div class="shot-ph"><span class="shot-ph-tag">${esc(L.shotPlaceholder(shot.id))}</span></div>`;
   return `<figure class="shot${real ? '' : ' is-ph'}">${media}<figcaption>${inline(shot.caption)}</figcaption></figure>`;
 };

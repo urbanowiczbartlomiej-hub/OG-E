@@ -40,11 +40,10 @@ export default {
 
   demo: {
     id: 'spy-fab-faces',
-    caption: 'Three real faces of the Spy button — the wording comes from the same code that paints it in game. The button always says what the NEXT tap will do, and never claims more than the signals support: "fresh landing?" is a question, not a verdict.',
+    caption: 'Four real faces of the Spy button — the wording comes from the same code that paints it in game. The button always says what the NEXT tap will do, and never claims more than the signals support: "fresh landing?" is a question, not a verdict. An armed `Spy` shows who the probe will fly at before you send it.',
   },
 
   screenshots: [
-    { id: 'spy', caption: 'The "Spy" face once armed: you see who you are flying at — a second tap sends the probe.' },
     { id: 'settings', caption: 'Scan settings: probe count, planets/moons, launch point, refresh deadlines, moon-hunting mode.' },
   ],
 
