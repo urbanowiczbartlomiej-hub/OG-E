@@ -62,6 +62,27 @@ jednocześnie bramka publikacji. Podgląd wymaga serwera statycznego —
 przeglądarka nie ładuje tego layoutu z `file://`; `site:preview` odpala
 minimalny serwer z `serve.mjs`.
 
+## Żywe demo (`demos/`)
+
+Zamiast zrzutu funkcja może pokazać **prawdziwy komponent OG-E** wyrenderowany
+z `src/` w headless DOM (`site/demos/<id>.mjs`, wskazane przez `demo: {id,
+caption}` w treści). Dane są zawsze ZMYŚLONE — dokumentacja nie publikuje
+pozycji żadnego realnego gracza.
+
+Renderowanie potrzebuje `happy-dom`, czyli **devDependency**, a CI Pages
+celowo nie robi `npm ci` (generator jest zero-dependency). Dlatego markup jest
+**pre-renderowany i commitowany**:
+
+- lokalny build (masz `node_modules`) renderuje na żywo i zapisuje wynik do
+  `site/demos/_generated/<id>.html`;
+- CI (bez `happy-dom`) render pomija i **wkleja ten zacommitowany plik** — to on
+  ląduje na opublikowanej stronie;
+- gdy nie ma ani jednego, ani drugiego, figura po prostu nie powstaje (fail-soft).
+
+Praktyczny wniosek: **po zmianie komponentu zbuduj stronę i zacommituj to, co
+zmieni się w `_generated/`** — inaczej opublikowane demo zostanie na starej
+wersji. Build mówi o tym wprost (`↻ demo "…" odświeżone`).
+
 ## Publikacja (GitHub Pages)
 
 Strona jest hostowana na GitHub Pages pod

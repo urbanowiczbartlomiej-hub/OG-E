@@ -40,6 +40,9 @@ jobs:
           node-version-file: .nvmrc
 
       # Generator jest zero-dependency (czysty Node) — żadnego `npm ci`.
+      # Konsekwencja dla żywych demo: bez `happy-dom` nie renderują się tutaj,
+      # więc build wkleja pre-renderowany `site/demos/_generated/<id>.html`
+      # z repo (patrz site/README.md § Żywe demo).
       # Build przerywa (exit 1) przy niekompletnej/niepoprawnej treści,
       # więc walidacja schematu jest tu bramką publikacji.
       - name: Build site

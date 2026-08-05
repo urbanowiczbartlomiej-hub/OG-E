@@ -26,7 +26,7 @@
 // `dist/` jest gitignorowane: output buduje i wdraża na GitHub Pages
 // .github/workflows/pages.yml (patrz site/README.md § Publikacja).
 
-import { readdir, mkdir, writeFile, copyFile, rm } from 'node:fs/promises';
+import { readdir, mkdir, writeFile, readFile, copyFile, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -40,6 +40,7 @@ const CONTENT_DIR = join(ROOT, 'content');
 const ASSETS_DIR = join(ROOT, 'assets');
 const SHOTS_DIR = join(ASSETS_DIR, 'shots');
 const DEMOS_DIR = join(ROOT, 'demos');
+const DEMOS_OUT = join(DEMOS_DIR, '_generated');
 const DIST = join(ROOT, 'dist');
 
 /** @typedef {'pl'|'en'} Locale */
@@ -105,9 +106,19 @@ const shotFigure = (slug, shot) => {
 const DEMO_HTML = new Map();
 
 /**
- * Renderuje wszystkie demo z `site/demos/` użyte w treści. Gdy demo nie zbuduje
- * się (brak headless DOM, zmiana sygnatury komponentu) — zostaje puste i strona
- * po prostu pokazuje zrzuty; build nie umiera na elemencie dekoracyjnym.
+ * Renderuje wszystkie demo z `site/demos/` użyte w treści — a gdy się nie da,
+ * sięga po wersję ZACOMMITOWANĄ.
+ *
+ * Powód tej dwutorowości: demo renderuje prawdziwy komponent w headless DOM
+ * (`happy-dom`), a to devDependency — CI Pages celowo nie robi `npm ci`
+ * (generator jest zero-dependency), więc na Pages żywy render nigdy się nie uda.
+ * Dlatego udany render zapisuje markup do `site/demos/_generated/<id>.html`,
+ * który JEST w repo: to on ląduje na opublikowanej stronie. Efekt uboczny jest
+ * pożądany — nieodświeżone demo widać w `git status` jako niezacommitowaną
+ * zmianę, a sam markup jest czytelny w diffie.
+ *
+ * Gdy nie ma ani jednego, ani drugiego, demo zostaje puste i strona pokazuje
+ * same zrzuty; build nie umiera na elemencie dekoracyjnym.
  * @param {Iterable<string>} ids
  * @returns {Promise<string[]>} Ostrzeżenia (nie błędy).
  */
@@ -115,12 +126,24 @@ const renderDemos = async (ids) => {
   /** @type {string[]} */
   const warnings = [];
   for (const id of new Set(ids)) {
+    const cached = join(DEMOS_OUT, `${id}.html`);
     let html = '';
     try {
       const mod = await import(pathToFileURL(join(DEMOS_DIR, `${id}.mjs`)).href);
       html = typeof mod.render === 'function' ? String((await mod.render()) || '') : '';
     } catch {
       html = '';
+    }
+    if (html) {
+      // Zapis tylko przy realnej zmianie — bez tego każdy build brudziłby drzewo.
+      const prev = existsSync(cached) ? await readFile(cached, 'utf8') : null;
+      if (prev !== html) {
+        await mkdir(DEMOS_OUT, { recursive: true });
+        await writeFile(cached, html);
+        warnings.push(`↻ demo "${id}" odświeżone — zacommituj site/demos/_generated/${id}.html`);
+      }
+    } else if (existsSync(cached)) {
+      html = await readFile(cached, 'utf8');
     }
     if (html) DEMO_HTML.set(id, html);
     else warnings.push(`⚠ demo "${id}" nie wyrenderowało się — strona pokaże tylko zrzuty`);

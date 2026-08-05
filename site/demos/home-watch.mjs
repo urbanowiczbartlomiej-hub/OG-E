@@ -13,8 +13,11 @@
 // player's position — not the author's, not anyone else's.
 //
 // Fails soft: any problem (no headless DOM available, a renderer signature
-// change) returns '' and the generator falls back to its placeholder frame, so a
-// docs build never dies on a decorative element.
+// change) returns '' and the generator falls back to the pre-rendered
+// `_generated/home-watch.html` — and, failing that, to no figure at all — so a
+// docs build never dies on a decorative element. That committed copy is what
+// GitHub Pages actually serves, because CI has no `happy-dom`; see
+// site/README.md § Żywe demo.
 
 import { pathToFileURL } from 'node:url';
 import { join, dirname } from 'node:path';

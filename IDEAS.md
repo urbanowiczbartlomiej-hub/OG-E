@@ -80,3 +80,65 @@ Grounding note for whoever picks this up: this idea was itself a reaction to
 code" — the fix is the game-knowledge doc (the irreplaceable part) + the
 already-present carriers (CLAUDE.md invariants, CHANGELOG, this file), NOT a
 new narrative layer.
+
+---
+
+## 5. Live component demos across the whole docs site (v1 shipped in 1.57.0)
+
+The Home watch page (`site/content/spyglass-home.mjs`) does not illustrate itself
+with a screenshot. It declares `demo: { id: 'home-watch', caption }`, and
+`site/demos/home-watch.mjs` renders the **real component**
+(`features/dashboard/homeWatch.js`) over a fixture in a headless DOM at
+site-build time; `site/build.mjs` inlines the markup into the figure. The idea:
+do that for every feature page — replacing the screenshots we have and filling
+the pages that have none.
+
+**Why it is worth the work.** A screenshot rots the day the component changes and
+nobody notices; a generated one cannot drift, because it IS the component. It also
+solves two problems the screenshots have quietly: they carry real nicknames and
+real coordinates (ours and other players'), and re-taking two dozen of them by
+hand after a UI pass is work nobody will do. Generated demos are diffable, they
+cost nothing to refresh, and their data is invented by construction.
+
+**Blocker — SOLVED (pre-render + commit).** `.github/workflows/pages.yml` runs
+`node site/build.mjs` with **no `npm ci`** (the generator is deliberately
+zero-dependency), while a demo module imports `happy-dom`, a devDependency — so
+on Pages the live render never succeeds. The build now renders live when it can
+and writes the markup to `site/demos/_generated/<id>.html`, which is committed;
+CI inlines that file. Consequence for every new demo: **build the site and commit
+whatever changes under `_generated/` after touching a component** (the build
+prints `↻ demo "…" odświeżone`). Rejected alternatives: `npm ci` in the workflow
+(gives up the zero-dependency property) and a hand-written ~50-line DOM shim
+(must keep pace with what the components use — a maintenance trap).
+
+**Which components can be rendered as-is.** The pure-ish DOM builders that take
+every input as an argument and emit inline styles: `dashboard/homeWatch.js`
+(done), `dashboard/patrol.js`, `dashboard/cards.js` (watchlist cards),
+`dashboard/targets.js` (the Players table + a row's dossier),
+`dashboard/dossier.js`, `dashboard/mapPrimitives.js` (positions map / server
+map), `dashboard/legend.js`. The FAB faces are a second family worth doing: the
+paint is already pure (`sendSpy/pure.js` `renderSpy` → `shared/button.js`
+`labelLines`), so a demo can show the real Look / Strike / Home faces instead of
+prose describing them.
+
+**What needs a wrapper or is out of scope.** Anything that reads a store or
+`chrome.*` on render (the dashboard's `index.js` orchestration), and the in-game
+panels that graft onto OGame's own DOM (`whosSpyingPanel.js`, badges,
+`galaxyNavPanel.js`) — those need a fake host element with the game's classes,
+which is a bigger fixture but not impossible; do them last, if at all.
+
+**Rules any demo must keep.**
+- **Invented data only** — nicknames, alliance tags and coordinates that belong to
+  nobody. The docs must never publish a real player's position, ours included.
+- **Fail soft** — a docs build must not die on a decorative element (the current
+  generator already warns and falls back to the screenshots).
+- **Self-contained markup** — the site does not carry the dashboard stylesheet, so
+  a demo either relies on the component's inline styles or ships its own frame
+  (see the `frame()` helper in `site/demos/home-watch.mjs`).
+- **Theme.** The site has a light/dark switch; the components are dark-only, so a
+  demo sits in its own dark "product" scene (`.shot-demo`). If a future page wants
+  demos to follow the site theme, that is a component-level change, not a docs one
+  — do not fork the components' palette for the docs.
+- The `demo` field is OPTIONAL and language-independent (markup is shared, the
+  caption is per locale) — keep it that way; the EN mirror stays a caption
+  translation, not a second render.
