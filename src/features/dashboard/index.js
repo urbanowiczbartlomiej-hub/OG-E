@@ -51,7 +51,8 @@ import { EYE_GLYPH } from '../shared/buttonGlyphs.js';
 import { parseTargetPositions } from '../../domain/histogram.js';
 import { populatePositionFilter, renderColonyChart } from './colony.js';
 import { renderFreeRegions, renderServerMap, selectCandidate, resetFreeSelection, highlightPin, _resetFreeStreakForTest } from './freeStreak.js';
-import { chipValue, setChipValue, wireChips, setChipsEnabled, toggleChipOn, setToggleChip, wireToggleChip } from './chips.js';
+import { chipValue, setChipValue, wireChips, setChipsEnabled, toggleChipOn, setToggleChip, wireToggleChip, watchChip } from './chips.js';
+import { playerHoverTitle } from './format.js';
 import { digestProximityReports } from '../../domain/proximityDigest.js';
 import { bodyNameIndex, bodyNameFor, nearestBodyDistance } from '../../domain/bodies.js';
 import { renderWatchlistCards } from './cards.js';
@@ -1368,6 +1369,11 @@ const repaintHomeWatch = (nowMs) => {
     nowMs,
     linkBase: gameLinkBase() || undefined,
     onOpenPlayer: (pid) => openSpyglassFor(Number(pid)),
+    // A neighbour is a likely promotion right where you're already looking —
+    // the `+ watch` pill puts them on the scan list without a detour through
+    // the Players table.
+    watched: watchedPlayers,
+    onToggleWatch: (pid) => toggleWatched(pid),
   });
 
   // Reading IS the acknowledgement: stamp the arrivals we just painted so their
@@ -1532,8 +1538,10 @@ const toggleWatched = (id) => {
   repaintTargets();
   // Membership IS the map's body set — keep the open map + its chips honest.
   repaintSpyglassMap();
-  // The proximity digest shows a per-prober watch toggle (✓ / ⭐); an unwatch from
-  // the card / map / anywhere must refresh it too, or its button state goes stale.
+  // The proximity digest shows a per-prober watch pill; an unwatch from the
+  // card / map / anywhere must refresh it too, or its pill state goes stale.
+  // (repaintTargets already covers the Players table, the watchlist cards and
+  // "Your neighbours" — every other surface carrying the same pill.)
   renderProximityStrip();
 };
 
@@ -2310,15 +2318,8 @@ const renderProximityStrip = () => {
 
   const nameIdx = bodyNameIndex(ownBodies);
 
-  /** @param {string} label */
-  const seedSearch = (label) => {
-    if (!tgtSearch) return;
-    tgtSearch.value = label;
-    tgtSearch.dispatchEvent(new Event('input', { bubbles: true }));
-  };
-
-  // A 2-column grid (facts | actions) so the watch/dossier buttons line up in a
-  // fixed right-hand column across every row — no ragged, un-justified rows.
+  // A 2-column grid (facts | actions) so the watch pill lines up in a fixed
+  // right-hand column across every row — no ragged, un-justified rows.
   const grid = document.createElement('div');
   grid.style.cssText = 'display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 10px;align-items:center;';
 
@@ -2336,9 +2337,16 @@ const renderProximityStrip = () => {
     const label = e.name || `#${e.byPlayerId}`;
     const who = document.createElement('span');
     who.textContent = label;
-    who.style.cssText = 'cursor:pointer;color:#8fb8e0;font-weight:600;';
-    who.title = 'Find this player in the table below';
-    who.addEventListener('click', () => seedSearch(label));
+    // The NAME is the action now, same as every other clickable nick on the
+    // tab. It used to only seed the finder below (typed the nick into the
+    // search box and then did nothing visible: no scroll, no expansion) while
+    // a separate `dossier ▸` button beside it did the real thing. Two controls
+    // for one intent, and the discoverable one was the weaker — the button is
+    // gone, the name opens the profile directly.
+    who.style.cssText = 'cursor:pointer;color:#8fb8e0;font-weight:600;'
+      + 'text-decoration:underline dotted;';
+    who.title = playerHoverTitle(dangerProfiles.get(Number(e.byPlayerId)));
+    who.addEventListener('click', () => openSpyglassFor(e.byPlayerId));
     facts.appendChild(who);
     if (e.count > 1) facts.appendChild(document.createTextNode(` ×${e.count}`));
     if (e.sameSystem) {
@@ -2398,37 +2406,13 @@ const renderProximityStrip = () => {
     }
     facts.appendChild(sub);
 
+    // One action now — the shared watch pill (chips.js), the same element the
+    // Players table, "Your neighbours" and Patrol use. `toggleWatched` already
+    // repaints this strip, so the callback is bare.
     const actions = document.createElement('div');
     actions.style.cssText = 'display:flex;gap:6px;justify-content:flex-end;';
-    const watched = watchedPlayers.has(String(e.byPlayerId));
-    // Same watch-chip affordance as the table's chipCell (`+ watch` ⇄ `✓ watch`)
-    // — the bare ⭐ icon-button read as decoration, not as the same action.
-    const watch = document.createElement('button');
-    watch.type = 'button';
-    watch.textContent = watched ? '✓ watch' : '+ watch';
-    watch.style.cssText =
-      'font-size:11px;border-radius:999px;padding:1px 9px;cursor:pointer;white-space:nowrap;'
-      + (watched
-        ? 'border:1px solid #2f6f4f;background:#16352a;color:#7fd6a8;'
-        : 'border:1px solid #2a3a45;background:transparent;color:#8b95a0;');
-    watch.title = watched
-      ? 'Watching (on your scan list + the map) — click to remove'
-      : 'Watch this player (adds to the scan list + the map)';
-    watch.addEventListener('click', () => {
-      toggleWatched(String(e.byPlayerId));
-      renderProximityStrip();
-    });
-    actions.appendChild(watch);
-
-    const dossier = document.createElement('button');
-    dossier.type = 'button';
-    dossier.textContent = 'dossier ▸';
-    dossier.style.cssText =
-      'font-size:11px;border:1px solid #2b3a4d;background:#18222e;color:#9fb4c4;'
-      + 'border-radius:999px;padding:1px 8px;cursor:pointer;white-space:nowrap;';
-    dossier.title = 'Open this player in the table below';
-    dossier.addEventListener('click', () => openSpyglassFor(e.byPlayerId));
-    actions.appendChild(dossier);
+    actions.appendChild(watchChip(String(e.byPlayerId),
+      watchedPlayers.has(String(e.byPlayerId)), toggleWatched));
 
     grid.append(facts, actions);
   }

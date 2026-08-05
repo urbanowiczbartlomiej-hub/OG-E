@@ -19,7 +19,7 @@
 //
 // @ts-check
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   chipValue,
   setChipValue,
@@ -28,6 +28,7 @@ import {
   toggleChipOn,
   setToggleChip,
   wireToggleChip,
+  watchChip,
 } from '../../../src/features/dashboard/chips.js';
 
 /**
@@ -247,5 +248,45 @@ describe('toggle chips (independent booleans)', () => {
 
   it('wireToggleChip on a null element is a safe no-op', () => {
     expect(() => wireToggleChip(null, () => {})).not.toThrow();
+  });
+});
+
+// The shared `+ watch` action pill — now built in ONE place (chips.js) and
+// used from the Players table, "Who's spying on you", "Your neighbours" and
+// Patrol, instead of each surface carrying a hand-copied clone (one of which
+// had drifted to a different label and a decorative glyph).
+describe('watchChip', () => {
+  it('renders the outline "+ watch" label when not watched', () => {
+    const chip = watchChip('42', false);
+    expect(chip.textContent).toBe('+ watch');
+    expect(chip.title).toMatch(/^Watch this player/);
+  });
+
+  it('renders the filled "✓ watch" label when watched', () => {
+    const chip = watchChip('42', true);
+    expect(chip.textContent).toBe('✓ watch');
+    expect(chip.title).toMatch(/^Watching/);
+  });
+
+  it('a click calls onToggle with the id and stops the click from bubbling', () => {
+    const onToggle = vi.fn();
+    const row = document.createElement('div');
+    const rowClick = vi.fn();
+    row.addEventListener('click', rowClick);
+    const chip = watchChip('42', false, onToggle);
+    row.appendChild(chip);
+
+    chip.click();
+
+    expect(onToggle).toHaveBeenCalledWith('42');
+    // The row's own click (e.g. "open this player's profile") must never fire
+    // from a watch-pill tap — every caller relies on this to nest the pill
+    // inside a clickable row.
+    expect(rowClick).not.toHaveBeenCalled();
+  });
+
+  it('without an onToggle handler, a click is a safe no-op', () => {
+    const chip = watchChip('42', false);
+    expect(() => chip.click()).not.toThrow();
   });
 });

@@ -4,6 +4,35 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.58.0] — 2026-08-05
+
+### Changed
+
+- **"Home watch" is now "Your neighbours".** Same card, same data — the old
+  name described the watcher; the new one names what it's about. The matching
+  Settings cell is now labelled **Neighbours**.
+- **One `dossier ▸` button removed from "Who's spying on you".** The player
+  NAME now opens their profile directly (same behaviour as every other
+  clickable nick on the Spyglass tab). It used to only seed the nickname
+  finder below it — typing the name into the search box without scrolling or
+  expanding anything — while a separate button beside it did the real thing.
+  Two controls for one intent; the discoverable one was the weak one.
+- **`+ watch` is now one shared pill**, used by the Players table, "Who's
+  spying on you", "Your neighbours" and Patrol. It had drifted into three
+  hand-copied variants — Patrol's had a different label (`⭐ watch` /
+  `✓ watched`) and disabled itself once watched instead of toggling.
+- **`+ watch` added to "Your neighbours"** — both the "Moved in" arrivals and
+  the standing neighbour rows — so promoting a neighbour to the scan list no
+  longer needs a trip to the Players table.
+- **The Danger hover on a clickable name is now shared** between "Your
+  neighbours" and "Who's spying on you": the number, the reasons, then what a
+  click does. An absent profile now says "Danger unknown" instead of guessing.
+- **"Your neighbours" foot line removed** — the own-system count, the
+  "N with no neighbour" tally and the three-part colour legend. None of it
+  changed what you'd do next; the look-coverage number they qualified is still
+  on the card's own bar (`quiet · 3/5 fresh`).
+- **"Dossier" is now "profile" everywhere the UI shows the word.**
+
 ## [1.57.0] — 2026-08-05
 
 ### Added

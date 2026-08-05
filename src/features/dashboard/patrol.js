@@ -7,8 +7,8 @@
 //
 //   1. Is anything CATCHABLE in my grounds right now? — the strike list
 //      (same signals the in-game Spy FAB flags, so the two surfaces can
-//      never disagree), each with a one-tap "⭐ watch" that promotes the
-//      neighbour onto the watch-list (patrol spots → star → snipe).
+//      never disagree), each with a one-tap "+ watch" that promotes the
+//      neighbour onto the watch-list (patrol spots → watch → snipe).
 //   2. Is my patrol COVERAGE healthy? — the head summary: how many occupied
 //      systems the territory holds and how many have a fresh / stale / no
 //      look, so a glance says whether the grounds are actually being walked.
@@ -16,6 +16,8 @@
 // Pure DOM builder over plain data — every input arrives as an argument
 // (the index.js repaint computes them from the per-universe loads), no
 // storage reads here. Mirrors the cards.js / targets.js decomposition.
+
+import { watchChip } from './chips.js';
 
 /** Tier → the honest claim keyword (mirrors the FAB's renderSpy wording). */
 const TIER_CLAIM = {
@@ -138,18 +140,12 @@ export function renderPatrolCard({
       `${formatAge(sig.freshAgeMs)} ago · ${sig.quiet}/${sig.total} quiet`
       + (sig.coMoons ? ` · ${sig.coMoons + 1} moons lit` : '')));
 
+    // The shared watch pill (chips.js) — this row used to carry its own copy
+    // labelled `⭐ watch` / `✓ watched`, a different wording and a decorative
+    // glyph for the action every other Spyglass surface calls `+ watch`.
     if (pid) {
-      const watch = /** @type {HTMLButtonElement} */ (mk('button',
-        'margin-left:auto;font-size:11px;color:#9fb4c4;background:#12202e;'
-        + 'border:1px solid #2b3a4d;border-radius:999px;padding:1px 9px;cursor:pointer;white-space:nowrap;'));
-      const watched = watchedIds.has(pid);
-      watch.textContent = watched ? '✓ watched' : '⭐ watch';
-      watch.title = watched
-        ? 'Already on the watch-list'
-        : 'Add this neighbour to the watch-list (full dossier + probe plan)';
-      watch.type = 'button';
-      if (!watched) watch.addEventListener('click', () => onToggleWatch(pid));
-      else watch.disabled = true;
+      const watch = watchChip(pid, watchedIds.has(pid), onToggleWatch);
+      watch.style.marginLeft = 'auto';
       row.appendChild(watch);
     }
 

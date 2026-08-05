@@ -1443,7 +1443,7 @@
       <details class="spy-scan-prefs" id="spyScanPrefs">
         <summary class="spy-scan-summary">
           <span class="spy-scan-summary-title">Settings</span>
-          <span class="spy-scan-summary-hint">Probes · Scan · Probe from · Re-scan · Re-look · Home · Moon strike · Patrol</span>
+          <span class="spy-scan-summary-hint">Probes · Scan · Probe from · Re-scan · Re-look · Neighbours · Moon strike · Patrol</span>
         </summary>
         <div class="cmd-grid">
         <label class="cmd-cell" title="How many espionage probes the in-game scan button pre-arms per body.">
@@ -1481,14 +1481,14 @@
           <span class="cmd-unit">h</span>
           <span class="cmd-note"><span class="via-galaxy">watch via galaxy</span> — sightings older than this re-enter the look plan</span>
         </label>
-        <!-- Home watch has its OWN cadence, in hours, because it answers a
-             different question from Re-look: "who lives next to me" changes over
+        <!-- The neighbour watch has its OWN cadence, in hours, because it answers
+             a different question from Re-look: "who lives next to me" changes over
              DAYS (somebody has to colonise), while a watched player's sighting
              goes stale in an hour. Sharing Re-look's window put every own system
              in the Look plan hourly to re-learn the same neighbours. 0 = off, the
              same grammar as Patrol. -->
-        <label class="cmd-cell" title="Home watch: your OWN systems join the Look plan on this cadence, and every look compares who lives there against the last one. A stranger who colonises next to your planet or moon is reported once — they see your bodies from now on, they are one system away, and if their Danger is high the fleet-save you fly to that moon needs rethinking. 0 = off.">
-          <span class="cmd-cap">Home</span>
+        <label class="cmd-cell" title="Your neighbours: your OWN systems join the Look plan on this cadence, and every look compares who lives there against the last one. A stranger who colonises next to your planet or moon is reported once — they see your bodies from now on, they are one system away, and if their Danger is high the fleet-save you fly to that moon needs rethinking. 0 = off.">
+          <span class="cmd-cap">Neighbours</span>
           <input id="tgtHomeHours" type="number" min="0" max="720" step="1" value="24" size="3">
           <span class="cmd-unit">h</span>
           <span class="cmd-note"><span class="via-galaxy">watch via galaxy</span> — re-checks who lives in your own systems this often · 0 = off</span>
@@ -1516,12 +1516,13 @@
       </details>
     </div>
     <!-- The DEFENSIVE column: who probed you (alerts) and who moved in next to
-         you (home watch), stacked. One question, two channels — so one column. -->
+         you (your neighbours), stacked. One question, two channels — so one
+         column. -->
     <div class="spy-side">
-      <!-- Who's spying on you — a fold, for the same reason as Home watch below
-           it: the normal state is "nobody probed me", which is one word, not a
-           panel. The bar carries the verdict (prober/alert counts + the ⚠ same-
-           system flag) and an unread-worthy count opens it by itself.
+      <!-- Who's spying on you — a fold, for the same reason as Your neighbours
+           below it: the normal state is "nobody probed me", which is one word,
+           not a panel. The bar carries the verdict (prober/alert counts + the ⚠
+           same-system flag) and an unread-worthy count opens it by itself.
            The date-range chips and the Coords/Names toggle live INSIDE the body,
            not on the bar: controls in a <summary> fight the fold for the click. -->
       <details class="gv-card spy-back-card spy-fold-card" id="proximityCard">
@@ -1536,15 +1537,15 @@
           <div id="proximityStrip"></div>
         </div>
       </details>
-      <!-- Home watch (defensive mode) — our OWN systems and who else lives in
-           them. Shown while Home watch is on in the Settings block and we know at
-           least one own body. A DISCLOSURE: quiet is the normal state and has
-           nothing to read, so the standing picture stays folded behind the bar;
-           the bar's state word carries the verdict, and a fresh arrival unfolds
-           the card by itself (index.js repaintHomeWatch). -->
+      <!-- "Your neighbours" (the home-watch defensive mode) — our OWN systems and
+           who else lives in them. Shown while the Neighbours cadence is on in the
+           Settings block and we know at least one own body. A DISCLOSURE: quiet is
+           the normal state and has nothing to read, so the standing picture stays
+           folded behind the bar; the bar's state word carries the verdict, and a
+           fresh arrival unfolds the card by itself (index.js repaintHomeWatch). -->
       <details class="gv-card spy-home-card spy-fold-card" id="homeWatchCard" style="display:none;">
         <summary class="spy-map-summary" title="Who shares the systems you live in — and who has just moved in. A neighbour next to your planet or moon sees your bodies and reaches them in minutes.">
-          <span class="spy-map-summary-title">Home watch</span>
+          <span class="spy-map-summary-title">Your neighbours</span>
           <span class="spy-fold-state" id="homeWatchSummary"></span>
         </summary>
         <div class="spy-fold-body" id="homeWatchBody"></div>

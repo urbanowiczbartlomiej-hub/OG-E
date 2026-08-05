@@ -1,10 +1,11 @@
 // @ts-check
 
-// Spyglass → Home watch card — the dashboard face of the defensive mode
-// (domain/homeWatch). Every other Spyglass surface answers "who can I hit?";
-// this one answers "who can hit ME, from inside my own system?".
+// Spyglass → "Your neighbours" card — the dashboard face of the defensive mode
+// (domain/homeWatch, still named for the watcher that feeds it). Every other
+// Spyglass surface answers "who can I hit?"; this one answers "who can hit ME,
+// from inside my own system?".
 //
-// Four reads, in the order a defender needs them:
+// Three reads, in the order a defender needs them:
 //
 //   1. WHAT CHANGED — strangers who appeared in one of our systems since the
 //      previous look, worst Danger first, with the fleet-save consequence
@@ -18,8 +19,12 @@
 //      than any of them reaches alone. Two of them in one system of ours is not
 //      that: the in-system capability is already bought by either one. Four of
 //      our systems covered by three accounts that each hold one or two IS.
-//   4. THE QUIET REST — systems with no neighbour, and look coverage, as one
-//      foot line. Being alone is the expected state; it belongs in a count.
+//
+// There is deliberately NO foot line. It used to carry the own-system count and
+// a three-part legend for the visual codes; neither survived "what would I do
+// differently after reading this?" — the coverage number the "quiet" verdict
+// rests on is on the card's own BAR (`quiet · 3/5 fresh`), visible whether the
+// card is folded or not.
 //
 // Pure DOM builder over plain data — every input arrives as an argument (the
 // index.js repaint computes them from the per-universe loads), no storage reads
@@ -27,6 +32,8 @@
 
 import { rankHomeNeighbours, findHomeCoalitions } from '../../domain/homeWatch.js';
 import { dangerColor } from '../../lib/dangerColor.js';
+import { watchChip } from './chips.js';
+import { playerHoverTitle } from './format.js';
 
 /**
  * Danger from which an arrival is treated as a fleet-save problem rather than
@@ -124,8 +131,8 @@ const dangerPill = (prof) => {
 };
 
 /**
- * Render the Home watch card. The caller owns visibility (hidden while the mode
- * is off or the body inventory hasn't landed).
+ * Render the "Your neighbours" card. The caller owns visibility (hidden while
+ * the mode is off or the body inventory hasn't landed).
  *
  * @param {object} args
  * @param {HTMLElement | null} args.summaryEl  Head summary span.
@@ -145,29 +152,45 @@ const dangerPill = (prof) => {
  * @param {number} args.staleMs   Galaxy-look cadence (ms).
  * @param {number} args.nowMs
  * @param {string} [args.linkBase]
- * @param {((pid: string) => void)} [args.onOpenPlayer]  Jump to their dossier.
+ * @param {((pid: string) => void)} [args.onOpenPlayer]  Jump to their profile.
+ * @param {Set<string>} [args.watched]  Player ids already on the watch list.
+ * @param {((pid: string) => void)} [args.onToggleWatch]  Add/remove from it.
  * @returns {void}
  */
 export function renderHomeWatchCard({
   summaryEl, hostEl, systems, occupants, arrivals, names, alliances, danger,
-  scans, staleMs, nowMs, linkBase, onOpenPlayer,
+  scans, staleMs, nowMs, linkBase, onOpenPlayer, watched, onToggleWatch,
 }) {
   /** @param {string} pid */
   const nameOf = (pid) => (names && names[pid] && names[pid].name) || `#${pid}`;
   /** @param {string} pid */
   const profOf = (pid) => danger?.get(Number(pid));
 
-  // Look coverage — how much of the picture is current. Home watch can only
-  // report what we have browsed, so this qualifies every "quiet" it ever says.
+  /**
+   * The shared `+ watch` pill (chips.js), right-aligned on a row — or nothing
+   * while the caller wired no handler. Promoting a neighbour is a natural next
+   * move ON this card, so it saves a trip to the Players table to re-find a
+   * name already on screen.
+   * @param {string} pid
+   * @returns {HTMLElement | null}
+   */
+  const watchPill = (pid) => {
+    if (!onToggleWatch) return null;
+    const chip = watchChip(pid, !!watched?.has(pid), onToggleWatch);
+    chip.style.marginLeft = 'auto';
+    return chip;
+  };
+
+  // Look coverage — how much of the picture is current. This card can only
+  // report what we have browsed, so it qualifies every "quiet" it ever says.
+  // Only the FRESH count is needed: the bar reads `quiet · 3/5 fresh`, and the
+  // stale/never split was a foot-line-only distinction that left with the foot
+  // line — both mean "that system's answer is older than you think".
   let fresh = 0;
-  let stale = 0;
-  let never = 0;
   for (const key of systems) {
     const sc = scans ? scans[key] : undefined;
     const seen = sc ? Number(sc.scannedAt) : 0;
-    if (!(Number.isFinite(seen) && seen > 0)) never += 1;
-    else if (nowMs - seen <= staleMs) fresh += 1;
-    else stale += 1;
+    if (Number.isFinite(seen) && seen > 0 && nowMs - seen <= staleMs) fresh += 1;
   }
 
   // ── The bar's state word ─────────────────────────────────────────────────
@@ -216,13 +239,17 @@ export function renderHomeWatchCard({
       const who = mk('span',
         `color:${dangerHue(prof?.danger, '#cfe6f5')};font-weight:600;`
         + 'cursor:pointer;text-decoration:underline dotted;', nameOf(pid));
-      who.title = 'Open this player in the Players list below';
+      // Same hover as the neighbour rows below and the prober rows in "Who's
+      // spying on you" — one clickable nick, one explanation.
+      who.title = playerHoverTitle(prof);
       if (onOpenPlayer) who.addEventListener('click', () => onOpenPlayer(pid));
       row.appendChild(who);
       const pill = dangerPill(prof);
       if (pill) row.appendChild(pill);
       else row.appendChild(mk('span', 'color:#8a97a3;', 'Danger unknown'));
       row.appendChild(mk('span', 'color:#9fb4c4;', `seen ${formatAge(nowMs - (a.atMs || nowMs))} ago`));
+      const wp = watchPill(pid);
+      if (wp) row.appendChild(wp);
       hostEl.appendChild(row);
     }
 
@@ -289,10 +316,7 @@ export function renderHomeWatchCard({
     const who = mk('span', `color:${col};font-weight:600;`
       + (onOpenPlayer ? 'cursor:pointer;text-decoration:underline dotted;' : ''), nameOf(n.playerId));
     const prof = profOf(n.playerId);
-    who.title = prof
-      ? `Danger ${prof.danger.toFixed(2)}${prof.reasons?.length ? `\n${prof.reasons.join('\n')}` : ''}`
-        + '\nClick for the full dossier.'
-      : 'Danger unknown — no public-statistics profile yet. Click for the dossier.';
+    who.title = playerHoverTitle(prof);
     if (onOpenPlayer) who.addEventListener('click', () => onOpenPlayer(n.playerId));
     row.appendChild(who);
     // Alliance tag: dim on its own, LIT when this alliance fields two or more
@@ -326,6 +350,8 @@ export function renderHomeWatchCard({
       where.appendChild(coordEl(s, linkBase));
     });
     row.appendChild(where);
+    const wp = watchPill(n.playerId);
+    if (wp) row.appendChild(wp);
     list.appendChild(row);
   }
   hostEl.appendChild(list);
@@ -365,25 +391,7 @@ export function renderHomeWatchCard({
       + 'whose members reach further together than alone.'));
   }
 
-  // ── 4. The quiet rest + look coverage + the legend, in the foot ─────────
-  // Everything that is NOT news, compressed: how many systems you have to
-  // yourself, and how current the picture is (Home watch can only report what
-  // has been browsed, so "quiet" without this would be a claim it can't back).
-  if (systems.size) {
-    const withNeighbour = new Set(neighbours.flatMap((n) => n.systems)).size;
-    const bits = [`${systems.size} own system${systems.size === 1 ? '' : 's'}`];
-    const alone = systems.size - withNeighbour;
-    if (alone > 0) bits.push(`${alone} with no neighbour`);
-    if (stale) bits.push(`${stale} look${stale === 1 ? '' : 's'} stale`);
-    if (never) bits.push(`${never} never looked`);
-    hostEl.appendChild(mk('div', 'margin-top:8px;font-size:11px;color:#66788a;',
-      bits.join(' · ')));
-    // The legend names the two visual codes once, in words, so neither depends on
-    // a hover to be understood.
-    if (neighbours.length) {
-      hostEl.appendChild(mk('div', 'margin-top:2px;font-size:11px;color:#66788a;',
-        'edge colour = Danger · ×N = in N of your systems · lit tag = their alliance '
-        + 'reaches further together than alone'));
-    }
-  }
+  // No foot line — see the module header. The own-system count, the "N with no
+  // neighbour" tally and the three-part legend all lived here; the look
+  // coverage they qualified is on the BAR, readable without opening the card.
 }

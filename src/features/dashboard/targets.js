@@ -20,6 +20,7 @@ import {
 import { isMinerProfile } from '../../domain/dangerScore.js';
 import { dangerColor } from '../../lib/dangerColor.js';
 import { compact } from './format.js';
+import { watchChip } from './chips.js';
 import { buildDossier } from './dossier.js';
 
 /**
@@ -143,43 +144,6 @@ function headCell(text, align, opts = {}) {
     th.textContent = text;
   }
   return th;
-}
-
-/**
- * Build the "watch" pill (replaces the old ⭐). Outline `+ watch` = not on
- * the scan list; filled `✓ watch` = on the in-game scan FAB's watch-list. (The
- * ↻ whole-player re-scan moved to the dossier's Watch-via row, beside the
- * probes toggle it flags for.) On wide screens it sits in its own column
- * ({@link chipCell}); on narrow ones it stacks above the nick inside the
- * Player cell — same element either way.
- * @param {string} id
- * @param {boolean} watched
- * @param {(id: string) => void} [onToggle]
- * @returns {HTMLSpanElement}
- */
-function watchChip(id, watched, onToggle) {
-  const chip = document.createElement('span');
-  chip.textContent = watched ? '✓ watch' : '+ watch';
-  // .hit-pad: ≥36px touch hit-box (coarse pointers only) without growing
-  // the visible pill.
-  chip.className = 'hit-pad';
-  chip.style.cssText =
-    'display:inline-block;font-size:11px;border-radius:11px;padding:2px 9px;'
-    + 'cursor:pointer;user-select:none;white-space:nowrap;';
-  if (watched) {
-    chip.style.background = '#16352a';
-    chip.style.border = '1px solid #2f6f4f';
-    chip.style.color = '#7fd6a8';
-    chip.title = 'Watching (on your scan list + the map) — click to remove';
-  } else {
-    chip.style.background = 'transparent';
-    chip.style.border = '1px solid #2a3a45';
-    chip.style.color = '#8b95a0';
-    chip.title = 'Watch this player (adds to the scan list + the map)';
-  }
-  // Stop the click bubbling to the row (whose click toggles the dossier).
-  if (onToggle) chip.addEventListener('click', (e) => { e.stopPropagation(); onToggle(id); });
-  return chip;
 }
 
 /**

@@ -443,7 +443,7 @@ const buildRow = (p, ctx) => {
   const actTd = el('td');
   const acts = el('div', 'oge-sb-acts');
   const dossierBtn = el('button', 'oge-sb-btn', 'Spyglass');
-  dossierBtn.title = "Open this player's dossier in the OG-E dashboard (Spyglass tab)";
+  dossierBtn.title = "Open this player's profile in the OG-E dashboard (Spyglass tab)";
   dossierBtn.addEventListener('click', () => openSpyglass(p.byPlayerId));
   acts.appendChild(dossierBtn);
   actTd.appendChild(acts);
