@@ -342,7 +342,10 @@ export const renderPositionsMap = ({ hostEl, galaxies, systems, bodies, onPlayer
   const stride = POS * posPx + gap;
   const plotH = galaxies * stride - gap + topPad;
   const W = hostEl.clientWidth || 700;
-  const cellW = (W - gutter) / systems;
+  // Both gutters, not just the left one: the galaxy label is mirrored on the
+  // RIGHT edge too, so a body sitting in the last systems can be read back to its
+  // galaxy without tracking a line all the way across the field.
+  const cellW = (W - 2 * gutter) / systems;
 
   const wrap = document.createElement('div');
   wrap.style.cssText = `position:relative;height:${plotH}px;`;
@@ -358,18 +361,22 @@ export const renderPositionsMap = ({ hostEl, galaxies, systems, bodies, onPlayer
   for (let g = 1; g <= galaxies; g++) {
     const bandTop = topPad + (g - 1) * stride;
     const band = document.createElement('div');
-    band.style.cssText = `position:absolute;left:${gutter}px;right:0;top:${bandTop}px;`
+    band.style.cssText = `position:absolute;left:${gutter}px;right:${gutter}px;top:${bandTop}px;`
       + `height:${POS * posPx}px;background:rgba(122,160,200,.07);pointer-events:none;`;
     wrap.appendChild(band);
     const yMid = bandTop + (POS * posPx) / 2;
-    const lab = document.createElement('div');
-    lab.textContent = `G${g}`;
-    lab.style.cssText = `position:absolute;left:0;top:${yMid - 6}px;font:10px monospace;color:#7a8894;`;
-    wrap.appendChild(lab);
+    for (const side of ['left', 'right']) {
+      const lab = document.createElement('div');
+      lab.textContent = `G${g}`;
+      lab.style.cssText = `position:absolute;${side}:0;top:${yMid - 6}px;`
+        + `width:${gutter - 4}px;text-align:${side === 'left' ? 'left' : 'right'};`
+        + 'font:10px monospace;color:#7a8894;pointer-events:none;';
+      wrap.appendChild(lab);
+    }
     for (const pos of [1, POS]) {
       const y = bandTop + (pos - 0.5) * posPx;
       const line = document.createElement('div');
-      line.style.cssText = `position:absolute;left:${gutter}px;right:0;top:${y}px;height:1px;`
+      line.style.cssText = `position:absolute;left:${gutter}px;right:${gutter}px;top:${y}px;height:1px;`
         + 'background:#2a3d52;pointer-events:none;';
       wrap.appendChild(line);
     }

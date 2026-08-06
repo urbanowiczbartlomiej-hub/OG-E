@@ -54,12 +54,24 @@ const VERDICT_COLORS = /** @type {Record<string, string>} */ ({
   scan: '#8b95a0',
 });
 
-// OGame ALLIANCE-highscore deep link (category=2, points). `searchRelId` jumps
-// straight to a given alliance's page. Local to this feature — the only place
-// that links there (cf. gameDom's single-consumer rule). Empty base → no link.
-const ALLY_HIGHSCORE_PATH = '/game/index.php?page=highscore&category=2&type=0';
+// OGame ALLIANCE-highscore deep link (category=2 = alliances, type=0 = points).
+// Local to this feature — the only place that links there (cf. gameDom's
+// single-consumer rule). Empty base → no link.
+//
+// The router form matters. OGame's own header link still emits the LEGACY
+// `page=highscore&site=…&category=…` alias, but the live page — and every other
+// deep link OG-E builds (galaxy) — is the component router:
+// `page=ingame&component=highscore&site=1&category=2`. Use the component form so
+// the tab that opens is guaranteed to render the ranking, which is the whole
+// point: `features/allianceClassIngest` harvests `span.alliance_class` off the
+// rows that page renders (the XML API omits the alliance class entirely).
+//
+// `site` = the ranking PAGE number; `searchRelId` jumps straight to a given
+// alliance and picks the page holding it, so the two are mutually exclusive —
+// with an id we send searchRelId, without one we ask for page 1.
+const ALLY_HIGHSCORE_PATH = '/game/index.php?page=ingame&component=highscore&category=2&type=0';
 const allyRankingUrl = (/** @type {string|undefined} */ base, /** @type {string|undefined} */ id = '') =>
-  base ? `${base}${ALLY_HIGHSCORE_PATH}${id ? `&searchRelId=${id}` : ''}` : '';
+  base ? `${base}${ALLY_HIGHSCORE_PATH}${id ? `&searchRelId=${id}` : '&site=1'}` : '';
 
 /**
  * Render the watchlist card strip into `hostEl` (label + responsive grid).
@@ -100,18 +112,17 @@ const allyRankingUrl = (/** @type {string|undefined} */ base, /** @type {string|
  */
 export function renderWatchlistCards(a) {
   if (!a.hostEl) return;
+  // The cards grid is its OWN scroll box (CSS max-height), and this function
+  // rebuilds it from scratch — which happens on every repaint, including the one
+  // a card's own footer chip triggers. Carry the offset over, or a click on the
+  // twentieth card silently throws the user back to the first one.
+  const keepScroll = a.hostEl.querySelector('.watch-cards-grid')?.scrollTop || 0;
   a.hostEl.textContent = '';
 
   const ids = [...a.watchedIds];
-  // gv-card-head/-title: the host sits inside a Spyglass gv-card zone now, so
-  // the label speaks the same card-title language as the Galaxy Viewer's cards.
-  const head = document.createElement('div');
-  head.className = 'gv-card-head';
-  const label = document.createElement('span');
-  label.className = 'gv-card-title';
-  label.textContent = ids.length ? `Watchlist (${ids.length})` : 'Watchlist';
-  head.appendChild(label);
-  a.hostEl.appendChild(head);
+  // No head here: the card's own bar already says "Watch list" and carries the
+  // count (dashboard.html #spyWatchState), so a second title inside the card was
+  // the same words twice.
 
   // Unknown-alliance-class nudge (Etap: warrior-alliance source). A watched
   // player whose alliance class we've never harvested has the warrior-alliance
@@ -339,4 +350,8 @@ export function renderWatchlistCards(a) {
 
     grid.appendChild(card);
   }
+
+  // Restore the scroll offset now that the grid holds its cards (assigning it to
+  // an empty grid would clamp to 0). A shorter list than before clamps by itself.
+  if (keepScroll) grid.scrollTop = keepScroll;
 }

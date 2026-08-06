@@ -34,12 +34,13 @@ describe('renderWatchlistCards', () => {
     const cards = a.hostEl.querySelectorAll('.watch-card');
     expect(cards.length).toBe(1);
     expect(cards[0].textContent).toMatch(/Nobody watched yet/i);
-    // The label reads "Watchlist" with no count (now a gv-card-title, matching
-    // the Galaxy Viewer's card headers).
-    expect(a.hostEl.querySelector('.gv-card-title')?.textContent).toBe('Watchlist');
+    // No title inside the host: the card's own bar carries the name AND the
+    // count (dashboard.html #spyWatchState), so a head here was the same words
+    // twice.
+    expect(a.hostEl.querySelector('.gv-card-title')).toBeNull();
   });
 
-  it('renders one card per watched player with name + verdict, labelled with the count', () => {
+  it('renders one card per watched player with name + verdict', () => {
     const a = baseArgs({
       watchedIds: new Set(['7']),
       candidates: [{ id: '7', name: 'Yoxid', ships: 890000 }],
@@ -51,7 +52,6 @@ describe('renderWatchlistCards', () => {
     expect(cards.length).toBe(1);
     expect(cards[0].textContent).toContain('Yoxid');
     expect(cards[0].textContent).toContain('RAID NOW');
-    expect(a.hostEl.querySelector('.gv-card-title')?.textContent).toBe('Watchlist (1)');
   });
 
   it('clicking a card opens that player (deep-link, no watchlist mutation)', () => {
@@ -94,7 +94,9 @@ describe('renderWatchlistCards — unknown alliance-class nudge', () => {
     expect(link).toBeTruthy();
     const href = link?.getAttribute('href') || '';
     expect(href).toContain(linkBase);
-    expect(href).toContain('page=highscore');
+    // The MODERN router form — the legacy  alias is not what the
+    // live highscore page uses, and this link exists to make that page render.
+    expect(href).toContain('page=ingame&component=highscore');
     expect(href).toContain('category=2');
   });
 

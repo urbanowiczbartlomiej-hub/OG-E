@@ -20,19 +20,20 @@
 //      that: the in-system capability is already bought by either one. Four of
 //      our systems covered by three accounts that each hold one or two IS.
 //
-// There is deliberately NO foot line. It used to carry the own-system count and
-// a three-part legend for the visual codes; neither survived "what would I do
-// differently after reading this?" — the coverage number the "quiet" verdict
-// rests on is on the card's own BAR (`quiet · 3/5 fresh`), visible whether the
-// card is folded or not.
+// There is deliberately NO foot line and no head line. Both used to carry
+// summaries of the rows right below them (an own-system count, a legend of the
+// visual codes, a `quiet · 3/5 fresh` coverage word); none survived "what would
+// I do differently after reading this?" while the rows themselves were on
+// screen. The one number worth reading with the panel CLOSED — how many are new
+// — rides its pill in the dock.
 //
 // Pure DOM builder over plain data — every input arrives as an argument (the
 // index.js repaint computes them from the per-universe loads), no storage reads
 // here. Mirrors the patrol.js / cards.js decomposition.
 
 import { rankHomeNeighbours, findHomeCoalitions } from '../../domain/homeWatch.js';
-import { dangerColor } from '../../lib/dangerColor.js';
-import { watchChip } from './chips.js';
+import { dangerColor01 } from '../../lib/dangerColor.js';
+import { watchChip, allianceTagChip, countPill } from './chips.js';
 import { playerHoverTitle } from './format.js';
 
 /**
@@ -43,18 +44,8 @@ import { playerHoverTitle } from './format.js';
  */
 const FS_WARN_DANGER = 0.5;
 
-/**
- * Colour for a 0..1 danger fraction — `lib/dangerColor` works in the 0..100 the
- * rest of the app rounds to, and handing it the raw fraction painted D 0.91 the
- * same safe green as D 0.02 (every neighbour looked harmless). One conversion,
- * in one place.
- * @param {number | null | undefined} d  Danger 0..1.
- * @param {string} [unknown]  Colour when we hold no profile.
- * @returns {string}
- */
-const dangerHue = (d, unknown = '#cfd6dd') => (
-  typeof d === 'number' && Number.isFinite(d) ? dangerColor(Math.round(d * 100)) : unknown
-);
+/** Colour for a 0..1 danger fraction — see `lib/dangerColor.dangerColor01`. */
+const dangerHue = dangerColor01;
 
 /** Compact age like the patrol card's ("3m", "2h", "1d"). @param {number} ms */
 const formatAge = (ms) => {
@@ -83,18 +74,25 @@ const mk = (tag, css, text) => {
  * @param {string} coord
  * @param {string} [linkBase]
  * @param {string} [css]
+ * @param {string} [label]  Shown instead of the coord (the Coords/Names switch).
  * @returns {HTMLElement}
  */
-const coordEl = (coord, linkBase, css = 'color:#9fd0f0;text-decoration:none;') => {
+const coordEl = (coord, linkBase, css = 'color:#9fd0f0;text-decoration:none;', label = '') => {
   const [g, s, p] = coord.split(':');
-  const el = mk(linkBase ? 'a' : 'span', css, coord);
+  // `label` is the Coords/Names switch: OUR system read as the body we hold there.
+  // The coord never disappears — it moves into the hover, so the link still says
+  // where it goes.
+  const el = mk(linkBase ? 'a' : 'span', css, label || coord);
   if (linkBase) {
     const a = /** @type {HTMLAnchorElement} */ (el);
     a.href = `${linkBase}/game/index.php?page=ingame&component=galaxy&galaxy=${g}&system=${s}`
       + (p ? `&position=${p}` : '');
     a.target = '_blank';
     a.rel = 'noopener';
-    a.title = 'Open this system in the galaxy view';
+    a.title = label ? `${coord} — open this system in the galaxy view`
+      : 'Open this system in the galaxy view';
+  } else if (label) {
+    el.title = coord;
   }
   return el;
 };
@@ -135,7 +133,6 @@ const dangerPill = (prof) => {
  * the mode is off or the body inventory hasn't landed).
  *
  * @param {object} args
- * @param {HTMLElement | null} args.summaryEl  Head summary span.
  * @param {HTMLElement | null} args.hostEl     Body container.
  * @param {Set<string>} args.systems           Our systems ("g:s").
  * @param {Record<string, Array<{playerId: string, position: number}>>} args.occupants
@@ -148,8 +145,9 @@ const dangerPill = (prof) => {
  * @param {Record<string, { name?: string, tag?: string }>} [args.alliances]
  *   alliances.xml (id → {name, tag}) — the `[TAG]` chip on a neighbour row.
  * @param {Map<number, import('../../domain/dangerScore.js').DangerProfile>} [args.danger]
- * @param {Record<string, { scannedAt?: number }>} args.scans
- * @param {number} args.staleMs   Galaxy-look cadence (ms).
+ * @param {Record<string, string>} [args.systemNames]  OUR system ("g:s") → the
+ *   body/bodies we hold there, by name. Set only while the Coords/Names switch
+ *   says names; empty = show coordinates.
  * @param {number} args.nowMs
  * @param {string} [args.linkBase]
  * @param {((pid: string) => void)} [args.onOpenPlayer]  Jump to their profile.
@@ -158,8 +156,8 @@ const dangerPill = (prof) => {
  * @returns {void}
  */
 export function renderHomeWatchCard({
-  summaryEl, hostEl, systems, occupants, arrivals, names, alliances, danger,
-  scans, staleMs, nowMs, linkBase, onOpenPlayer, watched, onToggleWatch,
+  hostEl, systems, occupants, arrivals, names, alliances, danger, systemNames,
+  nowMs, linkBase, onOpenPlayer, watched, onToggleWatch,
 }) {
   /** @param {string} pid */
   const nameOf = (pid) => (names && names[pid] && names[pid].name) || `#${pid}`;
@@ -181,29 +179,9 @@ export function renderHomeWatchCard({
     return chip;
   };
 
-  // Look coverage — how much of the picture is current. This card can only
-  // report what we have browsed, so it qualifies every "quiet" it ever says.
-  // Only the FRESH count is needed: the bar reads `quiet · 3/5 fresh`, and the
-  // stale/never split was a foot-line-only distinction that left with the foot
-  // line — both mean "that system's answer is older than you think".
-  let fresh = 0;
-  for (const key of systems) {
-    const sc = scans ? scans[key] : undefined;
-    const seen = sc ? Number(sc.scannedAt) : 0;
-    if (Number.isFinite(seen) && seen > 0 && nowMs - seen <= staleMs) fresh += 1;
-  }
-
-  // ── The bar's state word ─────────────────────────────────────────────────
-  // Two words at most: this is what the FOLDED card says, and folded is the
-  // normal state (quiet neighbourhoods have nothing to read). News first —
-  // otherwise the honest quiet reading, qualified by look coverage so "quiet"
-  // can never mean "we have not looked".
-  if (summaryEl) {
-    summaryEl.textContent = arrivals.length
-      ? `${arrivals.length} new`
-      : `quiet · ${fresh}/${systems.size} fresh`;
-    summaryEl.classList.toggle('hot', arrivals.length > 0);
-  }
+  // (There is no state line any more: the panel's pill carries the arrival count
+  // while it is closed, and the look-coverage word it used to add — `quiet · 3/5
+  // fresh` — was a summary of rows the reader is already looking at.)
 
   if (!hostEl) return;
   hostEl.textContent = '';
@@ -322,32 +300,21 @@ export function renderHomeWatchCard({
     // Alliance tag: dim on its own, LIT when this alliance fields two or more
     // members among our systems (see the coalition lines below).
     if (n.allianceId) {
-      const tag = allianceTag(n.allianceId, alliances);
-      if (tag) {
-        const inCoalition = coalitionAllies.has(n.allianceId);
-        row.appendChild(mk('span',
-          `font-size:10px;letter-spacing:.03em;border-radius:3px;padding:0 4px;`
-          + (inCoalition
-            ? 'color:#e0b45f;border:1px solid #e0b45f66;background:#e0b45f14;'
-            : 'color:#7f8ea0;border:1px solid #2a3542;'),
-          tag));
-      }
+      const chip = allianceTagChip(allianceTag(n.allianceId, alliances),
+        coalitionAllies.has(n.allianceId));
+      if (chip) row.appendChild(chip);
     }
     // Reach — how many of OUR systems they are inside. Only shown past one,
     // where it stops being ordinary and starts being the story.
     if (n.systems.length > 1) {
-      const reach = mk('span',
-        `font-size:11px;font-weight:700;color:${col};border:1px solid ${col}66;`
-        + `background:${col}1a;border-radius:999px;padding:0 6px;`,
-        `×${n.systems.length}`);
-      reach.title = `Inside ${n.systems.length} of your systems — their fleet is already `
-        + 'in range of a moon of yours in each of them.';
-      row.appendChild(reach);
+      row.appendChild(countPill(`×${n.systems.length}`, col,
+        `Inside ${n.systems.length} of your systems — their fleet is already `
+        + 'in range of a moon of yours in each of them.'));
     }
     const where = mk('span', 'display:inline-flex;gap:6px;flex-wrap:wrap;min-width:0;');
     n.systems.forEach((s, i) => {
       if (i) where.appendChild(mk('span', 'color:#5d6b78;', '·'));
-      where.appendChild(coordEl(s, linkBase));
+      where.appendChild(coordEl(s, linkBase, undefined, systemNames?.[s]));
     });
     row.appendChild(where);
     const wp = watchPill(n.playerId);

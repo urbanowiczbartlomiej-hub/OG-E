@@ -157,3 +157,49 @@ export const watchChip = (id, watched, onToggle) => {
   if (onToggle) chip.addEventListener('click', (e) => { e.stopPropagation(); onToggle(id); });
   return chip;
 };
+
+/**
+ * The alliance `[TAG]` chip on a player row — dim by default, LIT when the
+ * caller has a reason to draw the eye to that alliance (the "Your neighbours"
+ * card lights the alliances that reach further together than any member does
+ * alone). Display-only.
+ *
+ * One builder because the same chip rides two surfaces now ("Your neighbours"
+ * rows and the "Who's spying on you" prober rows) and hand-copied variants had
+ * already started to drift in the rest of the dashboard.
+ *
+ * @param {string} tag  Alliance tag (or name) — nothing renders for an empty one.
+ * @param {boolean} [lit]
+ * @param {string} [title]
+ * @returns {HTMLSpanElement | null}
+ */
+export const allianceTagChip = (tag, lit = false, title) => {
+  if (!tag) return null;
+  const chip = document.createElement('span');
+  chip.textContent = tag;
+  chip.style.cssText = 'font-size:10px;letter-spacing:.03em;border-radius:3px;padding:0 4px;'
+    + (lit
+      ? 'color:#e0b45f;border:1px solid #e0b45f66;background:#e0b45f14;'
+      : 'color:#7f8ea0;border:1px solid #2a3542;');
+  if (title) chip.title = title;
+  return chip;
+};
+
+/**
+ * A small `×N`-style count pill tinted with the row's own colour — the "how many"
+ * that would otherwise be bare text lost in a sentence (how many of your systems
+ * a neighbour sits in; how many times a prober scanned you).
+ *
+ * @param {string} text
+ * @param {string} color  Hex — the row's Danger colour, so the pill reads as part of it.
+ * @param {string} [title]
+ * @returns {HTMLSpanElement}
+ */
+export const countPill = (text, color, title) => {
+  const pill = document.createElement('span');
+  pill.textContent = text;
+  pill.style.cssText = `font-size:11px;font-weight:700;color:${color};`
+    + `border:1px solid ${color}66;background:${color}1a;border-radius:999px;padding:0 6px;`;
+  if (title) pill.title = title;
+  return pill;
+};

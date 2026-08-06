@@ -51,7 +51,8 @@ import { EYE_GLYPH } from '../shared/buttonGlyphs.js';
 import { parseTargetPositions } from '../../domain/histogram.js';
 import { populatePositionFilter, renderColonyChart } from './colony.js';
 import { renderFreeRegions, renderServerMap, selectCandidate, resetFreeSelection, highlightPin, _resetFreeStreakForTest } from './freeStreak.js';
-import { chipValue, setChipValue, wireChips, setChipsEnabled, toggleChipOn, setToggleChip, wireToggleChip, watchChip } from './chips.js';
+import { chipValue, setChipValue, wireChips, setChipsEnabled, toggleChipOn, setToggleChip, wireToggleChip, watchChip, allianceTagChip, countPill } from './chips.js';
+import { dangerColor01 } from '../../lib/dangerColor.js';
 import { playerHoverTitle } from './format.js';
 import { digestProximityReports } from '../../domain/proximityDigest.js';
 import { bodyNameIndex, bodyNameFor, nearestBodyDistance } from '../../domain/bodies.js';
@@ -372,9 +373,15 @@ let homeWatchState = emptyHomeWatch();
  * @type {string}
  */
 let lastHomeArrivalKey = '';
-/** Device-local coords↔names toggle for the proximity strip (localStorage). */
+/**
+ * Device-local coords↔names toggle: show OUR OWN bodies by the names we gave
+ * them instead of by coordinates. One preference for both defensive panels
+ * ("Who's spying on you" and "Your neighbours") — it is one question about how
+ * you read your own empire, so a chip in either head flips both. (The key is
+ * still the proximity strip's original one, so nobody's setting resets.)
+ */
 const PROX_NAMES_KEY = 'oge_proxNames';
-let proximityShowNames = safeLS.get(PROX_NAMES_KEY) === '1';
+let showBodyNames = safeLS.get(PROX_NAMES_KEY) === '1';
 
 /**
  * Date-range filter for the proximity strip — a radio chip beside the
@@ -394,6 +401,32 @@ const PROX_RANGE_KEY = 'oge_proxRange';
 const SPY_SCAN_PREFS_OPEN_KEY = 'oge_spyScanPrefsOpen';
 /** Device-local: remember whether the Spyglass positions-map card is open. */
 const SPY_MAP_OPEN_KEY = 'oge_spyMapOpen';
+/**
+ * Device-local: the dock's SIDEBAR panels' open/closed choice, one key each
+ * (`'0'` = folded; anything else, including unset, = open — the sidebar's point
+ * is that all three stand open). These are read only in sidebar mode: in pill
+ * mode a panel is a popover and always starts closed, so persisting a popover's
+ * transient state would fight the next visit.
+ */
+const SPY_DOCK_OPEN_KEYS = /** @type {Record<string, string>} */ ({
+  proximityCard: 'oge_spyDockProxOpen',
+  homeWatchCard: 'oge_spyDockNbrOpen',
+  spyScanPrefs: SPY_SCAN_PREFS_OPEN_KEY,
+});
+/**
+ * Width at which the dock stops being pills and becomes a real right column.
+ * MUST match the `@media` query the dock's sidebar rules hang off in
+ * dashboard.html — this constant only decides the BEHAVIOUR (one-open,
+ * Esc/outside-click, which panels start open); the CSS decides the shape, and
+ * the two disagreeing would mean popover rules running against a sidebar.
+ */
+const SPY_SIDEBAR_MQ = '(min-width: 1180px)';
+/**
+ * Device-local: remember whether the Watch list card is open. Unlike the map and
+ * the settings this one DEFAULTS to open — it is the tab's hero; only an
+ * explicit fold ('0') collapses it.
+ */
+const SPY_WATCH_OPEN_KEY = 'oge_spyWatchOpen';
 let proximityRange = PROX_RANGES.some(([v]) => v === safeLS.get(PROX_RANGE_KEY))
   ? /** @type {string} */ (safeLS.get(PROX_RANGE_KEY))
   : '1m';
@@ -559,15 +592,13 @@ const pinnedTargetIds = new Set();
 /** @type {HTMLInputElement | null} */ let cadRescanHours;
 /** @type {HTMLInputElement | null} */ let tgtPatrolSystems;
 /** @type {HTMLElement | null} */ let homeWatchCardEl;
-/** @type {HTMLElement | null} */ let homeWatchSummaryEl;
 /** @type {HTMLElement | null} */ let homeWatchBodyEl;
+/** @type {HTMLElement | null} */ let homeWatchHeadToolsEl;
 /** @type {HTMLElement | null} */ let patrolCardEl;
 /** @type {HTMLElement | null} */ let patrolSummaryEl;
 /** @type {HTMLElement | null} */ let patrolStrikesEl;
 /** @type {HTMLInputElement | null} */ let cadGalaxyHours;
 /** @type {HTMLElement | null} */ let tgtHideInactive;
-/** @type {HTMLButtonElement | null} */ let tgtConfigToggle;
-/** @type {HTMLElement | null} */ let tgtConfigCard;
 /** @type {HTMLElement | null} */ let tgtCountInfoEl;
 /** @type {HTMLElement | null} */ let proximityCardEl;
 /** @type {HTMLElement | null} */ let proximityStateEl;
@@ -579,11 +610,22 @@ const pinnedTargetIds = new Set();
  */
 let lastProximityKey = '';
 /** @type {HTMLElement | null} */ let proximityStripEl;
-/** @type {HTMLElement | null} */ let proximityCountsEl;
 /** @type {HTMLElement | null} */ let proximityAlertEl;
 /** @type {HTMLElement | null} */ let proximityHeadToolsEl;
 /** @type {HTMLElement | null} */ let watchCardsEl;
 /** @type {HTMLButtonElement | null} */ let spyApiRefreshEl;
+/* ── The right-edge defensive dock (dashboard.html `.spy-dock`) ────────────
+   Two pinned tabs whose panels FLOAT over the tab; the badge on each tab is the
+   one number a collapsed tab carries (the verdict itself rides the panel head,
+   so nothing lives in a tooltip only). */
+/** @type {HTMLElement | null} */ let spyDockEl;
+/** @type {HTMLElement | null} */ let proximityBadgeEl;
+/** @type {HTMLElement | null} */ let homeWatchBadgeEl;
+/** Watches the sticky top bar's height (it feeds the sidebar's top offset). */
+/** @type {ResizeObserver | null} */ let spyDockBarObserver = null;
+/** The Watch list disclosure + the count on its bar. */
+/** @type {HTMLDetailsElement | null} */ let spyWatchCardEl;
+/** @type {HTMLElement | null} */ let spyWatchStateEl;
 
 /** Guards {@link installDashboard} against a double-install. */
 let installed = false;
@@ -905,23 +947,25 @@ const wireDom = () => {
   cadRescanHours = /** @type {HTMLInputElement | null} */ (document.getElementById('cadRescanHours'));
   tgtPatrolSystems = /** @type {HTMLInputElement | null} */ (document.getElementById('tgtPatrolSystems'));
   homeWatchCardEl = document.getElementById('homeWatchCard');
-  homeWatchSummaryEl = document.getElementById('homeWatchSummary');
   homeWatchBodyEl = document.getElementById('homeWatchBody');
+  homeWatchHeadToolsEl = document.getElementById('homeWatchHeadTools');
   patrolCardEl = document.getElementById('patrolCard');
   patrolSummaryEl = document.getElementById('patrolSummary');
   patrolStrikesEl = document.getElementById('patrolStrikes');
   cadGalaxyHours = /** @type {HTMLInputElement | null} */ (document.getElementById('cadGalaxyHours'));
   tgtHideInactive = document.getElementById('tgtHideInactive');
-  tgtConfigToggle = /** @type {HTMLButtonElement | null} */ (document.getElementById('tgtConfigToggle'));
-  tgtConfigCard = document.getElementById('tgtConfigCard');
   tgtCountInfoEl = document.getElementById('tgtCountInfo');
   proximityCardEl = document.getElementById('proximityCard');
   proximityStateEl = document.getElementById('proximityState');
   proximityStripEl = document.getElementById('proximityStrip');
-  proximityCountsEl = document.getElementById('proximityCounts');
   proximityAlertEl = document.getElementById('proximityAlert');
   proximityHeadToolsEl = document.getElementById('proximityHeadTools');
   watchCardsEl = document.getElementById('watchCards');
+  spyDockEl = document.getElementById('spyDock');
+  proximityBadgeEl = document.getElementById('proximityBadge');
+  homeWatchBadgeEl = document.getElementById('homeWatchBadge');
+  spyWatchCardEl = /** @type {HTMLDetailsElement | null} */ (document.getElementById('spyWatchCard'));
+  spyWatchStateEl = document.getElementById('spyWatchState');
   spyApiRefreshEl = /** @type {HTMLButtonElement | null} */ (document.getElementById('spyApiRefresh'));
   spyglassMapHost = document.getElementById('spyglassMapHost');
   spyMapBlock = /** @type {HTMLDetailsElement | null} */ (document.getElementById('spyMapBlock'));
@@ -1277,6 +1321,113 @@ const sysLookSecFromScans = () => {
  * @returns {void}
  */
 /**
+ * The Coords/Names switch both defensive panels carry in their head — it flips
+ * {@link showBodyNames}, which decides whether OUR bodies read as coordinates or
+ * as the names we gave them. Nothing to switch while we hold no body inventory
+ * (the game hasn't been opened yet), so it renders nothing then.
+ *
+ * Both panels repaint on a flip: it is one preference with two controls, and a
+ * chip that changed only the panel it sits in would read as two settings.
+ * @returns {HTMLButtonElement | null}
+ */
+const coordsNamesChip = () => {
+  if (!ownBodies.length) return null;
+  const tgl = document.createElement('button');
+  tgl.type = 'button';
+  tgl.textContent = showBodyNames ? 'Names' : 'Coords';
+  tgl.title = 'Show your own planets and moons by name, or by coordinates';
+  tgl.style.cssText = 'font-size:11px;border:1px solid #2b3a4d;background:#18222e;color:#9fb4c4;'
+    + 'border-radius:999px;padding:1px 9px;cursor:pointer;';
+  tgl.addEventListener('click', () => {
+    showBodyNames = !showBodyNames;
+    safeLS.set(PROX_NAMES_KEY, showBodyNames ? '1' : '0');
+    renderProximityStrip();
+    repaintHomeWatch(Date.now());
+  });
+  return tgl;
+};
+
+/**
+ * Freeze the scroll offset of the dock panel `el` lives in, and hand back the
+ * function that puts it back. Any repaint that empties a panel's body shrinks its
+ * content, and the browser clamps a scroll offset it can no longer honour to 0 —
+ * so a control INSIDE a scrolled panel (a filter chip, a `+ watch` pill) would
+ * throw the reader back to the top on every click. Call the returned function
+ * after the content is back. No panel / no offset → a harmless no-op.
+ * @param {Element | null} el  Anything inside the panel body.
+ * @returns {() => void}
+ */
+const keepPanelScroll = (el) => {
+  const box = el ? el.closest('.spy-fold-body') : null;
+  const top = box ? box.scrollTop : 0;
+  return () => { if (box && top) box.scrollTop = top; };
+};
+
+/**
+ * Is the dock currently the full-height SIDEBAR (all panels open, in the flow)
+ * rather than the bottom-right pills? Purely a question of width — the CSS keys
+ * the two shapes off the same media query. The popover rules below (one-open,
+ * Esc, click-outside) exist only for pill mode: in a sidebar they would slam a
+ * panel shut on every stray click.
+ * @returns {boolean}
+ */
+const spyDockIsSidebar = () => typeof window.matchMedia === 'function'
+  && window.matchMedia(SPY_SIDEBAR_MQ).matches;
+
+/**
+ * Close every dock panel except `keep`. Pill mode holds at most ONE open panel:
+ * they float over the same corner, so two open would overlap, and the panels
+ * answer different questions anyway. No-op in sidebar mode.
+ * @param {HTMLDetailsElement | null} [keep]
+ * @returns {void}
+ */
+const closeSpyDockPanels = (keep) => {
+  if (!spyDockEl || spyDockIsSidebar()) return;
+  for (const d of spyDockEl.querySelectorAll('details[open]')) {
+    if (d !== keep) /** @type {HTMLDetailsElement} */ (d).open = false;
+  }
+};
+
+/**
+ * Open one dock panel (and, in pill mode, close its siblings). The auto-open
+ * paths call this instead of setting `.open` directly so "a fresh arrival unfolds
+ * its card" can't leave two popovers stacked on each other.
+ * @param {HTMLDetailsElement | null} card
+ * @returns {void}
+ */
+const openSpyDockPanel = (card) => {
+  if (!card) return;
+  card.open = true;
+  closeSpyDockPanels(card);
+};
+
+/**
+ * Sync the panels' open state to the shape the current width calls for —
+ * remembered per panel in a sidebar, all closed as popovers — and publish the
+ * sticky top bar's height for the sidebar's top offset. Called on install and
+ * whenever the viewport crosses the sidebar width. (The SHAPE itself is pure
+ * CSS; there is no dock/undock control to keep in sync.)
+ * @returns {void}
+ */
+const applySpyDockMode = () => {
+  const sidebar = spyDockIsSidebar();
+  // The sidebar starts below the sticky top bar (z-index 100000, and it wraps to
+  // two rows at some widths) — publish its measured height for the CSS.
+  const bar = document.querySelector('.top-bar');
+  if (bar && spyDockEl) {
+    spyDockEl.style.setProperty('--spy-dock-top', `${Math.round(bar.getBoundingClientRect().height)}px`);
+  }
+  if (!spyDockEl) return;
+  for (const d of spyDockEl.querySelectorAll('details')) {
+    const card = /** @type {HTMLDetailsElement} */ (d);
+    const key = SPY_DOCK_OPEN_KEYS[card.id];
+    // Sidebar: the stored per-panel choice, open unless explicitly folded.
+    // Pills: closed — a popover the user did not ask for is in the way.
+    card.open = sidebar ? !(key && safeLS.get(key) === '0') : false;
+  }
+};
+
+/**
  * Repaint the Home watch card — our own systems, who shares them, and the
  * strangers who arrived since the last look (domain/homeWatch's diff, recorded
  * in-game). Hidden while the mode is off or we know no own body: an empty card
@@ -1322,8 +1473,21 @@ const repaintHomeWatch = (nowMs) => {
     .filter((a) => !friendly.has(String(a.playerId)));
   const arrivalKey = openArrivals.map((a) => `${a.system}|${a.playerId}`).join(',');
   homeWatchCardEl.classList.toggle('hot', openArrivals.length > 0);
+  // Head tools — the shared Coords/Names switch, same slot and same behaviour as
+  // the Who's-spying head (see coordsNamesChip).
+  if (homeWatchHeadToolsEl) {
+    homeWatchHeadToolsEl.textContent = '';
+    const tgl = coordsNamesChip();
+    if (tgl) homeWatchHeadToolsEl.appendChild(tgl);
+  }
+  // Dock-tab badge: news only. "quiet" needs no number — the absent badge IS the
+  // quiet reading, and the rows themselves are the detail.
+  if (homeWatchBadgeEl) {
+    homeWatchBadgeEl.textContent = openArrivals.length ? String(openArrivals.length) : '';
+    homeWatchBadgeEl.title = `${openArrivals.length} new neighbour(s) since your last look`;
+  }
   if (arrivalKey && arrivalKey !== lastHomeArrivalKey) {
-    /** @type {HTMLDetailsElement} */ (homeWatchCardEl).open = true;
+    openSpyDockPanel(/** @type {HTMLDetailsElement} */ (homeWatchCardEl));
   }
   lastHomeArrivalKey = arrivalKey;
   const systems = homeSystemKeys(ownBodies);
@@ -1350,8 +1514,10 @@ const repaintHomeWatch = (nowMs) => {
       : (snapshotOcc[key] || []);
     occupants[key] = slots.filter((s) => !friendly.has(String(s.playerId)));
   }
+  // Same scroll-clamp trap as the prober strip: the card's own `+ watch` pills
+  // repaint it, and an emptied body would drop the panel back to the top.
+  const restoreScroll = keepPanelScroll(homeWatchBodyEl);
   renderHomeWatchCard({
-    summaryEl: homeWatchSummaryEl,
     hostEl: homeWatchBodyEl,
     systems,
     occupants,
@@ -1361,11 +1527,17 @@ const repaintHomeWatch = (nowMs) => {
     // (two members of one alliance inside our space can strike together).
     alliances: apiCache.alliances ? apiCache.alliances.alliances : {},
     danger: dangerProfiles,
-    scans,
-    // Home watch's OWN cadence — the coverage read must use the window the plan
-    // actually walks, not the galaxy one (a 24 h home look is not "stale"
-    // because the hourly galaxy window elapsed).
-    staleMs: homeHours * 3600 * 1000,
+    // The Coords/Names switch, applied to the only coords on this card that are
+    // OURS: the systems we live in. Moons ride their planet's system, so naming a
+    // system after the planet is enough; two planets in one system join with "/".
+    systemNames: showBodyNames
+      ? ownBodies.reduce((acc, b) => {
+        if (!b?.name || b.type === 3) return acc;
+        const key = `${b.galaxy}:${b.system}`;
+        acc[key] = acc[key] ? `${acc[key]} / ${b.name}` : b.name;
+        return acc;
+      }, /** @type {Record<string, string>} */ ({}))
+      : undefined,
     nowMs,
     linkBase: gameLinkBase() || undefined,
     onOpenPlayer: (pid) => openSpyglassFor(Number(pid)),
@@ -1375,6 +1547,7 @@ const repaintHomeWatch = (nowMs) => {
     watched: watchedPlayers,
     onToggleWatch: (pid) => toggleWatched(pid),
   });
+  restoreScroll();
 
   // Reading IS the acknowledgement: stamp the arrivals we just painted so their
   // NEW flag expires on its own (state/homeWatch.markHomeArrivalsShown — this is
@@ -1978,6 +2151,13 @@ const repaintTargets = () => {
     onSetGalaxyMode: setGalaxyMode,
     onRescan: markRescan,
   });
+  // The count on the Watch list bar — while the card is folded this IS the card,
+  // so it says the empty case out loud rather than going blank.
+  if (spyWatchStateEl) {
+    spyWatchStateEl.textContent = watchedPlayers.size
+      ? `${watchedPlayers.size} ${watchedPlayers.size === 1 ? 'player' : 'players'}`
+      : 'nobody watched yet';
+  }
 
   // The finder, resolved once per repaint: the same string is matched against
   // nicknames AND against alliance names/tags, and the union is what the table
@@ -2215,6 +2395,11 @@ const proximityFromEl = (coords, moon, linkBase) => {
  */
 const renderProximityStrip = () => {
   if (!proximityStripEl) return;
+  // Emptying the strip shrinks the dock panel's content, so the browser clamps
+  // the panel's scroll offset to 0 — and the controls that call this function
+  // (the date-range chips, Coords/Names) live INSIDE that panel. Carry the offset
+  // over so a click halfway down a long prober list stays halfway down.
+  const restoreScroll = keepPanelScroll(proximityStripEl);
   proximityStripEl.textContent = '';
   proximityStripEl.style.display = '';
   // Head tool slot (Coords/Names) — cleared with the strip so an emptied
@@ -2231,21 +2416,15 @@ const renderProximityStrip = () => {
   const digest = digestProximityReports(recentReports);
   // Game origin for the "from" click-through to the in-game galaxy view.
   const linkBase = gameLinkBase();
-  if (proximityCountsEl) {
-    // No leading dash — the fold bar's flex gap already separates this from the
-    // title. Empty is not an option here: this text IS the folded card, so the
-    // quiet case has to say so out loud.
-    proximityCountsEl.textContent = digest.totalReports
-      ? `${digest.playerCount} ${digest.playerCount === 1 ? 'prober' : 'probers'}`
-        + ` · ${digest.totalReports} ${digest.totalReports === 1 ? 'alert' : 'alerts'}`
-        + (digest.lastTs != null ? ` · last ${proximityAge(digest.lastTs, nowMs)}` : '')
-      : (proximityReports.length ? 'none in this window' : 'quiet');
-  }
+  // The head carries the VERDICT and nothing else. The old count line
+  // ("4 probers · 60 alerts · last 2d") was written when this panel was a fold
+  // whose bar had to speak for a hidden body — it no longer is: the pill's badge
+  // holds the number while the panel is closed, and once it is open every one of
+  // those figures is a row on screen, each with its own ×N and age. Restating
+  // them above the list was noise the eye had to step over.
   if (proximityAlertEl) {
-    // Leads the bar (see the markup): a prober living in one of your systems is
-    // the verdict, the counts are its context.
     proximityAlertEl.textContent = digest.sameSystemCount > 0
-      ? `${digest.sameSystemCount} in your system ·`
+      ? `${digest.sameSystemCount} in your own system`
       : '';
   }
   // Fold state (same grammar as Home watch): the bar says it, the body holds it.
@@ -2259,14 +2438,32 @@ const renderProximityStrip = () => {
     proximityStateEl?.classList.toggle('hot', hot);
     const key = `${digest.totalReports}|${digest.lastTs ?? 0}|${digest.sameSystemCount}`;
     if (key !== lastProximityKey && (hot || (lastProximityKey !== '' && digest.totalReports > 0))) {
-      /** @type {HTMLDetailsElement} */ (proximityCardEl).open = true;
+      openSpyDockPanel(/** @type {HTMLDetailsElement} */ (proximityCardEl));
     }
     lastProximityKey = key;
+  }
+  // The pill's badge — a bare NUMBER, the worst one: probers living in one of YOUR
+  // systems if any (the pill is red then, which is what the number means), else
+  // how many probers the window holds. Words here made the pill paragraph-wide;
+  // the sentence is the panel's head line, one click away. Empty = quiet (an empty
+  // badge renders nothing at all, CSS `:empty`).
+  if (proximityBadgeEl) {
+    const n = digest.sameSystemCount > 0 ? digest.sameSystemCount : digest.playerCount;
+    proximityBadgeEl.textContent = n ? String(n) : '';
+    proximityBadgeEl.title = digest.sameSystemCount > 0
+      ? `${digest.sameSystemCount} of them sit in one of your own systems`
+      : `${digest.playerCount} player(s) probed you in this window`;
   }
   // Head tools ride the card head's right-edge slot. Built whenever ANY alert
   // exists in the raw log (not just the filtered window) so the date-range chip
   // stays reachable to widen back after a narrow window empties the strip.
   if (proximityReports.length && proximityHeadToolsEl) {
+    // Right-aligned on the head line, with the TIME WINDOW hard against the right
+    // edge and the Coords/Names switch to its left: the window is the control you
+    // reach for (it changes what the list contains), the switch only relabels it.
+    const tgl = coordsNamesChip();
+    if (tgl) proximityHeadToolsEl.appendChild(tgl);
+
     // Date-range radio (1d/7d/1m/3m) — the shared segmented-chip look.
     const rangeGroup = document.createElement('div');
     rangeGroup.className = 'chip-group seg';
@@ -2285,23 +2482,6 @@ const renderProximityStrip = () => {
       rangeGroup.appendChild(b);
     }
     proximityHeadToolsEl.appendChild(rangeGroup);
-
-    // Coords/names toggle (device-local): swap the "at <our bodies>" coords for
-    // our planet/moon names. Only when we actually have a body snapshot.
-    if (ownBodies.length) {
-      const tgl = document.createElement('button');
-      tgl.type = 'button';
-      tgl.textContent = proximityShowNames ? 'Names' : 'Coords';
-      tgl.title = 'Coords / names';
-      tgl.style.cssText = 'font-size:11px;border:1px solid #2b3a4d;background:#18222e;color:#9fb4c4;'
-        + 'border-radius:999px;padding:1px 9px;cursor:pointer;';
-      tgl.addEventListener('click', () => {
-        proximityShowNames = !proximityShowNames;
-        safeLS.set(PROX_NAMES_KEY, proximityShowNames ? '1' : '0');
-        renderProximityStrip();
-      });
-      proximityHeadToolsEl.appendChild(tgl);
-    }
   }
 
   if (!digest.totalReports) {
@@ -2313,80 +2493,126 @@ const renderProximityStrip = () => {
       ? 'No scans in this window.'
       : 'No scans on you yet.';
     proximityStripEl.appendChild(note);
+    restoreScroll();
     return;
   }
 
   const nameIdx = bodyNameIndex(ownBodies);
 
-  // A 2-column grid (facts | actions) so the watch pill lines up in a fixed
-  // right-hand column across every row — no ragged, un-justified rows.
-  const grid = document.createElement('div');
-  grid.style.cssText = 'display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 10px;align-items:center;';
+  // Alliances fielding TWO OR MORE distinct probers in this window — the same
+  // "together they reach further than any of them alone" read the neighbours card
+  // lights its tag chips with. One member scanning you is a player looking at
+  // you; three members of one tag scanning you is that alliance looking at you,
+  // and that changes who you expect over the horizon. Counted per PLAYER (a
+  // single prober flying twenty probes is still one player).
+  /** @type {Map<string, Set<string>>} allianceId → distinct prober ids */
+  const alliesSeen = new Map();
+  for (const e of digest.players) {
+    const aid = dangerProfiles.get(Number(e.byPlayerId))?.allianceId;
+    if (!aid) continue;
+    const set = alliesSeen.get(aid) || new Set();
+    set.add(String(e.byPlayerId));
+    alliesSeen.set(aid, set);
+  }
+
+  // Rows in the "Your neighbours" language (features/dashboard/homeWatch.js) —
+  // ONE row grammar for the two defensive reads, since they answer halves of the
+  // same question and now sit in the same dock. What that means concretely:
+  // a baseline flex row that wraps, a Danger-coloured LEFT RULE you scan in a
+  // single pass, the nick painted the same hue (colour = Danger everywhere, no
+  // second colour language), the alliance [TAG] chip, an `×N` count pill, and the
+  // shared watch chip. The old 2-column facts|actions grid is gone with it: the
+  // pill rides the row's end (margin-left:auto), which keeps it right-aligned
+  // without a grid track that fought the wrapping sub-line.
+  const list = document.createElement('div');
 
   for (const e of digest.players) {
-    const facts = document.createElement('div');
-    // Hot (same-system) rows wear the red rule + a fading tint, echoing the
-    // in-game Who's-spying panel's hot-row treatment.
-    facts.style.cssText = 'font-size:12px;color:#9aa;line-height:1.4;min-width:0;'
-      + (e.sameSystem
-        ? 'border-left:2px solid #e06c5f;padding-left:7px;'
-          + 'background:linear-gradient(90deg,#241413,transparent 75%);'
-        : '');
+    const pid = String(e.byPlayerId);
+    const prof = dangerProfiles.get(Number(e.byPlayerId));
+    const col = dangerColor01(prof?.danger, '#cfe6f5');
+    const row = document.createElement('div');
+    // Same-system probers keep the fading red tint ON TOP of the Danger rule:
+    // the rule says "how dangerous", the tint says "and they are already inside
+    // one of your systems" — the in-game panel's hot-row treatment.
+    row.style.cssText = 'display:flex;align-items:baseline;gap:7px;flex-wrap:wrap;'
+      + `padding:4px 0 4px 8px;border-top:1px solid #16212c;border-left:3px solid ${col};`
+      + 'font-size:12px;'
+      + (e.sameSystem ? 'background:linear-gradient(90deg,#241413,transparent 75%);' : '');
 
-    // Line 1 — the glance summary: who + how many + 💀 + how close + how recent.
-    const label = e.name || `#${e.byPlayerId}`;
-    const who = document.createElement('span');
-    who.textContent = label;
-    // The NAME is the action now, same as every other clickable nick on the
-    // tab. It used to only seed the finder below (typed the nick into the
-    // search box and then did nothing visible: no scroll, no expansion) while
-    // a separate `dossier ▸` button beside it did the real thing. Two controls
-    // for one intent, and the discoverable one was the weaker — the button is
-    // gone, the name opens the profile directly.
-    who.style.cssText = 'cursor:pointer;color:#8fb8e0;font-weight:600;'
-      + 'text-decoration:underline dotted;';
-    who.title = playerHoverTitle(dangerProfiles.get(Number(e.byPlayerId)));
-    who.addEventListener('click', () => openSpyglassFor(e.byPlayerId));
-    facts.appendChild(who);
-    if (e.count > 1) facts.appendChild(document.createTextNode(` ×${e.count}`));
+    // The verdict LEADS the row (the neighbours card puts NEW in the same slot):
+    // on a wrapping row whatever comes last is what a narrow panel pushes onto
+    // the next line, and this is the one flag that must never move.
     if (e.sameSystem) {
       const hot = document.createElement('span');
-      hot.textContent = ' 💀';
+      hot.textContent = '💀';
       hot.style.color = '#e06c5f';
       hot.title =
         'Probed you from a body in the same system as yours — even Death Stars '
         + '(the slowest ships in the game) reach you quickly from there.';
-      facts.appendChild(hot);
+      row.appendChild(hot);
     }
 
-    // Distance + last-seen ride INLINE on the name line (each was its own
-    // stacked line before) so a row is 2 lines, not 3 — more probers fit at
-    // the same height. Distance colour carries the severity (0 sys = in-empire
-    // strike range); the age stays muted.
+    // The NAME is the action, same as every other clickable nick on the tab.
+    const who = document.createElement('span');
+    who.textContent = e.name || `#${pid}`;
+    who.style.cssText = `color:${col};font-weight:600;cursor:pointer;`
+      + 'text-decoration:underline dotted;';
+    who.title = playerHoverTitle(prof);
+    who.addEventListener('click', () => openSpyglassFor(e.byPlayerId));
+    row.appendChild(who);
+
+    // Alliance tag — LIT when this alliance has more than one prober on you in
+    // this window (see alliesSeen above): not "somebody is looking at me" but
+    // "their alliance is". Dim otherwise, so the lit state keeps its meaning.
+    if (prof?.allianceId) {
+      const ally = apiCache.alliances ? apiCache.alliances.alliances[prof.allianceId] : undefined;
+      const mates = alliesSeen.get(prof.allianceId)?.size ?? 1;
+      const chip = allianceTagChip((ally && (ally.tag || ally.name)) || '', mates > 1,
+        mates > 1
+          ? `${mates} players from ${ally?.name || 'this alliance'} probed you in this window`
+          : (ally?.name || undefined));
+      if (chip) row.appendChild(chip);
+    }
+
+    // How many times they scanned you — a pill in the row's own hue, like the
+    // neighbours' reach `×N`. Past one, because one scan is the ordinary case.
+    if (e.count > 1) {
+      row.appendChild(countPill(`×${e.count}`, col,
+        `${e.count} scans on your bodies in this window`));
+    }
+
+    // Distance colour carries the severity (0 sys = in-empire strike range); the
+    // age stays muted. Both inline, so a row is 2 lines, not 4.
     const dist = nearestBodyDistance(e.fromCoords, ownBodies, apiBounds);
     if (dist) {
-      facts.appendChild(document.createTextNode(' · '));
       const d = document.createElement('span');
       d.textContent = dist.label;
       d.style.cssText = 'font-family:monospace;font-size:11px;color:'
         + (dist.cls === 'hot' ? '#e06c5f' : dist.cls === 'near' ? '#e0b45f' : '#6b7782') + ';';
-      facts.appendChild(d);
+      row.appendChild(d);
     }
     const age = e.lastTs != null ? proximityAge(e.lastTs, nowMs) : '';
     if (age) {
       const a = document.createElement('span');
-      a.textContent = ` · ${age}`;
+      a.textContent = age;
       a.style.cssText = 'font-size:11px;color:#6b7782;';
-      facts.appendChild(a);
+      row.appendChild(a);
     }
 
-    // Line 2 — the geometry: `from <origin> · at <our bodies>`. `from` LEADS
-    // because it's almost always a SINGLE coord (the prober's origin), while
-    // `at` fans out over the several bodies of ours they probed — so the long
-    // list trails. (Matches the in-game panel's From-before-Near-you column
-    // order.) Wraps so EVERY probed body of ours shows.
+    // The shared watch pill (chips.js) — the same element the Players table, "Your
+    // neighbours" and Patrol use. `toggleWatched` already repaints this strip, so
+    // the callback is bare. `margin-left:auto` keeps it at the row's right edge.
+    const wp = watchChip(pid, watchedPlayers.has(pid), toggleWatched);
+    wp.style.marginLeft = 'auto';
+    row.appendChild(wp);
+
+    // Sub-line — the geometry: `from <origin> · at <our bodies>`. Its own full-
+    // width flex item (basis 100%) so it always starts a fresh line under the
+    // facts instead of squeezing between them. `from` LEADS because it is almost
+    // always a SINGLE coord (the prober's origin) while `at` fans out over every
+    // body of ours they probed, so the long list trails.
     const sub = document.createElement('div');
-    sub.style.cssText = 'font-size:11px;color:#6b7782;line-height:1.5;';
+    sub.style.cssText = 'flex:1 0 100%;font-size:11px;color:#6b7782;line-height:1.5;';
     if (e.fromCoords) {
       sub.appendChild(document.createTextNode('from '));
       sub.appendChild(proximityFromEl(e.fromCoords, e.fromMoon, linkBase));
@@ -2398,25 +2624,17 @@ const renderProximityStrip = () => {
       // the hover lists every scan of that body, newest first.
       e.atBodies.forEach((b, i) => {
         if (i) sub.appendChild(document.createTextNode(', '));
-        const nm = proximityShowNames ? bodyNameFor(nameIdx, b.coords, b.moon) : null;
+        const nm = showBodyNames ? bodyNameFor(nameIdx, b.coords, b.moon) : null;
         sub.appendChild(nm
           ? proximityNamedEl(nm, b.coords, b.moon, b.scans)
           : proximityBodyEl(b.coords, b.moon, b.scans));
       });
     }
-    facts.appendChild(sub);
+    row.appendChild(sub);
 
-    // One action now — the shared watch pill (chips.js), the same element the
-    // Players table, "Your neighbours" and Patrol use. `toggleWatched` already
-    // repaints this strip, so the callback is bare.
-    const actions = document.createElement('div');
-    actions.style.cssText = 'display:flex;gap:6px;justify-content:flex-end;';
-    actions.appendChild(watchChip(String(e.byPlayerId),
-      watchedPlayers.has(String(e.byPlayerId)), toggleWatched));
-
-    grid.append(facts, actions);
+    list.appendChild(row);
   }
-  proximityStripEl.appendChild(grid);
+  proximityStripEl.appendChild(list);
 
   // 💀 legend — only when a same-system prober is actually on screen (a legend
   // for a glyph that isn't shown is clutter). Mirrors the in-game panel's foot.
@@ -2458,6 +2676,7 @@ const renderProximityStrip = () => {
   }
   raw.appendChild(rawBody);
   proximityStripEl.appendChild(raw);
+  restoreScroll();
 };
 
 /**
@@ -2582,9 +2801,13 @@ const militaryRange = () => {
     const hi = max && max > 0 ? formatHumanNumber(max) : '';
     tgtMilitaryNote.textContent = lo && hi
       ? `${lo} – ${hi}`
-      : lo ? `${lo} and up`
-        : hi ? `up to ${hi}`
-          : 'any military score';
+      : lo ? `${lo}+`
+        : hi ? `≤ ${hi}`
+          : 'any';
+    // Amber while a bound is actually in force: the bar is always on screen so
+    // that an active filter can announce itself — dim text for "15M+" would let
+    // it hide in plain sight.
+    tgtMilitaryNote.classList.toggle('on', !!(lo || hi));
   }
   return { min: min ?? 0, max: max ?? 0 };
 };
@@ -3383,23 +3606,67 @@ const wireListeners = () => {
   });
   wireToggleChip(tgtWatchedOnly, () => repaintTargets());
   wireToggleChip(tgtMinersOnly, onTargetFilterChange);
-  // Scan-settings command block (Probes/Scan/Probe from/…) — a native <details>
-  // that collapses to a compact bar so the watchlist card isn't dominated by
-  // the knobs; the open/closed choice is remembered per device.
-  const spyScanPrefs = /** @type {HTMLDetailsElement | null} */ (
-    document.getElementById('spyScanPrefs'));
-  if (spyScanPrefs) {
-    if (safeLS.get(SPY_SCAN_PREFS_OPEN_KEY) === '1') spyScanPrefs.open = true;
-    spyScanPrefs.addEventListener('toggle', () => {
-      safeLS.set(SPY_SCAN_PREFS_OPEN_KEY, spyScanPrefs.open ? '1' : '0');
+  // Watch list — a disclosure like the map, but it DEFAULTS to open
+  // (it is the tab's hero); only an explicit fold is remembered.
+  if (spyWatchCardEl) {
+    if (safeLS.get(SPY_WATCH_OPEN_KEY) === '0') spyWatchCardEl.open = false;
+    spyWatchCardEl.addEventListener('toggle', () => {
+      safeLS.set(SPY_WATCH_OPEN_KEY, spyWatchCardEl?.open ? '1' : '0');
     });
   }
-  // ⚙ show/hide for the rarely-touched numeric filters (military range, probes).
-  tgtConfigToggle?.addEventListener('click', () => {
-    const opening = tgtConfigCard ? tgtConfigCard.style.display === 'none' : false;
-    if (tgtConfigCard) tgtConfigCard.style.display = opening ? '' : 'none';
-    tgtConfigToggle?.setAttribute('aria-expanded', String(opening));
-  });
+  // The dock (bottom pills, or the right sidebar from 1180px). In PILL mode four
+  // behaviours make an expanded panel feel like a popover rather than a page
+  // section: at most one open, the pill itself closes what it opened (native
+  // <details>), Esc closes, and a click anywhere outside the open panel closes
+  // (including the phone scrim, which is a child of the dock — a click on it
+  // targets .spy-dock itself, i.e. outside every <details>). No Close button
+  // anywhere: those four are enough, and a button in the head was one more thing
+  // to hit. In SIDEBAR mode all of it stands down and each panel just remembers
+  // its own fold, like every other card on the tab.
+  if (spyDockEl) {
+    applySpyDockMode();
+    // Re-shape when the window crosses the sidebar width (a dashboard people
+    // resize: the panels must not stay in the wrong shape until reload).
+    if (typeof window.matchMedia === 'function') {
+      window.matchMedia(SPY_SIDEBAR_MQ).addEventListener('change', () => applySpyDockMode());
+    }
+    // The top bar wraps to a second row at some widths, which moves the sidebar's
+    // top edge — re-measure whenever it actually changes size.
+    const topBar = document.querySelector('.top-bar');
+    if (topBar && typeof ResizeObserver === 'function') {
+      spyDockBarObserver = new ResizeObserver(() => applySpyDockMode());
+      spyDockBarObserver.observe(topBar);
+    }
+    for (const d of spyDockEl.querySelectorAll('details')) {
+      d.addEventListener('toggle', () => {
+        const card = /** @type {HTMLDetailsElement} */ (d);
+        if (spyDockIsSidebar()) {
+          const key = SPY_DOCK_OPEN_KEYS[card.id];
+          if (key) safeLS.set(key, card.open ? '1' : '0');
+          return;
+        }
+        if (card.open) closeSpyDockPanels(card);
+      });
+    }
+    document.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape') closeSpyDockPanels();
+    });
+    // CAPTURE phase, deliberately. A control INSIDE a panel (the date-range
+    // chips, the Coords/Names toggle) repaints the strip it lives in, so by the
+    // time a bubbling listener saw the click its target was already detached
+    // from the document — `contains()` then said "outside" and the panel closed
+    // under the user's finger. In the capture phase we are ahead of the target's
+    // own handler, so the element is still where it was clicked.
+    document.addEventListener('click', (ev) => {
+      const t = /** @type {Node | null} */ (ev.target);
+      if (!t || !spyDockEl) return;
+      // Inside an OPEN panel (or on a tab, which toggles itself) → leave it be.
+      for (const d of spyDockEl.querySelectorAll('details[open]')) {
+        if (d.contains(t)) return;
+      }
+      closeSpyDockPanels();
+    }, true);
+  }
   // Positions map — the same native-<details> deal as the scan settings above:
   // an always-visible bar, its open/closed choice remembered per device.
   if (spyMapBlock) {
@@ -3596,16 +3863,18 @@ export const _resetDashboardForTest = () => {
     patrolSummaryEl =
     patrolStrikesEl =
     tgtHideInactive =
-    tgtConfigToggle =
-    tgtConfigCard =
     tgtCountInfoEl =
     proximityCardEl =
     proximityStateEl =
     proximityStripEl =
-    proximityCountsEl =
     proximityAlertEl =
     proximityHeadToolsEl =
     spyMapPlayersEl =
+    spyDockEl =
+    proximityBadgeEl =
+    homeWatchBadgeEl =
+    spyWatchCardEl =
+    spyWatchStateEl =
     watchCardsEl =
     spyApiRefreshEl =
     freeContainer =
@@ -3622,6 +3891,8 @@ export const _resetDashboardForTest = () => {
   expandedTargets.clear();
   targetSort = { ...DEFAULT_TARGET_SORT };
   repaintQueued = false;
+  spyDockBarObserver?.disconnect();
+  spyDockBarObserver = null;
   installed = false;
   _resetAlarmClockForTest();
   _resetFreeStreakForTest();

@@ -650,102 +650,230 @@
   }
   button.spy-toolbtn[aria-expanded="true"] { border-color: #4a9eff; background: #17395d; color: #eaf4ff; }
 
-  /* Top block: watchlist (hero) beside the "who's spying you" digest. One
-     column on narrow screens, two from 900px (watchlist gets the width). */
-  .spy-top { display: grid; grid-template-columns: 1fr; gap: 12px 16px; margin-bottom: 12px; }
-  @media (min-width: 900px) { .spy-top { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); } }
-  /* The grid gap spaces the two top cards; a card's own bottom margin would
-     double it (and misalign the columns' bottoms). */
+  /* Top block: the watch list is the tab's hero and owns the FULL width. The two
+     defensive reads that used to share this row ("Who's spying on you", "Your
+     neighbours") moved to the right-edge dock below — they answer a yes/no
+     question whose normal answer is "nobody", which earns a pinned tab, not a
+     permanent column, and the column they gave up is the watch list's width. */
+  .spy-top { margin-bottom: 12px; }
   .spy-top > .gv-card { margin: 0; }
-  /* The watchlist card is a flex column so its scan-settings footer pins to
-     the card's BOTTOM edge — #watchCards takes the slack (the cards grid
-     inside it scrolls) even when the grid row stretches this card taller. */
-  .spy-watch-card { display: flex; flex-direction: column; }
-  .spy-watch-card > #watchCards { flex: 1; }
-  /* The defensive column: "who's spying on you" + "home watch" stacked. Own
-     wrapper (not two grid children) so the two cards share ONE column against
-     the watchlist hero instead of each claiming a grid cell. */
-  .spy-side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-  .spy-side > .gv-card { margin: 0; }
-  /* Who's-spying card wears the spy gold on its left edge — the Spyglass
-     identity, echoing the in-game panel's gold rule. */
-  .spy-back-card { border-left: 3px solid #e6c054; }
-  /* The two defensive cards are FOLDS: "nobody probed me" and "nobody moved in"
-     are the normal states and each is one word, not a panel. One class set for
-     both so they read identically — padding moves to the parts (the summary bar
-     spans the card and stays a tap target, same treatment as .spy-map-panel),
-     and the left edge turns alarm-red while something unread sits inside, so the
-     state is legible before anything is unfolded or hovered. */
-  .spy-fold-card { padding: 0; }
-  .spy-fold-card.hot { border-left-color: #e06c5f; }
-  .spy-fold-body { padding: 0 14px 12px; }
-  /* Home watch wears the same spy gold as its sibling — it is the other half of
-     the defensive read. */
-  .spy-home-card { border-left: 3px solid #e6c054; }
-  /* The bar's state text ("2 new" / "quiet · 3/5 fresh" / "3 probers · 5 alerts")
-     is the whole content of the folded card — unlike the map's decorative hint it
-     must NEVER hide, on any width (a verdict behind a hover does not exist on
-     touch). */
+  /* The watch list is a DISCLOSURE now, same language as the Positions map: an
+     always-visible bar (so the count reads while collapsed) with the cards grid
+     + scan settings behind it, for when the Players table wants the screen.
+     Padding moves to the parts so the bar spans the card and stays a tap
+     target. */
+  .spy-watch-card { padding: 0; }
+  .spy-watch-body { padding: 0 14px 12px; }
+
+  /* ── The defensive DOCK ──────────────────────────────────────────────────
+     Three panels that are not the tab's hero — "Who's spying on you", "Your
+     neighbours", "Settings" — pinned OUT of the reading column. Two shapes, one
+     markup:
+
+     1. PILL mode (the default, and every width under 1180px): a row of pills
+        docked to the BOTTOM-RIGHT corner. Horizontal labels, because a vertical
+        one is genuinely hard to read; a pill carries its own count so the state
+        reads with nothing expanded. Clicking floats the panel above the pills —
+        `position: fixed`, so expanding never reflows the page under it.
+     2. SIDEBAR mode (from 1180px):
+        the dock becomes a real full-height right column with all three panels
+        expanded one under another, each still individually collapsible, and one
+        button that folds the whole column back to the pills.
+
+     `pointer-events: none` on the dock (with `auto` on its children) so the
+     empty stretch of a full-height/edge-anchored box never eats clicks meant for
+     the page behind it. The dock has NO transform: a transformed ancestor would
+     become the containing block for its `position: fixed` panels and anchor them
+     to the dock instead of the viewport. It lives INSIDE #spyglassSection, so
+     leaving the tab hides it too. */
+  /* Pills float over the page bottom, so the section reserves their height —
+     hidden data is worse than a 54px gutter. */
+  #spyglassSection { padding-bottom: 54px; }
+  /* The pills ARE a bottom bar, at every width that shows them: the dock spans
+     the page and fades it out underneath, because pills floating over live
+     content read as part of the content and got lost. The gradient stays
+     click-through — pointer-events: none lives here, `auto` only on the pills. */
+  .spy-dock {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+    display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: flex-end;
+    gap: 8px; padding: 22px 12px 10px; pointer-events: none;
+    background: linear-gradient(to top, #0d1117 58%, #0d111700);
+  }
+  .spy-dock > details { pointer-events: auto; }
+  /* The pill: keyword + a bare count, no glyph, and the gold Spyglass edge on the
+     left — the same rule the sidebar cards wear, which is what makes the corner
+     read as OG-E's panel dock rather than three stray buttons. Deliberately
+     brighter than a card: the first attempt (#16202c on #0d1117) sank into the
+     page. */
+  .spy-dock-tab {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 9px 15px 9px 13px; min-height: 38px; box-sizing: border-box;
+    list-style: none; cursor: pointer; user-select: none;
+    background: #1c2b3d; color: #e6eef7;
+    border: 1px solid #3c566f; border-left: 3px solid #e6c054;
+    border-radius: 999px;
+    font-size: 12px; font-weight: bold; letter-spacing: .02em; white-space: nowrap;
+    box-shadow: 0 6px 18px #000000a6;
+    transition: background .15s ease, color .15s ease;
+  }
+  .spy-dock-tab::-webkit-details-marker { display: none; }
+  .spy-dock-tab:hover { background: #26394f; color: #fff; }
+  .spy-dock-tab:focus-visible { outline: 2px solid #4a9eff; outline-offset: -2px; }
+  details[open] > .spy-dock-tab { background: #21303f; color: #fff; border-color: #4a9eff; border-left-color: #e6c054; }
+  /* Unread (a fresh arrival / a prober inside one of your systems): the PILL goes
+     alarm-red — edge included, so the state is legible with nothing expanded and
+     nothing hovered. */
+  .spy-fold-card.hot > .spy-dock-tab {
+    color: #e06c5f; border-color: #5a2f2a; border-left-color: #e06c5f; background: #241615;
+  }
+  /* Count badge — a NUMBER, nothing more: what it counts is the pill's own label
+     plus its colour ("2" on a red Who's-spying pill = 2 probers inside one of your
+     systems), and the sentence is the panel's first line, one click away. Words in
+     here ("2 in your system") made the pills as wide as a paragraph. Empty =
+     quiet, and an empty badge renders nothing at all. */
+  .spy-dock-badge {
+    min-width: 20px; padding: 2px 6px; border-radius: 999px; text-align: center;
+    font-size: 11px; font-weight: bold; background: #2b3a4d; color: #eaf4ff;
+  }
+  .spy-dock-badge:empty { display: none; }
+  .spy-fold-card.hot .spy-dock-badge { background: #7d3b33; color: #ffe7e3; }
+  /* The floating panel — anchored bottom-right, above the pills. */
+  .spy-fold-card > .spy-fold-body {
+    position: fixed; right: 12px; bottom: 58px;
+    width: min(440px, calc(100vw - 24px)); max-height: min(72vh, 660px); overflow-y: auto;
+    background: #121922; border: 1px solid #2b3a4d;
+    border-left: 3px solid #e6c054; border-radius: 10px; padding: 0 14px 12px;
+    box-shadow: 0 18px 44px #000000b3;
+    scrollbar-width: thin; scrollbar-color: #2b3a4d transparent;
+  }
+  .spy-fold-card.hot > .spy-fold-body { border-left-color: #e06c5f; }
+  .spy-fold-card > .spy-fold-body::-webkit-scrollbar { width: 10px; }
+  .spy-fold-card > .spy-fold-body::-webkit-scrollbar-track { background: transparent; }
+  .spy-fold-card > .spy-fold-body::-webkit-scrollbar-thumb { background: #2b3a4d; border-radius: 999px; }
+  /* Panel head: title + the verdict line, sticky so a long strip stays labelled
+     while it scrolls. No Close button — the pill that opened the panel closes it,
+     and so does a click anywhere outside (index.js). */
+  .spy-pop-head {
+    position: sticky; top: 0; z-index: 1; background: #121922;
+    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+    padding: 11px 0 9px; margin-bottom: 6px; border-bottom: 1px solid #223044;
+  }
+  .spy-pop-title { color: #c9d4de; font-size: 14px; font-weight: bold; }
+  /* A panel's own controls ride the head line, hard right — one line for "what am
+     I looking at" and "how do I narrow it", instead of a second control row that
+     cost every panel ~30px before the first row of data. Wraps under the title on
+     a narrow panel rather than squeezing it. */
+  .spy-pop-tools {
+    margin-left: auto; display: flex; align-items: center; gap: 6px;
+    flex-wrap: wrap; justify-content: flex-end; min-width: 0;
+  }
+  .spy-pop-tools:empty { display: none; }
+  /* The verdict text ("2 new" / "quiet · 3/5 fresh" / "3 probers · 5 alerts") —
+     it rides the panel head now and must NEVER be clipped (a verdict behind a
+     hover does not exist on touch). */
   .spy-fold-state {
-    margin-left: auto; display: inline-flex; align-items: baseline; gap: 4px;
-    min-width: 0; font-size: 11px; color: #8a97a3; white-space: nowrap;
-    overflow: hidden; text-overflow: ellipsis;
+    display: inline-flex; align-items: baseline; gap: 4px; flex: 1 1 auto;
+    min-width: 0; font-size: 11px; color: #8a97a3;
   }
   .spy-fold-state.hot { color: #e06c5f; font-weight: 600; }
-  @media (max-width: 640px) {
-    /* Narrow: the state WRAPS to its own line under the title instead of being
-       clipped by the ellipsis. Clipping would drop the tail of the verdict, and
-       the tail is where the counts live — on touch there is no tooltip to
-       recover them from. */
-    .spy-fold-card > .spy-map-summary { flex-wrap: wrap; }
-    .spy-fold-card > .spy-map-summary > .spy-fold-state {
-      flex: 1 0 100%; margin-left: 0; padding-left: 16px;
-      white-space: normal; overflow: visible;
+  /* On the watch list's own bar the same state span sits right-aligned (it is a
+     count, not the panel head's verdict) — and unlike .spy-map-summary-hint it
+     never hides: while the card is folded that count IS the card. */
+  .spy-watch-state { margin-left: auto; flex: 0 1 auto; }
+  /* The command grid inside a dock panel is always in a ≤440px box, so it is
+     ALWAYS one column there — the viewport-keyed rule down in .cmd-grid can't
+     know that (it measures the screen, not the container). */
+  .spy-fold-body > .cmd-grid { grid-template-columns: minmax(0, 1fr); }
+  .spy-fold-body > .cmd-grid > .cmd-cell { border-left: none !important; }
+  .spy-fold-body > .cmd-grid > .cmd-cell:nth-child(2) { border-top: 1px solid #1a2735; }
+  @media (max-width: 760px) {
+    /* Phone: the panel spans the width as a bottom sheet ABOVE the pills (they
+       stay reachable, so switching panels is one tap), with a scrim behind it.
+       The scrim is a child of the dock, so clicking it lands on .spy-dock —
+       which index.js treats as "outside the panel" and closes. */
+    /* Three pills do not fit one phone row, so they wrap to two — the sheet
+       clears both, and the section reserves both. (Above this width they always
+       fit one row and the 54px base reservation holds.) */
+    #spyglassSection { padding-bottom: 62px; }
+    .spy-fold-card > .spy-fold-body {
+      right: 8px; left: 8px; width: auto; bottom: 62px; max-height: 66vh;
     }
+    .spy-dock:has(details[open])::before {
+      content: ''; position: fixed; inset: 0; background: #000000a6;
+      pointer-events: auto;
+    }
+    /* Tightened until all three pills fit ONE phone row (a second row cost the
+       page 46px of permanent bottom gutter). Bare-number badges are what made
+       that possible. */
+    .spy-dock { gap: 6px; padding: 20px 10px 10px; }
+    .spy-dock-tab { font-size: 11.5px; padding: 8px 11px 8px 9px; }
   }
-  /* Scan settings — the in-game Spy button's knobs, always visible as the
-     watchlist card's footer COMMAND BLOCK (phase D): keyword captions +
-     controls in hairlined cells. Negative margins mirror .gv-card's
-     12px/14px padding so the block bleeds to the card's inner edges. */
-  .spy-scan-prefs {
-    margin: 12px -14px -12px; padding: 0;
-    border-top: 1px solid #223044; background: #0e151e;
-    border-radius: 0 0 8px 8px; overflow: hidden;
-    font-size: 12.5px; color: #8b99a8;
+  /* ── SIDEBAR mode ────────────────────────────────────────────────────────
+     From 1180px there is room for a permanent right column, so the dock stops
+     being a popover: all three panels sit expanded one under another, the pills
+     become their card headers, and the reading column gets a matching gutter.
+     Purely width-driven — there is no dock/undock control to keep in sync. */
+  @media (min-width: 1180px) {
+    #spyglassSection { padding-right: calc(424px - var(--page-pad)); padding-bottom: 0; }
+    /* Starts BELOW the sticky .top-bar (which owns z-index 100000 and would
+       otherwise cover the first panel's header — it read as "clipped from the
+       top"). index.js measures the bar into --spy-dock-top, because the bar
+       wraps to two rows at some widths; the fallback is its one-row height. */
+    .spy-dock {
+      /* `left: auto` matters: with left AND right AND width all set the browser
+         drops `right` and the column would jump to the page's left edge. */
+      top: var(--spy-dock-top, 44px); left: auto; bottom: 0; width: 412px; padding: 14px 14px 24px;
+      flex-direction: column; flex-wrap: nowrap; align-items: stretch;
+      justify-content: flex-start; gap: 12px; overflow-y: auto;
+      background: #0b1017; border-left: 1px solid #223044; pointer-events: auto;
+      scrollbar-width: thin; scrollbar-color: #2b3a4d transparent;
+    }
+    /* Natural height, never squeezed: as flex items in a column shorter than
+       their content the cards would shrink and (with overflow hidden for the
+       rounded corners) CLIP their own rows. The column scrolls instead. */
+    .spy-dock > * { flex: 0 0 auto; }
+    /* Settings leads the COLUMN (it is the knobs you set once, above the two
+       reads you come back to), but stays LAST in the pill row — where last means
+       rightmost, the far corner, out of the way of the two defensive pills. DOM
+       order serves the pills; `order` flips it for the sidebar only. */
+    .spy-dock > #spyScanPrefs { order: -1; }
+    /* Each panel is a card again: header bar + body, gold left edge (the
+       Spyglass identity — the same rule the pills wear), red while something
+       unread sits inside. */
+    .spy-dock > .spy-fold-card {
+      background: #121922; border: 1px solid #223044; border-left: 3px solid #e6c054;
+      border-radius: 8px; overflow: hidden;
+    }
+    .spy-dock > .spy-fold-card.hot { border-left-color: #e06c5f; }
+    .spy-dock .spy-dock-tab {
+      display: flex; width: 100%; border: none; border-radius: 0;
+      padding: 11px 14px; box-shadow: none; background: transparent;
+      font-size: 13px; white-space: normal;
+    }
+    .spy-dock .spy-dock-tab:hover { background: #16202c; }
+    .spy-dock details[open] > .spy-dock-tab {
+      background: transparent; border-bottom: 1px solid #223044;
+    }
+    /* In the flow, not floating: no fixed position, no shadow, no second border
+       (the card around it owns those). */
+    .spy-dock > .spy-fold-card > .spy-fold-body {
+      position: static; width: auto; max-height: none; border: none;
+      border-radius: 0; box-shadow: none; background: transparent;
+      padding: 0 14px 12px;
+    }
+    /* The head keeps the VERDICT line (it is the panel's data, not decoration)
+       and loses the title the card header already carries. */
+    .spy-dock .spy-pop-title { display: none; }
+    .spy-dock .spy-pop-head { border-bottom: none; padding: 9px 0 0; margin-bottom: 0; }
+    /* Settings' head is a title and nothing else, so in the sidebar — where the
+       card header already says "Settings" — it would be an empty 9px box. */
+    .spy-dock #spyScanPrefs .spy-pop-head { display: none; }
+    .spy-dock::before { display: none; }
   }
-  /* Disclosure bar: the always-visible header that shows/hides the command
-     grid. Collapsed by default so the watchlist card stays compact; the caret
-     + "Scan settings" label + contents hint keep the options discoverable. */
-  .spy-scan-summary {
-    display: flex; align-items: center; gap: 8px; padding: 9px 14px;
-    cursor: pointer; list-style: none; user-select: none;
-    color: #a7b8cb; font-size: 12px; font-weight: bold; letter-spacing: .02em;
-  }
-  .spy-scan-summary::-webkit-details-marker { display: none; }
-  /* Belt-and-braces collapse: modern browsers hide a closed <details>' content
-     via UA styles, but pin it explicitly so the grid never leaks when closed. */
-  .spy-scan-prefs:not([open]) > .cmd-grid { display: none; }
-  /* CSS caret (no glyph) — points right when closed, down when open. */
-  .spy-scan-summary::before {
-    content: ''; flex: 0 0 auto; width: 6px; height: 6px; margin-top: -2px;
-    border-right: 2px solid #7f8ea0; border-bottom: 2px solid #7f8ea0;
-    transform: rotate(-45deg); transition: transform .15s ease;
-  }
-  details[open] > .spy-scan-summary::before { transform: rotate(45deg); margin-top: -3px; }
-  .spy-scan-summary:hover { background: #131c28; color: #cdd9e6; }
-  .spy-scan-summary:hover::before { border-color: #a7b8cb; }
-  .spy-scan-summary:focus-visible { outline: 2px solid #4a9eff; outline-offset: -2px; }
-  .spy-scan-summary-hint {
-    margin-left: auto; min-width: 0; font-weight: normal; font-size: 11px;
-    color: #66788a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  /* Once open the grid says it all — drop the contents hint to avoid noise. */
-  details[open] > .spy-scan-summary .spy-scan-summary-hint { display: none; }
-  @media (max-width: 640px) {
-    /* The caret + label alone signal expandability; the long hint would crowd
-       the narrow bar. */
-    .spy-scan-summary-hint { display: none; }
-  }
+  /* Scan settings — the in-game Spy button's knobs. They live in the DOCK now
+     (a Settings pill / the sidebar's third panel), so the block itself needs no
+     styling of its own beyond the shared .cmd-grid command language; the old
+     footer-of-the-watch-card rules left with it. */
 
   /* Watchlist cards — the Spyglass landing strip (one card per watched
      player: verdict words, headline number, activity sparkline). */
@@ -754,9 +882,14 @@
      prober log must never push the Players table below the fold. */
   .watch-cards-grid {
     display: grid; grid-template-columns: repeat(auto-fill, minmax(235px, 1fr)); gap: 12px;
-    max-height: 420px; overflow-y: auto; padding-right: 2px;
+    /* Roomy since the watch list took the full width and its own fold: it is the
+       tab's hero, and the Players table below is one collapse away anyway. */
+    max-height: 840px; overflow-y: auto; padding-right: 2px;
   }
   #proximityStrip { max-height: 420px; overflow-y: auto; padding-right: 2px; }
+  /* …except inside the dock panel, which already scrolls as a whole: two nested
+     scroll boxes make the strip's rows unreachable behind a sticky head. */
+  .spy-fold-body #proximityStrip { max-height: none; overflow-y: visible; }
   /* Themed scrollbars for the Spyglass scroll boxes — the OS-default chrome
      (light thumb, chunky track) clashed with the dark palette. Firefox uses
      the two-value `scrollbar-color` (thumb, track); WebKit/Blink gets the
@@ -780,7 +913,8 @@
   }
   .watch-card:hover { border-color: #4a9eff; }
   /* Command footer — auto top margin takes the slack, negative sides bleed to
-     the card's inner edges (same command-block language as .spy-scan-prefs). */
+     the card's inner edges (same command-block language as the dock's
+     Settings panel). */
   .watch-card .wc-cmd {
     margin: auto -12px -10px; padding: 7px 10px;
     border-top: 1px solid #223044; background: #0e151e;
@@ -908,13 +1042,32 @@
     color: #cfd6dd; font-size: 13px;
   }
   .tgt-find:focus { outline: none; border-color: #4a9eff; }
-  /* Players → ⚙ Filters, as a command block (.cmd-grid) inside the card: the
-     negative side margins bleed it to the card's inner edges, exactly like the
-     watchlist card's scan Settings footer, so both panels on the tab are the
-     same object. */
-  .tgt-filters {
-    margin: -4px -14px 12px; border-top: 1px solid #223044;
-    border-bottom: 1px solid #223044; background: #0e151e;
+  /* The Players bar — finder AND every filter on one permanently visible line
+     (the "⚙ Filters" disclosure it replaced could hide an active filter behind a
+     closed panel). It WRAPS rather than scrolls: on a desktop it is one row, on a
+     phone two or three, and nothing is ever off-screen. The row cap sits at the
+     far right on wide rows (margin-left:auto) and simply joins the wrap when
+     there is no room for it there. */
+  .tgt-bar {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 7px 10px;
+    margin-bottom: 6px;
+  }
+  .tgt-bar > #tgtLimitChips { margin-left: auto; }
+  /* Military range: caption + the two magnitude boxes + the parse readout, as one
+     unbreakable group so the "–" never ends up alone on a wrapped line. */
+  .tgt-mil { display: inline-flex; align-items: center; gap: 5px; }
+  .tgt-mil-cap { font-size: 11px; font-weight: bold; letter-spacing: .02em; color: #a7b8cb; }
+  /* The readout is dim while no bound is in force and AMBER the moment one is —
+     the whole point of the always-visible bar is that an active filter announces
+     itself (index.js toggles `.on`). */
+  .tgt-mil-note { font-size: 11px; color: #66788a; white-space: nowrap; }
+  .tgt-mil-note.on { color: #e0b45f; font-weight: 600; }
+  @media (max-width: 640px) {
+    /* Phone: the finder shares the first row with the title and takes whatever is
+       left of it (a full-width finder pushed every filter one row further down),
+       and the row cap stops being shoved into a lonely far-right slot. */
+    .tgt-find { flex: 1 1 150px; max-width: none; }
+    .tgt-bar > #tgtLimitChips { margin-left: 0; }
   }
   /* Magnitude boxes (military range) — text, not number: they accept 15M / 2.5b
      / 15kk, and a spinner on a value like that is meaningless. Tabular figures
@@ -1424,27 +1577,84 @@
         style="font-size:11px;color:#9fb4c4;background:#12202e;border:1px solid #2b3a4d;border-radius:999px;padding:3px 11px;cursor:pointer;white-space:nowrap;">⟳ Refresh</button>
     </span>
   </h1>
-  <!-- Watchlist (the hero, left) beside "Who's spying on you" (defensive digest,
-       right) — one glance block at the top of the tab. Each side is its own
-       gv-card zone (same section-background language as the Galaxy Viewer).
-       The watchlist card carries the scan settings as its pinned footer bar —
-       always visible (they used to hide behind the "planets to scan" toggle);
-       the ranked scan-order preview is gone with it (the in-game Spy button IS
-       the plan's consumer and proposes the same order anyway). -->
+  <!-- Watchlist — the hero, and the FULL width of the tab: the two defensive
+       reads it used to share the row with, and the scan settings it used to carry
+       as a footer, both live in the dock below. Its own gv-card zone (same
+       section-background language as the Galaxy Viewer), and a disclosure like the
+       Positions map so it can be folded away when the Players table wants the
+       screen; the bar keeps the count visible while folded. -->
   <div class="spy-top">
-    <div class="gv-card spy-watch-card">
-      <div id="watchCards"></div>
+    <details class="gv-card spy-watch-card" id="spyWatchCard" open>
+      <summary class="spy-map-summary" title="Every player you track: verdict, headline number, activity. The scan settings are in the dock.">
+        <span class="spy-map-summary-title">Watch list</span>
+        <span class="spy-fold-state spy-watch-state" id="spyWatchState"></span>
+      </summary>
+      <div class="spy-watch-body">
+        <div id="watchCards"></div>
+      </div>
+    </details>
+  </div>
+  <!-- The DOCK — everything on this tab that is not the watch list, the map or
+       the players table: who probed you (alerts), who moved in next to you (your
+       neighbours), and the scan Settings. Two shapes from one markup (see the CSS
+       block): a row of PILLS in the bottom-right corner up to 1180px, a permanent
+       full-height right SIDEBAR above it. Each panel is a fold — for the two
+       defensive reads the normal state is "nobody", which is one word, not a
+       panel. In pill mode expanding floats the panel over the page (nothing below
+       it moves) and index.js keeps at most one open + closes on Esc / a click
+       outside; in sidebar mode all three stand open and those rules step aside.
+       An unread-worthy count opens its own panel and turns its pill red. -->
+  <div class="spy-dock" id="spyDock">
+    <!-- Who's spying on you. The date-range chips and the Coords/Names toggle
+         live INSIDE the panel, not on the bar: controls in a <summary> fight the
+         fold for the click. -->
+    <details class="spy-fold-card" id="proximityCard">
+      <summary class="spy-dock-tab" title="Probers from the alerts you opened — who has been spying on your bodies, and from where.">
+        <span>Who's spying</span>
+        <!-- The tab's one number: probers in the window, or the same-system count
+             when that flag is up. The full verdict is the panel's head line. -->
+        <span class="spy-dock-badge" id="proximityBadge"></span>
+      </summary>
+      <div class="spy-fold-body">
+        <div class="spy-pop-head">
+          <span class="spy-pop-title">Who's spying on you</span>
+          <!-- Same-system flag FIRST: it is the verdict, the counts are context. -->
+          <span class="spy-fold-state" id="proximityState"><span id="proximityAlert" style="color:#e06c5f;font-weight:600;"></span></span>
+          <div class="spy-pop-tools" id="proximityHeadTools"></div>
+        </div>
+        <div id="proximityStrip"></div>
+      </div>
+    </details>
+    <!-- "Your neighbours" (the home-watch defensive mode) — our OWN systems and
+         who else lives in them. The whole tab hides while the Neighbours cadence
+         is off or no own body is known yet (index.js repaintHomeWatch); a fresh
+         arrival opens the panel by itself. -->
+    <details class="spy-fold-card" id="homeWatchCard" style="display:none;">
+      <summary class="spy-dock-tab" title="Who shares the systems you live in — and who has just moved in. A neighbour next to your planet or moon sees your bodies and reaches them in minutes.">
+        <span>Your neighbours</span>
+        <span class="spy-dock-badge" id="homeWatchBadge"></span>
+      </summary>
+      <div class="spy-fold-body">
+        <div class="spy-pop-head">
+          <span class="spy-pop-title">Your neighbours</span>
+          <!-- Coords/Names rides here, exactly like the Who's-spying head. -->
+          <div class="spy-pop-tools" id="homeWatchHeadTools"></div>
+        </div>
+        <div id="homeWatchBody"></div>
+      </div>
+    </details>
       <!-- 2-col grid: probes row (count · bodies), then probe-from · re-scan,
            then a full-width "re-look" (the galaxy-cadence setting stands on its
            own row as the two-col filler), hunt row (moon strike · patrol). Each
            cell carries a one-line .cmd-note — the channel it belongs to (watch
            via probes / galaxy, the dossier chips' hues) + what it does; tooltips
            keep the long form. -->
-      <details class="spy-scan-prefs" id="spyScanPrefs">
-        <summary class="spy-scan-summary">
-          <span class="spy-scan-summary-title">Settings</span>
-          <span class="spy-scan-summary-hint">Probes · Scan · Probe from · Re-scan · Re-look · Neighbours · Moon strike · Patrol</span>
-        </summary>
+      <details class="spy-fold-card" id="spyScanPrefs">
+      <summary class="spy-dock-tab" title="The in-game Spy button&apos;s knobs: how many probes, which bodies, how often to re-scan and re-look, plus moon strike and patrol.">
+        <span>Settings</span>
+      </summary>
+      <div class="spy-fold-body">
+        <div class="spy-pop-head"><span class="spy-pop-title">Scan settings</span></div>
         <div class="cmd-grid">
         <label class="cmd-cell" title="How many espionage probes the in-game scan button pre-arms per body.">
           <span class="cmd-cap">Probes</span>
@@ -1513,44 +1723,8 @@
           <span class="cmd-note">hunts moon strikes on every neighbour this many systems around your colonies · 0 = off</span>
         </label>
         </div>
-      </details>
-    </div>
-    <!-- The DEFENSIVE column: who probed you (alerts) and who moved in next to
-         you (your neighbours), stacked. One question, two channels — so one
-         column. -->
-    <div class="spy-side">
-      <!-- Who's spying on you — a fold, for the same reason as Your neighbours
-           below it: the normal state is "nobody probed me", which is one word,
-           not a panel. The bar carries the verdict (prober/alert counts + the ⚠
-           same-system flag) and an unread-worthy count opens it by itself.
-           The date-range chips and the Coords/Names toggle live INSIDE the body,
-           not on the bar: controls in a <summary> fight the fold for the click. -->
-      <details class="gv-card spy-back-card spy-fold-card" id="proximityCard">
-        <summary class="spy-map-summary" title="Probers from the alerts you opened, within the selected date window.">
-          <span class="spy-map-summary-title">Who's spying on you</span>
-          <!-- Same-system flag FIRST: it is the verdict, and on a narrow bar
-               whatever comes last is what gets clipped. -->
-          <span class="spy-fold-state" id="proximityState"><span id="proximityAlert" style="color:#e06c5f;font-weight:600;"></span><span id="proximityCounts"></span></span>
-        </summary>
-        <div class="spy-fold-body">
-          <div id="proximityHeadTools" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px;"></div>
-          <div id="proximityStrip"></div>
-        </div>
-      </details>
-      <!-- "Your neighbours" (the home-watch defensive mode) — our OWN systems and
-           who else lives in them. Shown while the Neighbours cadence is on in the
-           Settings block and we know at least one own body. A DISCLOSURE: quiet is
-           the normal state and has nothing to read, so the standing picture stays
-           folded behind the bar; the bar's state word carries the verdict, and a
-           fresh arrival unfolds the card by itself (index.js repaintHomeWatch). -->
-      <details class="gv-card spy-home-card spy-fold-card" id="homeWatchCard" style="display:none;">
-        <summary class="spy-map-summary" title="Who shares the systems you live in — and who has just moved in. A neighbour next to your planet or moon sees your bodies and reaches them in minutes.">
-          <span class="spy-map-summary-title">Your neighbours</span>
-          <span class="spy-fold-state" id="homeWatchSummary"></span>
-        </summary>
-        <div class="spy-fold-body" id="homeWatchBody"></div>
-      </details>
-    </div>
+      </div>
+    </details>
   </div>
   <!-- Patrol (territory mode) — visible only while a patrol radius is set in
        the scan prefs below. Strikes here are the SAME signals the in-game Spy
@@ -1585,56 +1759,50 @@
        user has one question and shouldn't have to know which kind of thing they
        are typing) on the left, ⚙ Filters · row cap on the right; ⚙ opens its
        panel BELOW. The map is no longer a chip here — it is the disclosure card
-       ABOVE. (Scan settings live in the watchlist card's footer, not here.) -->
+       ABOVE. (Scan settings live in the dock, not here.) -->
   <div class="gv-card">
-  <div class="controls" style="align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+  <!-- ONE always-visible bar for finding AND filtering. It used to be a control
+       line plus a "⚙ Filters" panel that opened below, and a filter you cannot
+       see is indistinguishable from a bug: people ran with `watch list` or a
+       military bound on and read the short list as the truth. So every control
+       stands on the bar, permanently — kept compact by dropping the per-cell
+       caption/note grid for inline groups that WRAP: one line on a desktop, two
+       or three on a phone, no disclosure anywhere. -->
+  <div class="tgt-bar">
     <span class="gv-card-title">Players</span>
     <input id="tgtSearch" type="search" class="tgt-find" placeholder="find player, alliance or tag…"
       title="One finder: type a nickname, an alliance name or an alliance tag. Matches include players the filters hide (with the reason why).">
     <button type="button" id="tgtWatchAll" class="spy-toolbtn" style="display:none;"
       title="Put every player this search lists on the watch list."></button>
-    <button type="button" id="tgtConfigToggle" class="spy-toolbtn" aria-expanded="false" aria-controls="tgtConfigCard"
-      title="Filters: show scope · military range"
-      style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;">⚙ Filters</button>
+    <!-- Scope chips: lit = on, and they are always on screen, so "why is this
+         list short?" is answerable without opening anything. -->
+    <span class="chip-group" title="Which players the list may show at all.">
+      <button type="button" id="tgtHideInactive" class="on"
+        title="Hide accounts the API flags inactive (7 d) or long-inactive (28 d).">hide inactive</button>
+      <button type="button" id="tgtWatchedOnly"
+        title="Show only the players on your watch list.">watch list</button>
+      <button type="button" id="tgtMinersOnly"
+        title="Only huddled empires: 3+ planets packed inside 25 systems, at most 2 galaxies — the miner pattern.">miners</button>
+    </span>
+    <!-- Military range + the PARSE of what was typed ("15M – 2.5B"): the boxes
+         keep the shorthand, the readout says how it was understood, and it turns
+         amber the moment a bound is actually in force. -->
+    <span class="tgt-mil" title="Keep only players whose military score falls in this range. Accepts 15M, 2.5b, 800k, 15kk or plain digits; leave a box empty for no bound.">
+      <span class="tgt-mil-cap">Military</span>
+      <input id="tgtMinMilitary" type="text" class="tgt-num" inputmode="decimal"
+        autocomplete="off" placeholder="min" size="5"
+        title="Lower bound — e.g. 15M. Empty = no lower bound.">
+      <span class="cmd-unit">–</span>
+      <input id="tgtMaxMilitary" type="text" class="tgt-num" inputmode="decimal"
+        autocomplete="off" placeholder="max" size="5"
+        title="Upper bound — e.g. 2.5B. Empty = no upper bound.">
+      <span class="tgt-mil-note" id="tgtMilitaryNote">any</span>
+    </span>
     <div class="chip-group seg" id="tgtLimitChips" data-value="100" title="How many rows to show.">
       <button type="button" data-value="50">top 50</button>
       <button type="button" data-value="100">top 100</button>
       <button type="button" data-value="200">top 200</button>
       <button type="button" data-value="0">all</button>
-    </div>
-  </div>
-  <!-- Filters — the SAME command block as the scan Settings (keyword caption,
-       control, one-line note per cell), so the two panels on this tab read as
-       one interface instead of two. Was: a loose chip row + a bare
-       "Military: [n] – [n]" label in an inline-styled box. -->
-  <div id="tgtConfigCard" class="cmd-grid tgt-filters" style="display:none;">
-    <div class="cmd-cell" title="Which players the list may show at all.">
-      <span class="cmd-cap">Show</span>
-      <span class="chip-group">
-        <button type="button" id="tgtHideInactive" class="on"
-          title="Hide accounts the API flags inactive (7 d) or long-inactive (28 d).">hide inactive</button>
-        <button type="button" id="tgtWatchedOnly"
-          title="Show only the players on your watch list.">watch list</button>
-        <button type="button" id="tgtMinersOnly"
-          title="Only huddled empires: 3+ planets packed inside 25 systems, at most 2 galaxies — the miner pattern.">miners</button>
-      </span>
-      <!-- These three are not the whole truth about what the list drops, and a
-           filter you can't see is indistinguishable from a bug — so say it. -->
-      <span class="cmd-note">vacation, banned and admin accounts are always hidden · a search still finds them</span>
-    </div>
-    <div class="cmd-cell" title="Keep only players whose military score falls in this range. Accepts 15M, 2.5b, 800k, 15kk or plain digits; leave a box empty for no bound.">
-      <span class="cmd-cap">Military</span>
-      <input id="tgtMinMilitary" type="text" class="tgt-num" inputmode="decimal"
-        autocomplete="off" placeholder="min" size="6"
-        title="Lower bound — e.g. 15M. Empty = no lower bound.">
-      <span class="cmd-unit">–</span>
-      <input id="tgtMaxMilitary" type="text" class="tgt-num" inputmode="decimal"
-        autocomplete="off" placeholder="max" size="6"
-        title="Upper bound — e.g. 2.5B. Empty = no upper bound.">
-      <!-- Reads back how the two boxes were UNDERSTOOD ("15M – 2.5B"), which is
-           where the shorthand earns its keep: the boxes keep exactly what was
-           typed, this line is the parse. -->
-      <span class="cmd-note" id="tgtMilitaryNote">any military score</span>
     </div>
   </div>
   <div id="targetsContainer"></div>

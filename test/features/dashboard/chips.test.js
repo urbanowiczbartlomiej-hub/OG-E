@@ -29,6 +29,8 @@ import {
   setToggleChip,
   wireToggleChip,
   watchChip,
+  allianceTagChip,
+  countPill,
 } from '../../../src/features/dashboard/chips.js';
 
 /**
@@ -288,5 +290,38 @@ describe('watchChip', () => {
   it('without an onToggle handler, a click is a safe no-op', () => {
     const chip = watchChip('42', false);
     expect(() => chip.click()).not.toThrow();
+  });
+});
+
+describe('allianceTagChip', () => {
+  it('renders the tag dim by default and LIT when the caller asks', () => {
+    const dim = /** @type {HTMLElement} */ (allianceTagChip('NPC'));
+    const lit = /** @type {HTMLElement} */ (allianceTagChip('NPC', true));
+    expect(dim.textContent).toBe('NPC');
+    expect(lit.textContent).toBe('NPC');
+    // The lit state is what carries the meaning (the neighbours card: this
+    // alliance reaches further together than any member alone; the prober list:
+    // more than one of them is scanning you), so it has to be visibly different.
+    expect(dim.style.color).not.toBe(lit.style.color);
+  });
+
+  it('renders NOTHING for an empty tag (a cold alliances cache is normal)', () => {
+    expect(allianceTagChip('')).toBeNull();
+  });
+
+  it("carries the caller's explanation as the hover", () => {
+    const chip = /** @type {HTMLElement} */ (allianceTagChip('NPC', true, '3 players from Net PC'));
+    expect(chip.title).toBe('3 players from Net PC');
+  });
+});
+
+describe('countPill', () => {
+  it('tints itself with the row colour it was handed', () => {
+    const pill = countPill('x3', '#e2726a', 'inside 3 of your systems');
+    expect(pill.textContent).toBe('x3');
+    expect(pill.title).toBe('inside 3 of your systems');
+    // Text, border and background all derive from the ONE colour, so the pill
+    // reads as part of its row rather than as a stray badge.
+    expect(pill.getAttribute('style')).toContain('#e2726a');
   });
 });
