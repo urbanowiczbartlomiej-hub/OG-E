@@ -1424,6 +1424,17 @@ const applySpyDockMode = () => {
     // Sidebar: the stored per-panel choice, open unless explicitly folded.
     // Pills: closed — a popover the user did not ask for is in the way.
     card.open = sidebar ? !(key && safeLS.get(key) === '0') : false;
+    // Where a panel's CHROME lives follows the shape. In the sidebar the card
+    // has a real header BAR, so the verdict flag and the panel's filters ride it
+    // (that is what a header bar is for) and the in-body head disappears
+    // entirely. As a popover there is no bar — the pill is the bar, and it is far
+    // too small for a chip group — so both drop back into the panel's own head.
+    // Re-parenting, not duplicating: one element, two homes, so a repaint that
+    // rewrites the filters can never leave a stale copy in the other place.
+    const home = sidebar ? card.querySelector('summary') : card.querySelector('.spy-pop-head');
+    for (const el of [card.querySelector('.spy-fold-state'), card.querySelector('.spy-pop-tools')]) {
+      if (el && home && el.parentElement !== home) home.appendChild(el);
+    }
   }
 };
 
@@ -3636,6 +3647,13 @@ const wireListeners = () => {
     if (topBar && typeof ResizeObserver === 'function') {
       spyDockBarObserver = new ResizeObserver(() => applySpyDockMode());
       spyDockBarObserver.observe(topBar);
+    }
+    // In sidebar mode the filters sit INSIDE a <summary> (see applySpyDockMode),
+    // where a click's default action is "fold this card". Swallow it at the tools
+    // container: the chips' own handlers have already run by then (they are
+    // descendants), so the filter still works and the card stays put.
+    for (const tools of spyDockEl.querySelectorAll('.spy-pop-tools')) {
+      tools.addEventListener('click', (ev) => { ev.stopPropagation(); ev.preventDefault(); });
     }
     for (const d of spyDockEl.querySelectorAll('details')) {
       d.addEventListener('toggle', () => {

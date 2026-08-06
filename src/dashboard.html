@@ -847,9 +847,13 @@
     .spy-dock > .spy-fold-card.hot { border-left-color: #e06c5f; }
     .spy-dock .spy-dock-tab {
       display: flex; width: 100%; border: none; border-radius: 0;
-      padding: 11px 14px; box-shadow: none; background: transparent;
+      padding: 9px 14px; box-shadow: none; background: transparent;
       font-size: 13px; white-space: normal;
+      /* The bar carries the panel's verdict flag and its filters here (index.js
+         re-parents them), so it wraps rather than squeezing the title. */
+      flex-wrap: wrap;
     }
+    .spy-dock .spy-dock-tab > .spy-fold-state { flex: 0 1 auto; }
     .spy-dock .spy-dock-tab:hover { background: #16202c; }
     .spy-dock details[open] > .spy-dock-tab {
       background: transparent; border-bottom: 1px solid #223044;
@@ -859,15 +863,12 @@
     .spy-dock > .spy-fold-card > .spy-fold-body {
       position: static; width: auto; max-height: none; border: none;
       border-radius: 0; box-shadow: none; background: transparent;
-      padding: 0 14px 12px;
+      padding: 10px 14px 12px;
     }
-    /* The head keeps the VERDICT line (it is the panel's data, not decoration)
-       and loses the title the card header already carries. */
-    .spy-dock .spy-pop-title { display: none; }
-    .spy-dock .spy-pop-head { border-bottom: none; padding: 9px 0 0; margin-bottom: 0; }
-    /* Settings' head is a title and nothing else, so in the sidebar — where the
-       card header already says "Settings" — it would be an empty 9px box. */
-    .spy-dock #spyScanPrefs .spy-pop-head { display: none; }
+    /* The in-body head is gone here: its title repeats the card's header bar, and
+       everything else it carried (the verdict flag, the filters) has moved ONTO
+       that bar — index.js re-parents them, since CSS cannot. */
+    .spy-dock .spy-pop-head { display: none; }
     .spy-dock::before { display: none; }
   }
   /* Scan settings — the in-game Spy button's knobs. They live in the DOCK now
