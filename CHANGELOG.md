@@ -4,6 +4,18 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.59.1] — 2026-08-06
+
+### Fixed
+
+- **On a wide screen the panel filters now ride the card's header bar.** In the
+  right-hand column each panel has a real header, so the time window, the
+  Coords/Names switch and the verdict flag belong on it — they were sitting in a
+  separate row inside the panel, under a header that repeated the card's own
+  title. As pills (narrow screens) nothing changes: there the pill IS the bar and
+  far too small for a chip group, so the filters stay in the panel head. Clicking
+  a filter on the bar no longer folds the card.
+
 ## [1.59.0] — 2026-08-06
 
 ### Changed
