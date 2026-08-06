@@ -4,6 +4,54 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.59.0] — 2026-08-06
+
+### Changed
+
+- **The Spyglass tab was rebuilt around a dock.** "Who's spying on you", "Your
+  neighbours" and the scan Settings left the reading column and became pinned
+  panels: a row of pills in the bottom-right corner, or — from 1180 px wide — a
+  permanent right-hand column with all three open, one under another. Expanding
+  a pill floats its panel over the page instead of pushing the interface around;
+  it closes on the pill, on Esc, or on a click outside. There is no Close button
+  and no dock/undock switch: the width decides the shape.
+- **The watch list now owns the full width of the tab** (and twice the height
+  before it scrolls), with its own collapse bar carrying the count.
+- **The Players filters are always visible.** The `⚙ Filters` disclosure is
+  gone: the finder, the scope chips (`hide inactive` / `watch list` / `miners`),
+  the military range and the row cap all stand on one bar that wraps instead of
+  hiding — one row on a desktop, four on a phone. An active military bound turns
+  amber. A filter you cannot see is indistinguishable from a bug.
+- **"Who's spying on you" rows now read like "Your neighbours" rows**: a
+  Danger-coloured left rule, the nick in the same hue, the alliance `[TAG]`
+  chip, an `×N` count pill and the shared watch pill. Its filters (time window,
+  Coords/Names) moved onto the panel's header line.
+- **The alliance tag lights up when more than one member is scanning you** —
+  the same "together, not alone" read the neighbours card uses. One prober is a
+  player looking at you; three from one tag is their alliance.
+- **Coords/Names is one preference for both defensive panels**, and "Your
+  neighbours" now has the switch too: your own systems read as the planets you
+  named, with the coordinate kept in the hover.
+- **The positions map mirrors its galaxy labels on the right edge**, so a body
+  in the last systems no longer has to be traced back across the field.
+- **Summary labels removed** where the rows below already said it: the prober
+  counts (`4 probers · 60 alerts · last 2d`), the neighbours' coverage word
+  (`quiet · 3/5 fresh`), the Settings contents list, the second "Watchlist (13)"
+  title, and the note about always-hidden accounts.
+
+### Fixed
+
+- **The alliance-ranking deep link pointed at the legacy router.** It now opens
+  `page=ingame&component=highscore` — the form the live highscore actually uses
+  — so the click really does render the ranking OG-E harvests alliance classes
+  from.
+- **Clicking a filter no longer scrolls you back to the top.** Repainting the
+  watch-list grid or a dock panel restores the scroll offset the browser clamps
+  away while the content is briefly empty.
+- **Clicking a control inside a panel no longer closes it.** The outside-click
+  guard now runs in the capture phase, before the clicked chip is replaced by
+  the repaint it triggers.
+
 ## [1.58.0] — 2026-08-05
 
 ### Changed
