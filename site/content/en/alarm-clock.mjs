@@ -5,14 +5,14 @@
 /** @type {import('../_schema.mjs').Feature} */
 export default {
   id: 'alarm-clock',
-  category: 'alarms',
+  category: 'dashboard',
   locale: 'en',
 
   name: 'Alarm clock',
   oneLiner:
     'A reminder you set yourself for a fleet return — it rings on your phone at the time your own send-off determines.',
   flagship: true,
-  order: 1,
+  order: 3,
 
   idea: [
     "On the game's event list every fleet row gets a small, clickable badge in its arrival-time cell. You tap it to **arm a reminder** relative to that flight (e.g. the moment a fleet-save returns), and a second tap removes it. Waves of returning expeditions are detected and controlled as a whole — one badge for the whole series.",

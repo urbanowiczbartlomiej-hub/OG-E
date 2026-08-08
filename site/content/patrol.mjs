@@ -5,13 +5,13 @@
 /** @type {import('./_schema.mjs').Feature} */
 export default {
   id: 'patrol',
-  category: 'dashboard',
+  category: 'spyglass',
   locale: 'pl',
 
   name: 'Patrol',
   oneLiner:
     'Karta na zakładce Szpieguj pilnująca Twojego rewiru: co jest teraz w zasięgu do uderzenia i czy pokrycie obserwacją jest zdrowe.',
-  order: 20,
+  order: 7,
 
   idea: [
     'Patrol traktuje Twoje kolonie jak **kratę pokrycia** i patrzy na wszystkie układy w promieniu ±kilku systemów od Twoich ciał (w tej samej galaktyce, z zawinięciem mapy). Karta odpowiada na dwa pytania: **co jest teraz do złapania** w rewirze (lista uderzeń — te same sygnały, które oznacza szpiegowski Przycisk OG-E) oraz **czy pokrycie jest zdrowe** (ile układów ma świeży, przeterminowany albo żaden podgląd).',

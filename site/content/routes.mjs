@@ -12,7 +12,7 @@ export default {
   name: 'Trasy (routes)',
   oneLiner:
     'Edytor codziennych tras mikro-flot w Dashboardzie — definiujesz raz, skąd, dokąd i czym, a Daily Run prowadzi Cię po nich w grze.',
-  order: 30,
+  order: 4,
 
   idea: [
     'W Dashboardzie budujesz **trasy transportowe** per uniwersum. Trasa to jedno lub więcej **ciał źródłowych** (planety i/lub księżyce) dzielących wspólną, uporządkowaną listę **celów**, jedną **flotę** (statek + liczba) i **misję**. Trasę można wstrzymać przełącznikiem bez kasowania.',

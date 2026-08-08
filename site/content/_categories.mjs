@@ -1,9 +1,11 @@
 // @ts-check
 
 // Taksonomia user-facing, uporządkowana WEDŁUG WAGI PRODUKTOWEJ (nie wg
-// katalogów kodu). Flagowiec to Przycisk OG-E (FAB) — hub, z którego odpalasz
-// wszystkie akcje floty. Kolejne grupy to pozostali flagowcy, a UI/ustawienia
-// są świadomie na końcu jako "dodatki". Kolejność tablicy = kolejność sekcji.
+// katalogów kodu). Flagowce to Przycisk OG-E (FAB) i Spyglass — dwa hub'y,
+// z których gracz odpala większość akcji. Między nimi siedzi "Interfejs gry"
+// (co widać wprost w grze) i "Dashboard" (pełnostronicowy panel danych);
+// "Inne" na końcu to świadomie "dodatki". Kolejność tablicy = kolejność
+// sekcji na stronie.
 //
 // `name` i `blurb` są per język (klucze jak w _strings.mjs) — id kategorii są
 // wspólne dla wszystkich języków (są częścią kotwic #cat-<id>).
@@ -24,8 +26,30 @@ export const CATEGORIES = [
       en: 'The OG-E Button',
     },
     blurb: {
-      pl: 'Flagowy hub OG-E: jeden pływający przycisk, z którego odpalasz wszystkie akcje floty jednym tapnięciem — ekspedycje, polowanie na kolonie, discovery, codzienne trasy, przypomnienia.',
-      en: "OG-E's flagship hub: one floating button that fires every fleet action with a single tap — expeditions, colony hunting, discoveries, daily routes, reminders.",
+      pl: 'Flagowy hub OG-E: jeden pływający przycisk, z którego odpalasz wszystkie akcje floty jednym tapnięciem — ekspedycje, polowanie na kolonie, discovery, codzienne trasy, przypomnienia i wejście do Spyglassa.',
+      en: "OG-E's flagship hub: one floating button that fires every fleet action with a single tap — expeditions, colony hunting, discoveries, daily routes, reminders, and the entry point into Spyglass.",
+    },
+  },
+  {
+    id: 'game-ui',
+    name: {
+      pl: 'Interfejs gry',
+      en: 'Game interface',
+    },
+    blurb: {
+      pl: 'To, co widzisz wprost w grze i włączasz z panelu ustawień AGR: czytelność interfejsu, znaczniki floty na planetach, pulsowanie menu wydarzeń i kupca oraz baner ataku. Nic, co dotyka reklam, menu premium czy stopki gry.',
+      en: "What you see directly in the game and switch on from the AGR settings panel: interface readability, fleet-status planet markers, the event and trader menu pulses, and the attack banner. Nothing that touches ads, premium menus or the game footer.",
+    },
+  },
+  {
+    id: 'dashboard',
+    name: {
+      pl: 'Dashboard i analityka',
+      en: 'Dashboard & analytics',
+    },
+    blurb: {
+      pl: 'Osobny panel OG-E: najlepsze miejsca na kolonie, budzik na powrót floty, codzienne trasy, statystyki i synchronizacja między urządzeniami — zbudowane z danych zebranych podczas normalnej gry. Zakładka Spyglass żyje tu samodzielnie i ma własny rozdział niżej.',
+      en: "OG-E's own panel: best colony spots, the fleet-return alarm clock, daily routes, statistics and cross-device sync — all built from data collected during normal play. The Spyglass tab lives here too, with its own chapter below.",
     },
   },
   {
@@ -40,47 +64,14 @@ export const CATEGORIES = [
     },
   },
   {
-    id: 'alarms',
+    id: 'other',
     name: {
-      pl: 'Budzik i fleet-save',
-      en: 'Alarm clock & fleet-save',
+      pl: 'Inne',
+      en: 'Other',
     },
     blurb: {
-      pl: 'Budzik na powrót floty, który sam ustawiasz. Jedyna świadomie graniczna funkcja — mówimy o tym wprost w sekcji fair-play.',
-      en: 'A fleet-return alarm you set yourself. The only knowingly borderline feature — we say so openly in its fair-play section.',
-    },
-  },
-  {
-    id: 'dashboard',
-    name: {
-      pl: 'Dashboard i analityka',
-      en: 'Dashboard & analytics',
-    },
-    blurb: {
-      pl: 'Osobny panel OG-E: najlepsze miejsca na kolonie, patrol, trasy, statystyki i podgląd danych zebranych podczas normalnej gry.',
-      en: "OG-E's own panel: best colony spots, patrol, routes, statistics and a view of the data collected during normal play.",
-    },
-  },
-  {
-    id: 'sync',
-    name: {
-      pl: 'Synchronizacja i społeczność',
-      en: 'Sync & community',
-    },
-    blurb: {
-      pl: 'Twoje dane na wielu urządzeniach oraz dzielenie się i dołączanie do wspólnej aktywności — bez śledzenia gry w tle.',
-      en: 'Your data across devices, plus sharing and joining shared activity — with no background game tracking.',
-    },
-  },
-  {
-    id: 'qol',
-    name: {
-      pl: 'Usprawnienia UI (dodatki)',
-      en: 'UI improvements (extras)',
-    },
-    blurb: {
-      pl: 'Czytelność, spójność i drobne ułatwienia interfejsu — dodatki do flagowych funkcji. Nic, co dotyka reklam, menu premium czy stopki gry.',
-      en: 'Readability, consistency and small interface conveniences — extras on top of the flagship features. Nothing that touches ads, premium menus or the game footer.',
+      pl: 'Drobne usprawnienia i kosmetyka, dodatki do funkcji flagowych: przyciski nawigacji galaktyki, brak białego rozbłysku tła i inne detale interfejsu. Nic, co dotyka reklam, menu premium czy stopki gry.',
+      en: 'Small conveniences and cosmetics on top of the flagship features: galaxy navigation buttons, no white background flash, and other interface details. Nothing that touches ads, premium menus or the game footer.',
     },
   },
 ];

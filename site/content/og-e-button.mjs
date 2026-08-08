@@ -29,6 +29,7 @@ export default {
     'Rozmiar przycisku regulujesz suwakiem (zmiana na żywo).',
     'Pozycja i wybrany przycisk są zapamiętywane per urządzenie; po przeładowaniu FAB wraca w to samo miejsce (przycięty do widocznego ekranu).',
     'Long-press ma osobne znaczenie zależne od aktywnego przycisku (np. „pomiń tę planetę").',
+    'Jeden z orbów to **Spyglass**: włączasz go i zarządzasz nim z zakładki `Spyglass` w Dashboardzie OG-E (lista obserwowanych, ustawienia skanów), a w grze proponuje kolejne spojrzenie na galaktykę albo wysyłkę sondy szpiegowskiej — patrz osobny rozdział „Spyglass — wywiad".',
   ],
 
   fairplay: {

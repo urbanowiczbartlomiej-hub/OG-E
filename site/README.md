@@ -83,6 +83,34 @@ Praktyczny wniosek: **po zmianie komponentu zbuduj stronę i zacommituj to, co
 zmieni się w `_generated/`** — inaczej opublikowane demo zostanie na starej
 wersji. Build mówi o tym wprost (`↻ demo "…" odświeżone`).
 
+## Żywy przycisk OG-E (`live/`)
+
+Osobny mechanizm niż `demos/` — tam commitujemy martwy markup, a tu na stronie
+**biegnie prawdziwy kod przycisku**: pływający FAB rozszerzenia, z dragiem,
+orbitami satelitów, przełączaniem modułów i blokiem ustawień (module bar +
+suwak rozmiaru) wyjętym wprost z panelu OG-E. Włącza się go kontrolką **FAB**
+w nagłówku strony, obok przełącznika języka i motywu — przycisk pływa po całej
+stronie, więc jego ustawienia muszą być osiągalne z każdego miejsca.
+
+Jak to jedzie bez bundlera:
+
+- `site/live/fab-playground.js` to WEJŚCIE — samo nic nie implementuje, tylko
+  uruchamia moduły z `src/` (szczegóły i lista kompromisów w nagłówku pliku);
+- `site/build.mjs` przechodzi **graf importów** od tego wejścia i kopiuje
+  dotknięte pliki `src/` verbatim do `dist/assets/…`, zachowując wzajemne
+  głębokości ścieżek — relatywne importy działają bez przepisywania, a strona
+  ładuje je jako natywne ESM (`import()` leniwie, dopiero na włączenie);
+- dlatego generator zostaje **zero-dependency** i CI Pages nadal nie potrzebuje
+  `npm ci`, a w repo nie ma zbudowanego artefaktu, który mógłby się zestarzeć;
+- **brakujący plik w grafie PRZERYWA build** — cichy 404 na module oznaczałby
+  przycisk, który się po prostu nie pojawia. Build raportuje liczbę
+  skopiowanych modułów (`żywy przycisk: N modułów`).
+
+Warunek, na którym to wszystko stoi: graf FAB-a nie tyka `chrome.*` w czasie
+ładowania ani DOM-u gry, a stan trzyma w `localStorage` przez `safeLS`. Jeśli
+kiedyś któryś z tych modułów sięgnie po API rozszerzenia, demo przestanie się
+ładować — i o tym też powie build, przy pierwszym uruchomieniu strony.
+
 ## Publikacja (GitHub Pages)
 
 Strona jest hostowana na GitHub Pages pod

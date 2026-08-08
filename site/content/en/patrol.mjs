@@ -5,13 +5,13 @@
 /** @type {import('../_schema.mjs').Feature} */
 export default {
   id: 'patrol',
-  category: 'dashboard',
+  category: 'spyglass',
   locale: 'en',
 
   name: 'Patrol',
   oneLiner:
     'A card on the Spy tab watching your grounds: what is catchable to strike right now, and whether your observation coverage is healthy.',
-  order: 20,
+  order: 7,
 
   idea: [
     "Patrol treats your colonies as a **coverage lattice** and looks at every system within ±a few systems of your bodies (same galaxy, honouring the map wrap). The card answers two questions: **what is catchable right now** in the grounds (the strike list — the same signals the Spy OG-E button flags) and **whether coverage is healthy** (how many systems have a fresh, stale, or no look).",

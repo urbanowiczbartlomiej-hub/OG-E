@@ -16,84 +16,20 @@ does, why it helps and how it stays inside OGame's fair-play rules.
 
 ---
 
-## One button, your daily routine
+## What OG-E does
 
 Most of OG-E lives behind a single **draggable floating button**, built
-for one-thumb play on a phone. Switch it between four modes — each is one
-tap per intention:
+for one-thumb play on a phone: expeditions, lifeform discovery,
+colonization and the daily collection run, each just a tap or two. A
+full-page **Dashboard** turns your scan data into decisions — where to
+settle, who's watching you, and what your fleet is doing — plus optional
+push reminders (ntfy.sh) and opt-in cross-device sync through your own
+private GitHub gist.
 
-- **🚀 Send expeditions** — fire an expedition from a rotating list of
-  eligible planets. No menus, no typing.
-- **🧬 Discover lifeforms** — run the lifeform discovery scan across your
-  planets, stopping before you hit your artifact cap.
-- **🪐 Colonize** — send a colony ship to the next genuinely-free spot,
-  picked automatically from your own scan data (and it tells you exactly
-  why it won't fire: no ship, reserved, stale, waiting on the gap…).
-- **🔁 Daily Run** — collect your daily production in seconds: scatter a
-  fixed micro-fleet from a moon to your target planets, then pull
-  everything (ships + resources) back to one collect point — all from the
-  same button.
-
----
-
-## What else OG-E does for you
-
-- **Find the best place to settle.** The **Colony Scout** ranks the
-  emptiest neighbourhoods in your scanned galaxies and re-sorts them for
-  how *you* play — farms, PvP, or a quiet eco corner — so a new colony
-  lands somewhere worth living.
-- **Never miss a landing.** Optional **push notifications to your phone**
-  a few minutes before a fleet returns: expedition waves, ad-hoc fleets,
-  and fleet-save returns. Delivered through [ntfy.sh](https://ntfy.sh);
-  off until you turn it on.
-- **Don't forget the daily stuff.** Gentle **highlights** nudge you about
-  things easy to miss on mobile: live **events** and the **merchant /
-  trader** (auction bids, import-export containers).
-- **Read your screen at a glance.** A **readability boost** declutters
-  OGame's tiny top-bar labels so the numbers that matter pop on a small
-  screen — the countdown to your next mission, how many missions are in
-  flight, and your free expedition slots.
-- **Prune weak colonies.** On a colony below your size threshold, the
-  floating action button offers a one-tap, mobile-safe **Abandon** (with
-  confirm) — folding in what used to be a separate fresh-planet banner and
-  red abandon overlay.
-- **Your data, synced your way.** Opt-in **cloud sync** mirrors your scan
-  database and colony history through *your own* private GitHub gist —
-  no OG-E server, ever.
-
-## The Dashboard
-
-A full-page companion (one OGame universe at a time) for the data behind
-the buttons:
-
-- **Colonizations** — three sub-tabs in one place: **Planet sizes** (a
-  histogram of the field sizes you've personally visited), **Scanned data**
-  (galaxy preview maps of everywhere you've scanned), and the **Colony Scout**
-  settlement-area analysis. Its ⚙ Settings hold the per-universe scan +
-  colonize config.
-- **Reminders** — a live look at every push reminder currently queued,
-  plus the schedule editor for expedition waves and fleet-save alerts.
-- **Daily Run** — point-and-click editor for your collection routes
-  (pick sources and targets from your own planets and moons — nothing to
-  type).
-
-Export / import everything as JSON. No telemetry, no accounts.
-
-### Where settings live
-
-Two homes, one rule: nothing is editable in two places.
-
-- **In-game (AGR settings panel)** — only the essentials: the master
-  on/off switches, the required tokens (your gist token for cloud sync,
-  your ntfy token for push reminders), the display toggles (readability,
-  event/trader highlights), and all expedition options. These either have
-  no natural Dashboard tab or are the switch that turns a feature on.
-- **In the Dashboard tabs** — the detailed config, next to the data it
-  shapes. **Reminders tab:** the expedition-wave and ad-hoc reminder
-  schedules, plus the per-universe fleet-save thresholds and offsets,
-  edited through a friendly per-entry offset editor. **Colonizations
-  tab:** the per-universe target positions, rescan policy, and the
-  colonize / abandon thresholds.
+Every feature, what it does, why it helps, and how it stays inside
+OGame's fair-play rules is documented at
+**<https://urbanowiczbartlomiej-hub.github.io/OG-E/>** — that page is the
+canonical feature list; this README stays focused on the code.
 
 ---
 

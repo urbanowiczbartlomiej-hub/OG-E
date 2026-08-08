@@ -235,6 +235,93 @@ strong { color: var(--heading); }
 html[data-theme='dark'] .ico-moon { display: none; }
 html[data-theme='light'] .ico-sun { display: none; }
 
+/* Launcher żywego przycisku OG-E — trzecia kontrolka nagłówka, obok języka
+   i motywu (przycisk pływa po CAŁEJ stronie, więc jego ustawienia muszą być
+   osiągalne z każdego miejsca, nie tylko z sekcji, która go opisuje). */
+.fab-btn {
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+  font: 700 12px/1 var(--font-sans);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.fab-btn:hover { color: var(--heading); border-color: var(--border-strong); }
+.fab-btn[aria-expanded='true'] {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Panel demo. Ponad FAB-em (który pinuje z-index 99999), bo to jedyne wyjście
+   awaryjne, gdy przycisk urośnie na pół ekranu. */
+.fab-panel {
+  position: fixed;
+  z-index: 100001;
+  top: calc(var(--hdr-h) + 8px);
+  right: 12px;
+  left: 12px;
+  max-width: 380px;
+  margin-left: auto;
+  padding: 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  max-height: calc(100dvh - var(--hdr-h) - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.fab-panel[hidden] { display: none; }
+.fab-panel-title {
+  margin: 0 0 10px;
+  color: var(--heading);
+  font-size: 14px;
+  font-weight: 700;
+}
+.fab-switch {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 12px;
+  color: var(--text);
+  font-size: 14px;
+  cursor: pointer;
+}
+.fab-switch input { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; }
+/* Gniazdo prawdziwego bloku ustawień rozszerzenia. Jego własne kolory są z
+   panelu w grze (ciemne), więc dajemy mu ciemne tło w OBU motywach — ma się
+   czytać jako „to jest UI rozszerzenia”, a nie jako element tej strony. */
+.fab-panel-body {
+  border: 1px solid #2a3a4a;
+  border-radius: var(--r-sm);
+  background: #0d1520;
+  padding: 8px;
+}
+.fab-panel-body:empty { display: none; }
+.fab-panel-body td { padding: 0; vertical-align: top; }
+.fab-note {
+  margin: 10px 0 0;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.fab-reset {
+  margin-top: 10px;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font: 600 12px var(--font-sans);
+  cursor: pointer;
+}
+.fab-reset:hover { color: var(--heading); border-color: var(--border-strong); }
+
 /* ============================== Układ ============================== */
 
 .layout {

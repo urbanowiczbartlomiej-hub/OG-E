@@ -11,7 +11,7 @@ export default {
   name: 'Routes',
   oneLiner:
     'A Dashboard editor for daily micro-fleet routes — define once where from, where to and with what, and Daily Run walks you through them in-game.',
-  order: 30,
+  order: 4,
 
   idea: [
     'In the Dashboard you build **transport routes** per universe. A route is one or more **source bodies** (planets and/or moons) sharing one ordered **target list**, one **fleet** (ship + count) and a **mission**. A route can be paused with a toggle without deleting it.',

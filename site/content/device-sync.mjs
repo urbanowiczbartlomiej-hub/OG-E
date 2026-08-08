@@ -5,14 +5,14 @@
 /** @type {import('./_schema.mjs').Feature} */
 export default {
   id: 'device-sync',
-  category: 'sync',
+  category: 'dashboard',
   locale: 'pl',
 
   name: 'Sync między urządzeniami',
   oneLiner:
     'Twoje zebrane dane (skany galaktyki, historia kolonii) wędrują między komputerem a telefonem przez Twój własny prywatny GitHub gist.',
   flagship: true,
-  order: 1,
+  order: 5,
 
   idea: [
     'Podłączasz w Ustawieniach **własny token GitHub** (klasyczny PAT z jednym uprawnieniem `gist`), a OG-E trzyma Twoje lokalnie zebrane dane w **prywatnym giście, który należy do Ciebie**. Każde urządzenie wysyła i pobiera przez `api.github.com` — nigdzie indziej.',

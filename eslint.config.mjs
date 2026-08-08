@@ -173,6 +173,24 @@ export default [
     },
   },
 
+  // ---- Żywe demo na stronie docs (kod PRZEGLĄDARKOWY, nie Node) ----
+  //
+  // `site/live/*.js` to wejścia, które uruchamiają prawdziwe moduły z `src/`
+  // na opublikowanej stronie (patrz site/live/fab-playground.js). Nie są
+  // częścią rozszerzenia, więc nie obowiązują ich strefy importów z `src/**`
+  // — wolno im ciągnąć features + state + lib, dokładnie jak `content.js`.
+  {
+    files: ['site/live/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: { ...globals.browser },
+    },
+    rules: {
+      'no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+    },
+  },
+
   // ---- Build/release tooling (Node, ESM) ----
   {
     files: ['scripts/**/*.{js,mjs}', 'site/**/*.mjs', '*.config.{js,mjs}', 'eslint.config.mjs'],

@@ -28,6 +28,7 @@ export default {
     'You turn modules on and off with tiles in settings; the button size is a live slider.',
     'Position and the selected module are remembered per device; after a reload the button returns to the same spot (clamped to the visible screen).',
     'Long-press has a separate, module-dependent meaning (e.g. "skip this planet").',
+    'One of the orbs is **Spyglass**: you turn it on and manage it from the `Spyglass` tab in the OG-E Dashboard (the watch list, scan settings), while in-game it proposes the next galaxy look or spy-probe send — see the separate "Spyglass — intelligence" chapter.',
   ],
 
   fairplay: {

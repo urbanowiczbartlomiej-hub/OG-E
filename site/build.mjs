@@ -29,19 +29,36 @@
 import { readdir, mkdir, writeFile, readFile, copyFile, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 
 import { CATEGORIES, CATEGORY_IDS } from './content/_categories.mjs';
 import { validateFeature } from './content/_schema.mjs';
 import { STRINGS } from './content/_strings.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
+const REPO = join(ROOT, '..');
 const CONTENT_DIR = join(ROOT, 'content');
 const ASSETS_DIR = join(ROOT, 'assets');
 const SHOTS_DIR = join(ASSETS_DIR, 'shots');
 const DEMOS_DIR = join(ROOT, 'demos');
 const DEMOS_OUT = join(DEMOS_DIR, '_generated');
 const DIST = join(ROOT, 'dist');
+
+/**
+ * Wejście ŻYWEGO przycisku (patrz site/live/fab-playground.js) — ścieżka
+ * względem korzenia repo. Generator kopiuje ten plik razem z całym jego grafem
+ * importów, więc lista dotkniętych modułów `src/` NIGDY nie jest utrzymywana
+ * ręcznie.
+ */
+const LIVE_ENTRIES = ['site/live/fab-playground.js'];
+
+/**
+ * Katalog w `dist/`, pod który mirrorujemy drzewo repo (`assets/site/live/...`
+ * + `assets/src/...`). Prefiks zachowuje WZAJEMNE głębokości ścieżek, więc
+ * relatywne importy w skopiowanych plikach rozwiązują się bez przepisywania
+ * ani jednej linijki kodu.
+ */
+const LIVE_OUT_PREFIX = 'assets';
 
 /** @typedef {'pl'|'en'} Locale */
 
@@ -264,8 +281,15 @@ const THEME_BOOT = `
 })();
 `;
 
-/** Inline JS: motyw, przełącznik języka (z kotwicą), drawer mobile, scroll-spy. */
-const SCRIPT = `
+/**
+ * Inline JS: motyw, przełącznik języka (z kotwicą), drawer mobile, scroll-spy,
+ * żywy przycisk OG-E. Funkcja (nie stała), bo ścieżka do modułu żywego
+ * przycisku zależy od języka — `import()` rozwiązuje się względem dokumentu,
+ * a EN mieszka w podkatalogu.
+ * @param {string} base Prefiks ścieżek do assets ('' w korzeniu, '../' w /en/).
+ * @returns {string}
+ */
+const SCRIPT = (base) => `
 (function () {
   // Przełącznik motywu (zapamiętywany).
   var themeBtn = document.getElementById('themeBtn');
@@ -335,6 +359,58 @@ const SCRIPT = `
   document.getElementById('lightboxClose').addEventListener('click', closeLightbox);
   lightbox.addEventListener('click', function (e) { if (e.target === lightbox) closeLightbox(); });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !lightbox.hidden) closeLightbox(); });
+
+  // ── Żywy przycisk OG-E ────────────────────────────────────────────────
+  // Prawdziwy FAB rozszerzenia, pływający po całej stronie. Moduł (i cały
+  // skopiowany graf 'src/') ładuje się LENIWIE — dopiero gdy ktoś włączy
+  // przycisk albo otworzy panel; kto tylko czyta dokumentację, nie płaci za
+  // to ani jednym żądaniem.
+  var FAB_KEY = 'oge-doc-fab';
+  var fabBtn = document.getElementById('fabBtn');
+  var fabPanel = document.getElementById('fabPanel');
+  var fabSwitch = document.getElementById('fabSwitch');
+  var fabBody = document.getElementById('fabPanelBody');
+  var fabReset = document.getElementById('fabReset');
+  var mod = null;
+  var load = function () {
+    // Dynamiczny import wymaga specyfikatora, który JEST URL-em — ścieżka
+    // relatywna bez './' nim nie jest, więc rozwiązujemy ją wobec adresu
+    // dokumentu (i tym samym poprawnie dla /en/, o katalog głębiej).
+    if (!mod) mod = import(new URL('${base}assets/site/live/fab-playground.js', document.baseURI).href);
+    return mod;
+  };
+  var stored = null;
+  try { stored = localStorage.getItem(FAB_KEY); } catch (e) {}
+  fabSwitch.checked = stored === '1';
+  var apply = function (on) {
+    try { localStorage.setItem(FAB_KEY, on ? '1' : '0'); } catch (e) {}
+    // Wyłączenie nigdy nie ŚCIĄGA modułu — jeśli go nie ma, nie ma też czego
+    // zdejmować ze strony.
+    if (!on) { if (mod) mod.then(function (m) { m.disableFab(); }); return; }
+    load().then(function (m) { m.enableFab(); });
+  };
+  if (fabSwitch.checked) apply(true);
+  fabSwitch.addEventListener('change', function () { apply(fabSwitch.checked); });
+  fabReset.addEventListener('click', function () { load().then(function (m) { m.resetFab(); }); });
+
+  var fabPanelOpen = function (v) {
+    fabPanel.hidden = !v;
+    fabBtn.setAttribute('aria-expanded', String(v));
+    // Blok ustawień budujemy raz, przy pierwszym otwarciu (to prawdziwy
+    // komponent panelu rozszerzenia — patrz site/live/fab-playground.js).
+    if (v && !fabBody.firstChild) {
+      load().then(function (m) {
+        if (!fabBody.firstChild) fabBody.appendChild(m.buildSettingsBlock());
+      });
+    }
+  };
+  fabBtn.addEventListener('click', function () { fabPanelOpen(fabPanel.hidden); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !fabPanel.hidden) fabPanelOpen(false); });
+  document.addEventListener('click', function (e) {
+    if (fabPanel.hidden) return;
+    if (fabPanel.contains(e.target) || fabBtn.contains(e.target)) return;
+    fabPanelOpen(false);
+  });
 })();
 `;
 
@@ -392,10 +468,27 @@ const buildPage = (features) => {
     </a>
     <div class="hdr-actions">
       ${langSwitch()}
+      <button class="fab-btn" id="fabBtn" type="button" aria-controls="fabPanel" aria-expanded="false" title="${esc(L.fab.btnLabel)}">${esc(L.fab.btn)}</button>
       <button class="theme-btn" id="themeBtn" type="button" aria-label="${esc(L.themeToggleLabel)}">${ICON_SUN}${ICON_MOON}</button>
     </div>
   </div>
 </header>
+
+<!-- Panel żywego przycisku: przełącznik + PRAWDZIWY blok ustawień FAB-a z
+     rozszerzenia (module bar + suwak rozmiaru), wstrzykiwany do #fabPanelBody. -->
+<div class="fab-panel" id="fabPanel" role="dialog" aria-label="${esc(L.fab.panelLabel)}" hidden>
+  <p class="fab-panel-title">${esc(L.fab.title)}</p>
+  <label class="fab-switch">
+    <!-- autocomplete=off: bez tego przeglądarka ODTWARZA stan checkboxa przy
+         przeładowaniu (i potrafi przy tym wystrzelić zdarzenie change), co
+         rozjeżdża go z localStorage — a to on jest tu źródłem prawdy. -->
+    <input type="checkbox" id="fabSwitch" autocomplete="off">
+    <span>${esc(L.fab.show)}</span>
+  </label>
+  <div class="fab-panel-body" id="fabPanelBody"></div>
+  <p class="fab-note">${inline(L.fab.note)}</p>
+  <button class="fab-reset" id="fabReset" type="button">${esc(L.fab.reset)}</button>
+</div>
 
 <button class="toc-fab" id="tocFab" type="button" aria-controls="toc" aria-expanded="false" aria-label="${esc(L.tocButtonLabel)}">${esc(L.tocButton)}</button>
 <div class="toc-scrim" aria-hidden="true"></div>
@@ -423,9 +516,71 @@ const buildPage = (features) => {
   <img class="lightbox-img" id="lightboxImg" src="" alt="">
   <p class="lightbox-caption" id="lightboxCaption"></p>
 </div>
-<script>${SCRIPT}</script>
+<script>${SCRIPT(BASE)}</script>
 </body>
 </html>`;
+};
+
+// ─── Żywy przycisk: graf modułów → dist ──────────────────────────────────
+//
+// Strona wpuszcza PRAWDZIWY kod przycisku OG-E (nie zrzut, nie makietę, nie
+// fork), a robi to najprostszym możliwym sposobem: kopiuje dotknięte pliki
+// `src/` verbatim i ładuje je jako natywne ESM. Dlatego generator zostaje
+// zero-dependency (żadnego bundlera, więc CI Pages nadal nie potrzebuje
+// `npm ci` — patrz .github/workflows/pages.yml), a w repo nie ma ani jednego
+// zbudowanego artefaktu, który mógłby się zestarzeć.
+//
+// Zbiór plików NIE jest listą do utrzymywania — wychodzi z przejścia grafu
+// importów od wejścia. Brakujący plik PRZERYWA build: cichy 404 na module
+// oznaczałby przycisk, który po prostu się nie pojawia.
+
+/**
+ * Relatywne importy w kodzie źródłowym: `from './x.js'` oraz `import './x.js'`.
+ * Świadomie NIE łapie `import('./x.js')` (z nawiasem) — w `src/` ta forma
+ * występuje wyłącznie w typach JSDoc, które w runtime nie istnieją.
+ */
+const REL_IMPORT_RE = /(?:from|import)\s*['"](\.\.?\/[^'"]+)['"]/g;
+
+/**
+ * Przejdź graf importów od podanych wejść i zwróć KAŻDY dotknięty plik jako
+ * ścieżkę względną wobec korzenia repo (z `/` jako separatorem).
+ * @param {string[]} entries Ścieżki wejść względem korzenia repo.
+ * @returns {Promise<string[]>}
+ */
+const collectModuleGraph = async (entries) => {
+  /** @type {Set<string>} */
+  const seen = new Set();
+  const queue = entries.map((p) => join(REPO, p));
+  while (queue.length > 0) {
+    const file = /** @type {string} */ (queue.pop());
+    const rel = relative(REPO, file).split(sep).join('/');
+    if (seen.has(rel)) continue;
+    if (!existsSync(file)) {
+      throw new Error(
+        `żywy przycisk: import wskazuje na nieistniejący plik "${rel}" ` +
+          '(literówka w imporcie albo przeniesiony moduł)',
+      );
+    }
+    seen.add(rel);
+    const code = await readFile(file, 'utf8');
+    for (const m of code.matchAll(REL_IMPORT_RE)) queue.push(resolve(dirname(file), m[1]));
+  }
+  return [...seen].sort();
+};
+
+/**
+ * Skopiuj graf do `dist/`, mirrorując drzewo repo pod {@link LIVE_OUT_PREFIX}.
+ * Prefiks jest wspólny dla wszystkich plików, więc wzajemne głębokości ścieżek
+ * są zachowane i relatywne importy działają bez przepisywania.
+ * @param {string[]} files
+ * @returns {Promise<void>}
+ */
+const copyLiveGraph = async (files) => {
+  for (const rel of files) {
+    const dst = join(DIST, LIVE_OUT_PREFIX, ...rel.split('/'));
+    await mkdir(dirname(dst), { recursive: true });
+    await copyFile(join(REPO, ...rel.split('/')), dst);
+  }
 };
 
 /** Rekurencyjne kopiowanie katalogu (assets). */
@@ -526,6 +681,10 @@ const main = async () => {
   }
   await copyDir(ASSETS_DIR, join(DIST, 'assets'));
 
+  // 3b. Żywy przycisk: prawdziwy kod `src/` + jego wejście, skopiowane verbatim.
+  const liveFiles = await collectModuleGraph(LIVE_ENTRIES);
+  await copyLiveGraph(liveFiles);
+
   // GitHub Pages: bez tego pliku hosting przepuszcza output przez Jekylla,
   // który POMIJA ścieżki zaczynające się od `_`. Nic takiego dziś nie
   // publikujemy, ale plik jest darmowy i zdejmuje całą klasę niespodzianek.
@@ -535,7 +694,8 @@ const main = async () => {
   const drafted = pl.filter((f) => f.status === 'drafted').length;
   const verified = pl.filter((f) => f.status === 'verified').length;
   console.log(
-    `OK — ${pl.length} funkcji (${verified} verified, ${drafted} drafted), języki: ${LOCALES.join(', ')} → site/dist/`,
+    `OK — ${pl.length} funkcji (${verified} verified, ${drafted} drafted), języki: ${LOCALES.join(', ')},`
+      + ` żywy przycisk: ${liveFiles.length} modułów → site/dist/`,
   );
 };
 

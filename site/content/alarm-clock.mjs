@@ -9,14 +9,14 @@
 /** @type {import('./_schema.mjs').Feature} */
 export default {
   id: 'alarm-clock',
-  category: 'alarms',
+  category: 'dashboard',
   locale: 'pl',
 
   name: 'Budzik (alarm clock)',
   oneLiner:
     'Przypomnienie, które sam ustawiasz na powrót floty — dzwoni na telefonie o czasie, który wyznacza Twoja własna wysyłka.',
   flagship: true,
-  order: 1,
+  order: 3,
 
   idea: [
     'Na liście zdarzeń gry każdy wiersz floty dostaje mały, klikalny znacznik w komórce z czasem przylotu. Tapasz go, żeby **uzbroić przypomnienie** względem tego lotu (np. na moment powrotu fleet-save), a drugie tapnięcie je zdejmuje. Fale powracających ekspedycji są rozpoznawane i sterowane jako całość — jeden znacznik na całą serię.',

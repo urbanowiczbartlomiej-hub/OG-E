@@ -36,6 +36,18 @@ export const STRINGS = {
 
     langSwitchLabel: 'Język strony',
 
+    // Żywy przycisk OG-E na tej stronie (site/live/fab-playground.js).
+    fab: {
+      btn: 'FAB',
+      btnLabel: 'Przycisk OG-E na tej stronie — pokaż i ustaw',
+      panelLabel: 'Przycisk OG-E — demo',
+      title: 'Przycisk OG-E na żywo',
+      show: 'Pokaż na tej stronie',
+      reset: 'Reset pozycji i rozmiaru',
+      note:
+        'To **ten sam kod**, który dostajesz w grze — nie zrzut i nie makieta. Przesuwaj przycisk, przełączaj moduły tapnięciem satelity, zmieniaj rozmiar suwakiem. Tapnięcie maluje przykładową etykietę i **nic nie wysyła**.',
+    },
+
     hero: {
       kicker: 'Dokumentacja rozszerzenia',
       title: 'OG-E',
@@ -96,6 +108,18 @@ export const STRINGS = {
     tocButtonLabel: 'Open the feature list',
 
     langSwitchLabel: 'Page language',
+
+    // The live OG-E button on this page (site/live/fab-playground.js).
+    fab: {
+      btn: 'FAB',
+      btnLabel: 'The OG-E button on this page — show and configure',
+      panelLabel: 'OG-E button — demo',
+      title: 'The OG-E button, live',
+      show: 'Show it on this page',
+      reset: 'Reset position and size',
+      note:
+        'This is the **same code** you get in the game — not a screenshot, not a mock-up. Drag the button, switch modules by tapping a satellite, resize it with the slider. A tap paints a sample label and **sends nothing**.',
+    },
 
     hero: {
       kicker: 'Extension documentation',

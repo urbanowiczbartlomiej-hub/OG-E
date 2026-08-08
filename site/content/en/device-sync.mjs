@@ -5,14 +5,14 @@
 /** @type {import('../_schema.mjs').Feature} */
 export default {
   id: 'device-sync',
-  category: 'sync',
+  category: 'dashboard',
   locale: 'en',
 
   name: 'Cross-device sync',
   oneLiner:
     'Your collected data (galaxy scans, colony history) travels between your computer and phone through your own private GitHub gist.',
   flagship: true,
-  order: 1,
+  order: 5,
 
   idea: [
     'In Settings you connect **your own GitHub token** (a classic PAT with the single `gist` permission), and OG-E keeps your locally-collected data in a **private gist that belongs to you**. Every device pushes and pulls through `api.github.com` — nowhere else.',
