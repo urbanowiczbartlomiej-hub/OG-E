@@ -23,6 +23,9 @@
 //     centralized as `GAME.ACTIVE_PLANET`) and its `.planet-koords` child.
 //   - `countActiveExpeditions`: reads the in-flight expedition rows in
 //     `#eventContent` (mission-type 15) and their `.coordsOrigin` cells.
+//   - `getActiveBodyCp` / `isCpOnPlanetList`: read the `#planetList` rows
+//     (their `planet-<n>` ids and moonlink `cp`s) for the cycle-anchor
+//     memory — recording / validating the remembered expedition start body.
 //   - `findPlanetWithExpSlot`: reads
 //     `settingsStore.get().maxExpeditionsPerPlanet` and tests each planet
 //     with `countActiveExpeditions`; the `#planetList` walk itself is the
@@ -80,6 +83,69 @@ export const countActiveExpeditions = (originCoords) => {
     if (c === originCoords) count += 1;
   }
   return count;
+};
+
+/**
+ * Read the `cp` id of the body the current page belongs to — the planet row's
+ * own `planet-<n>` id, or, on a MOON page, the `cp` off that row's moonlink.
+ *
+ * Why not just read `cp` off `location.search`: a bare fleetdispatch URL
+ * carries no `cp` at all (the game falls back to the session's current body),
+ * so the URL is not a reliable source. The highlighted `#planetList` row is —
+ * the game marks exactly one, with its own misspelled classes (see
+ * `lib/gameDom.js`), and swaps `hightlightPlanet` for `hightlightMoon` when the
+ * page is a moon. Recording the MOON's cp when the expedition left from a moon
+ * keeps the anchor honest: the next cycle resumes on the same moon, matching
+ * what `bridges/expeditionRedirect.js` does for its mid-cycle hops.
+ *
+ * @returns {number} `cp` of the active body, or `0` when it can't be read.
+ */
+export const getActiveBodyCp = () => {
+  const moonRow = document.querySelector(GAME.ACTIVE_MOON_ROW);
+  if (moonRow) {
+    const href = moonRow.querySelector(GAME.MOON_LINK)?.getAttribute('href');
+    if (!href) return 0;
+    try {
+      const cp = parseInt(
+        new URL(href, location.href).searchParams.get('cp') || '',
+        10,
+      );
+      return Number.isFinite(cp) && cp > 0 ? cp : 0;
+    } catch {
+      return 0;
+    }
+  }
+  const planetRow = document.querySelector(GAME.ACTIVE_PLANET);
+  const cp = parseInt((planetRow?.id || '').replace('planet-', ''), 10);
+  return Number.isFinite(cp) && cp > 0 ? cp : 0;
+};
+
+/**
+ * Is `cp` still a body the player owns — i.e. a planet row on `#planetList`
+ * or one of its moonlinks? Guards the remembered expedition anchor against a
+ * planet that has since been abandoned, sold or lost: a stale id would send
+ * the tap to a fleetdispatch page for a body that no longer exists.
+ *
+ * @param {number} cp
+ * @returns {boolean}
+ */
+export const isCpOnPlanetList = (cp) => {
+  if (!(cp > 0)) return false;
+  if (document.getElementById(`planet-${cp}`)) return true;
+  const moons = document.querySelectorAll(
+    `${GAME.SMALL_PLANET} ${GAME.MOON_LINK}`,
+  );
+  for (const moon of moons) {
+    const href = moon.getAttribute('href');
+    if (!href) continue;
+    try {
+      if (new URL(href, location.href).searchParams.get('cp') === String(cp))
+        return true;
+    } catch {
+      // Malformed href — keep scanning the remaining rows.
+    }
+  }
+  return false;
 };
 
 /**

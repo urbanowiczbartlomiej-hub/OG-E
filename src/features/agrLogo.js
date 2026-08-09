@@ -1,7 +1,7 @@
 // AGR logo rewire — hijack AntiGameReborn's otherwise-idle menu-logo
 // button so clicking it opens AGR's options menu AND auto-expands our
-// OG-E Settings tab, and replaces the default logo image with the OG-E
-// extension icon.
+// OG-E Settings tab, and crossfades its image between AGR's own logo and
+// the OG-E extension icon.
 //
 // # Why we rewire AGR's logo rather than painting our own toolbar
 //
@@ -19,27 +19,39 @@
 //
 // # Visual contract
 //
+// We DO overwrite the anchor's `background-image` — the AGR logo becomes
+// OG-E's icon — but a plain, permanent swap felt too much like erasing
+// AGR's own identity on its own chrome. So instead of one fixed image we
+// crossfade the `background-image` between AGR's own logo and ours: a
+// CSS `animation` that ping-pongs an overlay's opacity between 0 and 1
+// (`animation-direction: alternate`), spending EQUAL, generous time on
+// each side. Both logos get their due; neither is ever gone for good.
+//
 // Force a fixed 27×27 square on the anchor (AGR's CSS otherwise lets the
 // aspect ratio drift). Render our icon using the 48 px asset — browser
 // downscale from 48→27 stays crisp; downscale from the 500×500
 // `icons/icon.png` master softened the edges.
 //
-// Hover state (brightness pulse on pointer-over) is delivered via a
-// sibling `<style id="oge-agr-logo-hover">` — inline style attributes
-// cannot express pseudo-classes so the `:hover` rule has to live in a
-// stylesheet.
+// `prefers-reduced-motion: reduce` freezes the crossfade at a static
+// half-opacity blend instead of animating — both logos stay visible, no
+// motion.
+//
+// Hover state (brightness pulse on pointer-over) and the crossfade
+// keyframes are delivered via a sibling `<style id="oge-agr-logo-hover">`
+// — inline style attributes cannot express pseudo-classes or `@keyframes`
+// so both have to live in a stylesheet.
 //
 // # Lifecycle
 //
 //   1. `waitFor(() => document.getElementById(LOGO_ID), 10s)`.
-//   2. Once found: swap the `background-image` inline style to our
-//      extension icon (resolved via `browser.runtime.getURL` with a
-//      `chrome.runtime.getURL` fallback), force a 27×27 square, inject
-//      the hover stylesheet, and attach a `click` listener that fires
-//      the AGR menu button and then schedules a click on our settings
-//      tab header.
+//   2. Once found: force a 27×27 square, layer an OG-E icon overlay on
+//      top (resolved via `browser.runtime.getURL` with a
+//      `chrome.runtime.getURL` fallback) with the crossfade animation,
+//      inject the hover stylesheet, and attach a `click` listener that
+//      fires the AGR menu button and then schedules a click on our
+//      settings tab header.
 //   3. Dispose reverts the inline `style` attribute to its original
-//      (captured at install time), removes the hover stylesheet, and
+//      (captured at install time), removes the overlay + stylesheet, and
 //      removes the click listener.
 //
 // # Why two clicks with an 80 ms gap
@@ -71,12 +83,28 @@ const LOGO_ID = 'ago_menubutton_logo';
 const OGE_TAB_HEADER_ID = 'oge-settings-header';
 
 /**
- * Stable id for the hover-stylesheet we inject alongside the rewire.
- * Inline style attributes can't express pseudo-classes (`:hover`), so the
- * hover rule lives in a sibling `<style>` node. The id lets dispose find
- * and remove it and lets a double-install collapse to a single element.
+ * Stable id for the stylesheet we inject alongside the rewire — holds the
+ * hover rule and the crossfade `@keyframes` (neither expressible as an
+ * inline style attribute). The id lets dispose find and remove it and lets
+ * a double-install collapse to a single element.
  */
 const HOVER_STYLE_ID = 'oge-agr-logo-hover';
+
+/**
+ * DOM id of the OG-E icon overlay laid on top of AGR's logo anchor.
+ * `pointer-events: none` (purely decorative — clicks fall through to the
+ * anchor's own listener). Never present when {@link resolveIconUrl} has
+ * nothing to show.
+ */
+const OVERLAY_ID = 'oge-agr-logo-overlay';
+
+/**
+ * How long ONE leg of the crossfade takes (AGR → OG-E, or back). With
+ * `animation-direction: alternate` the full round trip is twice this.
+ * Slow on purpose — a courtesy hand-off between two logos, not something
+ * meant to catch the eye.
+ */
+const CROSSFADE_LEG_MS = 7_000;
 
 /**
  * Fixed logical size of the AGR menu-logo square. AGR's own stylesheet
@@ -106,7 +134,7 @@ const TAB_EXPAND_DELAY_MS = 80;
  * Prefers `browser.runtime.getURL` (Firefox) and falls back to
  * `chrome.runtime.getURL` (Chromium). In test environments where neither
  * exists we return the empty string; the caller uses that as a sentinel
- * to skip the image swap (click rewire still works).
+ * to skip the overlay (click rewire still works).
  *
  * @returns {string}
  */
@@ -138,8 +166,9 @@ let installed = null;
 
 /**
  * Install the AGR logo rewire. Waits up to 10 s for the AGR logo anchor
- * to appear, then swaps its background image and attaches a click
- * handler that opens AGR's menu and auto-expands our settings tab.
+ * to appear, then layers an OG-E icon overlay on top (crossfading with
+ * AGR's own logo) and attaches a click handler that opens AGR's menu and
+ * auto-expands our settings tab.
  *
  * Idempotent: a second call while already installed returns the same
  * dispose fn as the first. Dispose-before-ready is supported: calling
@@ -164,6 +193,8 @@ export const installAgrLogo = () => {
   let pendingTabClick = null;
   /** @type {HTMLStyleElement | null} */
   let hoverStyleEl = null;
+  /** @type {HTMLDivElement | null} */
+  let overlayEl = null;
 
   waitFor(() => document.getElementById(LOGO_ID), {
     timeoutMs: AGR_TIMEOUT_MS,
@@ -182,31 +213,46 @@ export const installAgrLogo = () => {
     // Pin a 27×27 square regardless of runtime icon availability — AGR's
     // own CSS lets the aspect ratio drift, and we want the click target
     // to stay consistent even when the WebExtension runtime isn't there
-    // to give us a background image (test env, missing permissions).
+    // to give us an overlay image (test env, missing permissions).
+    // `position: relative` gives the overlay something to sit against.
     const squareText =
       ` width: ${LOGO_SIZE_PX}px !important;` +
       ` height: ${LOGO_SIZE_PX}px !important;` +
-      ' display: block !important;';
-
-    const iconUrl = resolveIconUrl();
-    const imageText = iconUrl
-      ? `background-image: url(${iconUrl}) !important;` +
-        ' background-size: contain;' +
-        ' background-repeat: no-repeat;' +
-        ' background-position: center;'
-      : '';
+      ' display: block !important;' +
+      ' position: relative !important;';
 
     // Preserve any existing inline style attributes by appending — AGR's
     // own rules are in a stylesheet, so the inline attr is typically
     // empty, but a user stylesheet or future AGR version might put
     // something here.
     const prefix = originalStyleAttr ? originalStyleAttr + ';' : '';
-    logoEl.setAttribute('style', prefix + imageText + squareText);
+    logoEl.setAttribute('style', prefix + squareText);
 
-    // Hover pulse via a sibling <style>. Inline attributes can't express
-    // pseudo-classes, so the :hover rule lives in a stylesheet. Reuse
-    // an existing node if a previous install left one behind (dev reload,
-    // double-install race).
+    const iconUrl = resolveIconUrl();
+    if (iconUrl) {
+      // OG-E icon overlay — same size as the anchor, sat on top of AGR's
+      // own background-image. Its opacity is what the crossfade drives:
+      // 0 = AGR's logo alone, 1 = OG-E's icon alone, and the animation
+      // spends equal time settled at each end.
+      overlayEl = document.createElement('div');
+      overlayEl.id = OVERLAY_ID;
+      overlayEl.setAttribute('aria-hidden', 'true');
+      overlayEl.setAttribute(
+        'style',
+        'position: absolute !important; inset: 0 !important;' +
+          ' pointer-events: none !important;' +
+          ` background-image: url(${iconUrl}) !important;` +
+          ' background-size: contain !important;' +
+          ' background-repeat: no-repeat !important;' +
+          ' background-position: center !important;',
+      );
+      logoEl.appendChild(overlayEl);
+    }
+
+    // Hover pulse + crossfade keyframes via a sibling <style>. Inline
+    // attributes can't express pseudo-classes or `@keyframes`, so both
+    // live in a stylesheet. Reuse an existing node if a previous install
+    // left one behind (dev reload, double-install race).
     const existingHover = document.getElementById(HOVER_STYLE_ID);
     if (existingHover instanceof HTMLStyleElement) {
       hoverStyleEl = existingHover;
@@ -215,7 +261,16 @@ export const installAgrLogo = () => {
       hoverStyleEl.id = HOVER_STYLE_ID;
       hoverStyleEl.textContent =
         `#${LOGO_ID} { opacity: 0.85; transition: opacity 120ms ease, filter 120ms ease; }\n` +
-        `#${LOGO_ID}:hover { opacity: 1 !important; filter: brightness(1.2) !important; }`;
+        `#${LOGO_ID}:hover { opacity: 1 !important; filter: brightness(1.2) !important; }\n` +
+        `@keyframes oge-agr-logo-crossfade { from { opacity: 0; } to { opacity: 1; } }\n` +
+        `#${OVERLAY_ID} {\n` +
+        `  animation: oge-agr-logo-crossfade ${CROSSFADE_LEG_MS}ms ease-in-out infinite alternate;\n` +
+        `}\n` +
+        // Reduced motion: freeze on a static half-opacity blend instead of
+        // an animated toggle — both logos stay visible, no motion.
+        `@media (prefers-reduced-motion: reduce) {\n` +
+        `  #${OVERLAY_ID} { animation: none !important; opacity: 0.5 !important; }\n` +
+        `}`;
       (document.head || document.documentElement).appendChild(hoverStyleEl);
     }
 
@@ -249,6 +304,9 @@ export const installAgrLogo = () => {
     if (logoEl && clickListener) {
       logoEl.removeEventListener('click', clickListener, true);
     }
+    if (overlayEl && overlayEl.parentNode) {
+      overlayEl.parentNode.removeChild(overlayEl);
+    }
     if (logoEl) {
       // Restore the pre-rewire style attribute verbatim. `null` means
       // there was no attribute originally — `removeAttribute` returns
@@ -264,6 +322,7 @@ export const installAgrLogo = () => {
     }
     clickListener = null;
     logoEl = null;
+    overlayEl = null;
     originalStyleAttr = null;
     hoverStyleEl = null;
     installed = null;

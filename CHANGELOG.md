@@ -4,6 +4,26 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.60.0] — 2026-08-09
+
+### Added
+
+- **The expedition FAB now remembers where a cycle started.** The first time
+  you tap "Send Exp" with nothing in flight, that planet (or moon) becomes
+  the round's anchor. The next time you start a fresh round from anywhere
+  other than fleetdispatch, the button takes you back to that same body
+  first, instead of picking whichever planet happens to be active. Want a
+  different starting point? Just send a cycle's first expedition from
+  there — no setting, it just remembers the last place you started from.
+
+### Changed
+
+- **The AGR menu logo now gently crossfades between AGR's own logo and the
+  OG-E icon** instead of permanently replacing it. Both stay visible in
+  turn, in equal, generous turns — a courtesy nod to AGR rather than a
+  takeover of its own chrome. Respects "reduce motion" (freezes on a static
+  blend instead of animating).
+
 ## [1.59.1] — 2026-08-06
 
 ### Fixed

@@ -18,8 +18,10 @@ import {
   getActivePlanetCoords,
   countActiveExpeditions,
   findPlanetWithExpSlot,
+  getActiveBodyCp,
+  isCpOnPlanetList,
 } from '../../src/features/sendExpedition/domHelpers.js';
-import { ACTIVE_PLANET_CLASS } from '../../src/lib/gameDom.js';
+import { ACTIVE_PLANET_CLASS, ACTIVE_MOON_CLASS } from '../../src/lib/gameDom.js';
 import { settingsStore, SETTINGS_SCHEMA } from '../../src/state/settings.js';
 
 // ── Settings reset ──────────────────────────────────────────────────
@@ -203,5 +205,69 @@ describe('findPlanetWithExpSlot', () => {
   it('returns null with no planet list', () => {
     setMaxExpPerPlanet(1);
     expect(findPlanetWithExpSlot(false)).toBeNull();
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// getActiveBodyCp / isCpOnPlanetList (expedition cycle-anchor memory)
+// ──────────────────────────────────────────────────────────────────
+
+describe('getActiveBodyCp', () => {
+  it('reads the active PLANET row id', () => {
+    buildPlanetList([
+      [1, '1:2:3', false],
+      [2, '4:5:6', true],
+    ]);
+    expect(getActiveBodyCp()).toBe(2);
+  });
+
+  it('reads the moonlink cp on a MOON page (hightlightMoon row)', () => {
+    document.body.innerHTML = `<div id="planetList">
+      <div id="planet-1" class="smallplanet"></div>
+      <div id="planet-2" class="smallplanet ${ACTIVE_MOON_CLASS}">
+        <a class="moonlink" href="?page=ingame&component=overview&cp=99"></a>
+      </div>
+    </div>`;
+    expect(getActiveBodyCp()).toBe(99);
+  });
+
+  it('returns 0 when nothing is highlighted', () => {
+    buildPlanetList([[1, '1:2:3', false]]);
+    expect(getActiveBodyCp()).toBe(0);
+  });
+
+  it('returns 0 with no planet list at all', () => {
+    expect(getActiveBodyCp()).toBe(0);
+  });
+});
+
+describe('isCpOnPlanetList', () => {
+  it('is true for a planet row id on the list', () => {
+    buildPlanetList([
+      [1, '1:2:3', false],
+      [2, '4:5:6', true],
+    ]);
+    expect(isCpOnPlanetList(1)).toBe(true);
+    expect(isCpOnPlanetList(2)).toBe(true);
+  });
+
+  it('is true for a moonlink cp on the list', () => {
+    document.body.innerHTML = `<div id="planetList">
+      <div id="planet-1" class="smallplanet">
+        <a class="moonlink" href="?page=ingame&component=overview&cp=99"></a>
+      </div>
+    </div>`;
+    expect(isCpOnPlanetList(99)).toBe(true);
+  });
+
+  it('is false for a cp that is neither a planet nor a moon on the list', () => {
+    buildPlanetList([[1, '1:2:3', true]]);
+    expect(isCpOnPlanetList(404)).toBe(false);
+  });
+
+  it('is false for 0 / non-positive input', () => {
+    buildPlanetList([[1, '1:2:3', true]]);
+    expect(isCpOnPlanetList(0)).toBe(false);
+    expect(isCpOnPlanetList(-1)).toBe(false);
   });
 });

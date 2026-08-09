@@ -14,7 +14,7 @@
 //
 // The module tries `browser.runtime.getURL` first, `chrome.runtime.getURL`
 // second. We install a `browser` polyfill on `globalThis` in beforeEach
-// that returns a stub moz-extension URL so the module's image-swap path
+// that returns a stub moz-extension URL so the module's overlay path
 // exercises the runtime branch rather than falling through to the
 // no-runtime empty-string sentinel.
 //
@@ -45,8 +45,11 @@ const OGE_TAB_HEADER_ID = 'oge-settings-header';
 /** Stub icon URL returned by the browser.runtime.getURL mock. */
 const STUB_ICON_URL = 'moz-extension://abc/icons/icon48.png';
 
-/** Stable id for the hover-stylesheet — mirrors the module constant. */
+/** Stable id for the hover/crossfade stylesheet — mirrors the module constant. */
 const HOVER_STYLE_ID = 'oge-agr-logo-hover';
+
+/** DOM id of the icon overlay — mirrors the module constant. */
+const OVERLAY_ID = 'oge-agr-logo-overlay';
 
 /**
  * Paint the minimum AGR surface the module interacts with: the logo
@@ -165,7 +168,7 @@ describe('installAgrLogo — wiring', () => {
     expect(menuBtnSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('dispose removes click listener and restores the original background-image', async () => {
+  it('dispose removes click listener, the overlay, and restores the original style', async () => {
     vi.useFakeTimers();
     setupAgrDom();
     const logo = /** @type {HTMLElement} */ (document.getElementById(LOGO_ID));
@@ -176,13 +179,14 @@ describe('installAgrLogo — wiring', () => {
     const dispose = installAgrLogo();
     await vi.advanceTimersByTimeAsync(0);
 
-    // Confirm the image was actually swapped in.
-    expect(logo.getAttribute('style') ?? '').toContain('background-image');
+    // Confirm the overlay was actually mounted.
+    expect(document.getElementById(OVERLAY_ID)).not.toBeNull();
 
-    // After dispose: style attribute back to absent, clicks no longer
-    // route through our handler.
+    // After dispose: style attribute back to absent, overlay gone, clicks
+    // no longer route through our handler.
     dispose();
     expect(logo.getAttribute('style')).toBeNull();
+    expect(document.getElementById(OVERLAY_ID)).toBeNull();
 
     const menuBtnSpy = vi.fn();
     document
@@ -203,20 +207,34 @@ describe('installAgrLogo — wiring', () => {
     expect(() => _resetAgrLogoForTest()).not.toThrow();
   });
 
-  it('background-image is set to runtime.getURL result when available', async () => {
+  it('mounts an icon overlay set to the runtime.getURL result', async () => {
     vi.useFakeTimers();
     setupAgrDom();
     installAgrLogo();
     await vi.advanceTimersByTimeAsync(0);
 
-    const logo = /** @type {HTMLElement} */ (document.getElementById(LOGO_ID));
-    const style = logo.getAttribute('style') ?? '';
+    const overlay = document.getElementById(OVERLAY_ID);
+    expect(overlay).not.toBeNull();
+    const style = overlay?.getAttribute('style') ?? '';
     expect(style).toContain(STUB_ICON_URL);
     expect(style).toContain('background-image');
-    expect(style).toContain('!important');
+    expect(style).toContain('pointer-events: none');
   });
 
-  it('forces a 27×27 square on the logo anchor', async () => {
+  it('does not mount an overlay when the extension icon cannot be resolved', async () => {
+    vi.useFakeTimers();
+    delete (/** @type {any} */ (globalThis)).browser;
+    setupAgrDom();
+    installAgrLogo();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(document.getElementById(OVERLAY_ID)).toBeNull();
+    // The click rewire still installs even without a resolvable icon.
+    const logo = /** @type {HTMLElement} */ (document.getElementById(LOGO_ID));
+    expect(logo.getAttribute('style') ?? '').toContain('width: 27px');
+  });
+
+  it('forces a 27×27, relatively-positioned square on the logo anchor', async () => {
     vi.useFakeTimers();
     setupAgrDom();
     installAgrLogo();
@@ -229,9 +247,11 @@ describe('installAgrLogo — wiring', () => {
     // `display: block` keeps the anchor rendering as a square box rather
     // than collapsing to its inline text-height dimensions.
     expect(style).toContain('display: block');
+    // The overlay is `position: absolute` against this anchor.
+    expect(style).toContain('position: relative');
   });
 
-  it('injects a hover stylesheet with the :hover rule', async () => {
+  it('injects a stylesheet with the :hover rule and the crossfade keyframes', async () => {
     vi.useFakeTimers();
     setupAgrDom();
     installAgrLogo();
@@ -244,6 +264,10 @@ describe('installAgrLogo — wiring', () => {
     expect(css).toContain(`#${LOGO_ID}:hover`);
     // The brightness filter is the perceptual "pulse" on pointer-over.
     expect(css).toContain('brightness');
+    expect(css).toContain('@keyframes oge-agr-logo-crossfade');
+    expect(css).toContain(`#${OVERLAY_ID}`);
+    expect(css).toContain('alternate');
+    expect(css).toContain('prefers-reduced-motion');
   });
 
   it('dispose removes the hover stylesheet', async () => {

@@ -19,6 +19,8 @@
 //   1. User is NOT on fleetdispatch → we navigate to fleetdispatch with
 //      `cp=<a planet that still has an expedition slot>`. The game's own
 //      page load happens next; we originate no request ourselves.
+//      Exception — a FRESH cycle (nothing in flight) goes to the remembered
+//      start body instead; see "Cycle anchor" below.
 //   2. On fleetdispatch, fleet panel NOT yet hydrated → we click AGR's
 //      expedition routine `#ago_routine_7` (once it reports ready). AGR
 //      assigns the mission + fleet and renders the native dispatch button;
@@ -40,6 +42,27 @@
 // the player deliberately pass over the planet they're on; the walk just
 // continues from the destination. Paints "All sent" when no OTHER planet
 // has a free slot. This is navigation only — still zero server actions.
+//
+// # Cycle anchor (where a fresh round of expeditions begins)
+//
+// Mid-cycle the planet order is driven by the round-robin walk (this file's
+// hops + `bridges/expeditionRedirect.js`). At the START of a cycle there is
+// nothing to continue from, and "the active planet" is arbitrary — whichever
+// body the player last looked at — so the cycle would begin somewhere
+// different every day. We therefore remember ONE body: the one the cycle's
+// FIRST expedition went out from (`state/expStartPlanet.js`), and an
+// off-fleetdispatch tap with nothing in flight navigates there.
+//
+// Both halves key off the same predicate, `isCycleStart(inFlight)`:
+//   - nothing in flight + off fleetdispatch  → go to the anchor (validated
+//     against the live planet list; a sold/abandoned body falls back to the
+//     normal free-slot walk),
+//   - nothing in flight + already ON fleetdispatch → whatever we send now
+//     BECOMES the anchor.
+// That second rule makes the memory self-bootstrapping (with no anchor yet,
+// the walk picks a body and the send from it records it) and self-correcting
+// (to move the anchor, send a cycle's first expedition from the body you
+// want). No setting, no UI.
 //
 // # Max-expedition guard
 //
@@ -101,12 +124,17 @@ import {
   isGlobalExpeditionCapReached,
   isPlanetShipless,
   computeInitialLabel,
+  isCycleStart,
+  chooseExpeditionStartCp,
 } from './pure.js';
 import {
   getActivePlanetCoords,
+  getActiveBodyCp,
+  isCpOnPlanetList,
   countActiveExpeditions,
   findPlanetWithExpSlot,
 } from './domHelpers.js';
+import { readExpStartCp, writeExpStartCp } from '../../state/expStartPlanet.js';
 
 // ── Module-level snapshot of `window.fleetDispatcher` ────────────────
 
@@ -377,6 +405,8 @@ export const installSendExpedition = () => {
    */
   const runPhase1 = async (btn) => {
     setLabel(btn, 'Wait...');
+    // Sample the cycle state BEFORE the send — see rememberCycleAnchor.
+    const freshCycle = isCycleStart(countActiveExpeditions(null));
     const r = await dispatchWhenReady({ owner: OWNER_EXP });
 
     if (r === 'foreign') {
@@ -386,6 +416,7 @@ export const installSendExpedition = () => {
       return;
     }
     if (r === 'sent') {
+      rememberCycleAnchor(freshCycle);
       setLabel(btn, 'Sent');
       // Lock held; release after the post-send nav window in case the page
       // doesn't reload (rare dispatch failure) — mirrors the fast path.
@@ -395,6 +426,29 @@ export const installSendExpedition = () => {
     // 'timeout' — fleet2 up but the dispatch never became sendable; surface a
     // sticky Error the user can tap to reload+retry.
     paintError(btn);
+  };
+
+  /**
+   * Record the body we are standing on as the expedition cycle's ANCHOR — the
+   * planet the next fresh cycle should begin from (see
+   * `state/expStartPlanet.js`). Called from the two send paths right after the
+   * game accepted the dispatch, and ONLY when that dispatch opened a cycle
+   * (nothing was in flight when the tap landed).
+   *
+   * `freshCycle` is sampled BEFORE the send, not here: by the time a send is
+   * accepted the event list is about to grow the row we just created, so
+   * re-reading it would answer the wrong question.
+   *
+   * A body we can't identify (`cp === 0`) leaves the previous anchor intact —
+   * a stale-but-plausible anchor beats forgetting the one the user chose.
+   *
+   * @param {boolean} freshCycle  Was the expedition list empty pre-send?
+   * @returns {void}
+   */
+  const rememberCycleAnchor = (freshCycle) => {
+    if (!freshCycle) return;
+    const cp = getActiveBodyCp();
+    if (cp > 0) writeExpStartCp(cp);
   };
 
   /**
@@ -460,9 +514,19 @@ export const installSendExpedition = () => {
 
     const isFleet = location.search.includes('component=fleetdispatch');
 
-    // Off fleetdispatch → hop to the first planet with a free slot.
+    // Off fleetdispatch → hop to the first planet with a free slot — EXCEPT
+    // when this tap opens a fresh cycle (nothing in flight), in which case the
+    // remembered anchor wins so every cycle starts from the same body instead
+    // of wherever the player happened to be standing. Mid-cycle the walk is
+    // untouched: it is the round-robin continuation the auto-redirect drives.
     if (!isFleet) {
-      const cp = findPlanetWithExpSlot(false);
+      const startCp = readExpStartCp();
+      const cp = chooseExpeditionStartCp({
+        inFlight: countActiveExpeditions(null),
+        startCp,
+        startCpOnList: isCpOnPlanetList(startCp),
+        fallbackCp: findPlanetWithExpSlot(false),
+      });
       if (cp === null) {
         paintAllMaxed(btn);
         return;
@@ -523,12 +587,15 @@ export const installSendExpedition = () => {
         return;
       }
 
+      // Sample the cycle state BEFORE the send — see rememberCycleAnchor.
+      const freshCycle = isCycleStart(countActiveExpeditions(null));
       const r = dispatchPrepared({ owner: OWNER_EXP });
       if (r === 'foreign') {
         location.href = bareFleetdispatchUrl();
         return;
       }
       if (r === 'sent') {
+        rememberCycleAnchor(freshCycle);
         setLabel(btn, 'Sent');
         // Lock while the game processes the dispatch + its post-send nav. In
         // the happy path OGame reloads within ~1 s; the safety timeout covers

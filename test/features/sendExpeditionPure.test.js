@@ -8,7 +8,11 @@
 
 import { describe, it, expect } from 'vitest';
 
-import { isPlanetShipless } from '../../src/features/sendExpedition/pure.js';
+import {
+  isPlanetShipless,
+  isCycleStart,
+  chooseExpeditionStartCp,
+} from '../../src/features/sendExpedition/pure.js';
 
 /**
  * Minimal snapshot factory — only the field under test varies; the cap
@@ -39,5 +43,70 @@ describe('sendExpedition — isPlanetShipless (pure)', () => {
 
   it('a null snapshot is unknown — do not short-circuit', () => {
     expect(isPlanetShipless(null)).toBe(false);
+  });
+});
+
+describe('sendExpedition — isCycleStart (pure)', () => {
+  it('is true only when nothing is in flight', () => {
+    expect(isCycleStart(0)).toBe(true);
+    expect(isCycleStart(1)).toBe(false);
+    expect(isCycleStart(5)).toBe(false);
+  });
+});
+
+describe('sendExpedition — chooseExpeditionStartCp (pure)', () => {
+  it('picks the anchor at a fresh cycle when it is still on the list', () => {
+    expect(
+      chooseExpeditionStartCp({
+        inFlight: 0,
+        startCp: 42,
+        startCpOnList: true,
+        fallbackCp: 7,
+      }),
+    ).toBe(42);
+  });
+
+  it('falls back mid-cycle even with a remembered anchor', () => {
+    expect(
+      chooseExpeditionStartCp({
+        inFlight: 1,
+        startCp: 42,
+        startCpOnList: true,
+        fallbackCp: 7,
+      }),
+    ).toBe(7);
+  });
+
+  it('falls back when nothing is remembered yet', () => {
+    expect(
+      chooseExpeditionStartCp({
+        inFlight: 0,
+        startCp: 0,
+        startCpOnList: false,
+        fallbackCp: 7,
+      }),
+    ).toBe(7);
+  });
+
+  it('falls back when the remembered anchor is no longer on the planet list', () => {
+    expect(
+      chooseExpeditionStartCp({
+        inFlight: 0,
+        startCp: 42,
+        startCpOnList: false,
+        fallbackCp: 7,
+      }),
+    ).toBe(7);
+  });
+
+  it('propagates a null fallback (nowhere to go) unchanged', () => {
+    expect(
+      chooseExpeditionStartCp({
+        inFlight: 1,
+        startCp: 0,
+        startCpOnList: false,
+        fallbackCp: null,
+      }),
+    ).toBeNull();
   });
 });

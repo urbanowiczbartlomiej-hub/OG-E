@@ -180,6 +180,52 @@ export const isPlanetShipless = (snapshot) =>
   !!snapshot && snapshot.shipsOnPlanet.length === 0;
 
 /**
+ * Pure: is this tap starting a FRESH expedition cycle? True only when the
+ * event list shows no expedition in flight at all.
+ *
+ * Both consumers of the start-planet memory hang off this one predicate — the
+ * redirect ("cycle starting ⇒ go to the anchor") and the write ("cycle
+ * starting ⇒ this send defines the anchor") — so the two can never disagree
+ * about when a cycle begins.
+ *
+ * @param {number} inFlight  Expeditions currently in flight (account-wide).
+ * @returns {boolean}
+ */
+export const isCycleStart = (inFlight) => inFlight === 0;
+
+/**
+ * Inputs to {@link chooseExpeditionStartCp}.
+ *
+ * @typedef {object} StartCpEnv
+ * @property {number} inFlight  Expeditions currently in flight (account-wide).
+ * @property {number} startCp  Remembered anchor `cp` (0 = none remembered).
+ * @property {boolean} startCpOnList  Is that `cp` still a body on `#planetList`?
+ * @property {number | null} fallbackCp  What the plain free-slot walk picked.
+ */
+
+/**
+ * Pure: which body should an off-fleetdispatch tap navigate to?
+ *
+ * The anchor wins ONLY at the start of a cycle, and only when it still exists
+ * (the player may have abandoned or sold that planet since). Every other case
+ * — mid-cycle, no memory, stale memory — keeps the existing behaviour of
+ * hopping to whatever the free-slot walk found, so this can never strand the
+ * user on a body the walk would have skipped.
+ *
+ * Note we do NOT check the anchor's own free-slot count: a cycle start means
+ * nothing is in flight, so by definition every body is under its per-planet
+ * cap. `fallbackCp === null` (nowhere to go) propagates unchanged and the
+ * caller paints "All sent".
+ *
+ * @param {StartCpEnv} env
+ * @returns {number | null}
+ */
+export const chooseExpeditionStartCp = (env) =>
+  isCycleStart(env.inFlight) && env.startCp > 0 && env.startCpOnList
+    ? env.startCp
+    : env.fallbackCp;
+
+/**
  * Inputs to {@link computeInitialLabel}. The orchestrator's mount path
  * reads the live page; tests pass the booleans explicitly.
  *
