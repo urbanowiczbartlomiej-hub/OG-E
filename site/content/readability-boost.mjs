@@ -12,12 +12,13 @@ export default {
 
   name: 'Readability',
   oneLiner:
-    'Odchudza gadatliwe etykiety w górnym pasku gry, żeby liczby, które naprawdę liczą się na małym ekranie, były większe i łatwiejsze do odczytania.',
+    'Odchudza gadatliwe etykiety w górnym pasku gry i daje duże przyciski nawigacji w galaktyce — żeby to, co naprawdę liczy się na małym ekranie, było większe i łatwiejsze do trafienia.',
   order: 2,
 
   idea: [
-    'Boks zdarzeń floty domyślnie pokazuje trzy informacje (liczbę misji, typ + cel następnej, odliczanie), ale otacza je etykietami („Misje:", „Następna:", „Rodzaj:"), które zajmują więcej miejsca niż sama treść. Readability zwija te etykiety do zera, podciąga boks pod nagłówek AGR i stawia odliczanie po prawej w pełnym rozmiarze, a resztę w kolumnie po lewej z zarezerwowanym marginesem, żeby długa nazwa misji nigdy nie wjechała pod czas.',
+    'Boks zdarzeń floty domyślnie pokazuje trzy informacje (liczbę misji, typ + cel następnej, odliczanie), ale otacza je etykietami („Misje:", „Następna:", „Rodzaj:"), które zajmują więcej miejsca niż sama treść. Readability zwija te etykiety do zera i stawia odliczanie po prawej w pełnym rozmiarze, a resztę w kolumnie po lewej z zarezerwowanym marginesem, żeby długa nazwa misji nigdy nie wjechała pod czas.',
     'Ten sam zabieg dostaje link ruchu floty w nagłówku fleetdispatch: kolor zieleni trafia tylko na sam link (nie na jego dzieci), więc natywny czerwony wskaźnik „limit ekspedycji osiągnięty" w środku dalej działa tak, jak powinien.',
+    'Ten sam przełącznik odsłania też **duże przyciski nawigacji w widoku galaktyki**: skok o galaktykę i o system w lewo/prawo, „Start" oraz Phalanx / Spy / Discovery w celach wygodnych dla kciuka. Dzięki temu przejście systemu po systemie — np. przy falandze całego regionu — to spokojne tapnięcia zamiast celowania kursorem w kilkunastopikselowe strzałki. Na desktopie działa dokładnie tak samo.',
   ],
 
   value: [
@@ -38,7 +39,9 @@ export default {
   ],
 
   screenshots: [
-    { id: 'eventbox', caption: 'Boks zdarzeń floty przed i po odchudzeniu etykiet.' },
+    { id: 'eventbox-before', caption: 'Przed: boks zdarzeń floty z pełnymi etykietami — treść tonie w podpisach.' },
+    { id: 'eventbox-after', caption: 'Po: etykiety zwinięte, odliczanie i stan slotów w pełnym rozmiarze.' },
+    { id: 'galaxy', caption: 'Widok galaktyki: duże przyciski skoku o galaktykę i system oraz Start / Phalanx / Spy / Discovery.' },
   ],
 
   codeRefs: [

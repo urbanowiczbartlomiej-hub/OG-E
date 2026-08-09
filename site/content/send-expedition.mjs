@@ -19,6 +19,7 @@ export default {
     'Przycisk **Ekspedycje** rozpozna, czy jesteś na stronie z flotą — jeśli nie, przekieruje Cię na nią. Kolejne kliknięcie wymaga konfiguracji ekspedycji w **AGR**. Sam skład floty, cel i typ misji ustala rutyna AGR — OG-E jedynie naciska we właściwej chwili właściwy natywny przycisk gry. Jeśli rutyna ekspedycji AGR nie pozwala wysłać ekspedycji, przycisk odpowiednio na to reaguje.',
     'Przycisk **sam przechodzi do następnej** planety z wolnym slotem, aż do wyczerpania limitów. Pomija te, z których już wysłał ekspedycję, i przeskakuje do następnej, jeśli flota nie jest wystarczająca.',
     'Przycisk można **przytrzymać**, żeby jawnie pominąć aktywną planetę i przeskoczyć do następnej.',
+    'W praktyce cały obchód to rytm **dwóch tapnięć na jedną ekspedycję**: pierwsze otwiera stronę floty właściwej planety, drugie wysyła. 30 tapnięć = 15 wysłanych ekspedycji — i to bez celowania w malutkie natywne przyciski.',
   ],
 
   value: [

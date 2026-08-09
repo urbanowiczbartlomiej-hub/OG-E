@@ -17,6 +17,7 @@ export default {
 
   idea: [
     'Moduł **Kolonizacja** sam wskazuje kolejny najlepszy wolny slot w całym uniwersum (wg Twoich preferencji co do pozycji i galaktyk) i wysyła tam kolonizatora. Wykrywa, kiedy pozycja jest już zajęta, i umożliwia ustawienie kolejnych koordynat. Dzięki licznikowi „N free" pokazuje na żywo, ile wybranych pozycji jest jeszcze wolnych. Dzięki licznikowi minimalnego odstępu między czasem lądowania, można wysłać dziesiątki misji jedna po drugiej, zachowując czas niezbędny do tego, żeby porzucić zbyt małą kolonię.',
+    'Rytm jest prosty: **dwa tapnięcia to jedna wysłana misja kolonizacji** — 40 tapnięć = 20 misji lecących jedna po drugiej. **Trzy tapnięcia** wystarczą, żeby porzucić kolonię, która okazała się za mała.',
     'Przyciskowi towarzyszy przycisk **Porzuć kolonię**. Wykrywa zbliżające się misje lądowania kolonizacji i proponuje przejście do nowej kolonii. Sprawdza jej wielkość i przeprowadza proces jej porzucenia, jeśli jest zbyt mała. Dzięki temu kolejna misja kolonizacji może lądować już za kilka sekund. Raz porzucony slot wróci do kandydatów kolonizacji dopiero po minimum 24h (w nocy, zgodnie z zasadami gry).',
   ],
 
@@ -26,7 +27,7 @@ export default {
 
   fairplay: {
     summary: [
-      'OG-E **nie wysyła żądań do gry** — klika natywne elementy wysyłki i porzucenia, dokładnie te, które nacisnąłbyś sam. Rozmiar planety do decyzji o porzuceniu odczytuje z **już wyświetlonego** przeglądu, bez dodatkowego zapytania.',
+      'OG-E **nie wysyła żądań do gry** — klika natywne elementy wysyłki i porzucenia, dokładnie te, które nacisnąłbyś sam.',
       'Dane o wolnych miejscach pochodzą z **publicznego, statystycznego API** (tego samego, z którego korzystają narzędzia społeczności) — czyli mapy zajętości serwera. Dane te łączymy z własnymi danymi o porzuceniach i odświeżamy raz na tydzień.',
     ],
   },

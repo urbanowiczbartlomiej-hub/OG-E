@@ -26,8 +26,8 @@ export const CATEGORIES = [
       en: 'The OG-E Button',
     },
     blurb: {
-      pl: 'Flagowy hub OG-E: jeden pływający przycisk, z którego odpalasz wszystkie akcje floty jednym tapnięciem — ekspedycje, polowanie na kolonie, discovery, codzienne trasy, przypomnienia i wejście do Spyglassa.',
-      en: "OG-E's flagship hub: one floating button that fires every fleet action with a single tap — expeditions, colony hunting, discoveries, daily routes, reminders, and the entry point into Spyglass.",
+      pl: 'Flagowy hub OG-E: jeden pływający przycisk, z którego odpalasz wszystkie codzienne akcje jednym tapnięciem.',
+      en: "OG-E's flagship hub: one floating button that fires all your everyday actions with a single tap.",
     },
   },
   {
@@ -44,8 +44,8 @@ export const CATEGORIES = [
   {
     id: 'dashboard',
     name: {
-      pl: 'Dashboard i analityka',
-      en: 'Dashboard & analytics',
+      pl: 'Dashboard OG-E',
+      en: 'OG-E Dashboard',
     },
     blurb: {
       pl: 'Osobny panel OG-E: najlepsze miejsca na kolonie, budzik na powrót floty, codzienne trasy, statystyki i synchronizacja między urządzeniami — zbudowane z danych zebranych podczas normalnej gry. Zakładka Spyglass żyje tu samodzielnie i ma własny rozdział niżej.',

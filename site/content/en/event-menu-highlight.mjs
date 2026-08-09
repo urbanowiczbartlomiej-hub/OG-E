@@ -14,12 +14,12 @@ export default {
   order: 4,
 
   idea: [
-    'The game occasionally inserts ephemeral entries (reward windows, contests, seasonal items) into the left toolbar under the same class the permanent, always-present Trader/Officers/Shop entries use. Looking identical, they get lost in the noise — Event pulse animates ONLY the temporary entries, so they stand out from their permanent neighbours.',
-    'The pulse clears itself once every daily task on the Rewarding page is done (until the 14:00 reset) — no need to dismiss it by hand once there is nothing left to remind you of.',
+    'From time to time the game inserts temporary entries into the left bar (reward windows, contests, seasonal items) under the same class the permanent, always-present Trader/Officers/Shop entries use. Looking identical, they get lost in the background — Event pulse animates ONLY those temporary entries, so they stand out from their permanent neighbours.',
+    'The pulse clears itself once we detect that every daily task on the Rewarding page is already done — no need to dismiss it by hand for it to stop reminding you of something you have already finished.',
   ],
 
   value: [
-    "Ephemeral events are easy to miss in the daily rush — they look exactly like the menu you already ignore. Event pulse gives them attention proportional to the fact that they're about to expire, and turns itself off once there's nothing left to do.",
+    'Temporary events are easy to miss in the daily rush — they look exactly like the menu you ignore anyway. Event pulse makes them stand out so you never skip a day on which an event is already available — that way you always collect every reward you can.',
   ],
 
   fairplay: {
@@ -30,7 +30,6 @@ export default {
   },
 
   details: [
-    'Detecting temporary entries relies on the same CSS class as the permanent menu items (`premiumHighligt`), filtered to highlight only the new/ephemeral ones.',
     'Toggled in the OG-E Settings panel, the "Event pulse" tile.',
   ],
 

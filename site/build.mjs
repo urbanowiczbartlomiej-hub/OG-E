@@ -236,7 +236,6 @@ const tocNav = (groups) => {
     .join('\n');
   return `<nav class="toc" id="toc" aria-label="${esc(L.tocTitle)}">
     <div class="toc-inner">
-      <p class="toc-title">${esc(L.tocTitle)}</p>
       <ul class="toc-list">
 ${blocks}
       </ul>
@@ -463,7 +462,7 @@ const buildPage = (features) => {
 <header class="site-hdr">
   <div class="site-hdr-inner">
     <a class="brand" href="#top">
-      <span class="brand-mark" aria-hidden="true">OG·E</span>
+      <img class="brand-mark" src="${BASE}assets/logo.png" alt="${esc(L.brand)}" width="32" height="32" decoding="async">
       <span class="brand-name">${esc(L.brandSub)}</span>
     </a>
     <div class="hdr-actions">
@@ -497,12 +496,13 @@ const buildPage = (features) => {
   ${tocNav(groups)}
   <main id="main">
     <section class="hero">
+      <img class="hero-logo" src="${BASE}assets/logo.png" alt="${esc(L.brand)}" width="88" height="88" decoding="async">
       <p class="hero-kicker">${esc(L.hero.kicker)}</p>
       <h1>${esc(L.hero.title)} <span class="hero-sub">${esc(L.hero.subtitle)}</span></h1>
       <p class="hero-lead">${inline(L.hero.lead)}</p>
       <ul class="hero-chips" role="list">${chips}</ul>
       ${statements}
-      <p class="hero-meta">${inline(L.hero.meta(features.length))}</p>
+      <p class="hero-meta">${inline(L.hero.meta)}</p>
     </section>
     ${sections}
   </main>

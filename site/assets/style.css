@@ -47,6 +47,10 @@ html[data-theme='dark'] {
   --scrim: rgba(2, 5, 9, 0.6);
   --ph-a: #0e1620;
   --ph-b: #111b27;
+  /* Pasek przewijania — ten sam standard co Dashboard OG-E (src/dashboard.html):
+     cienki, przezroczysty tor, kciuk w kolorze obramowania, hover na akcent. */
+  --scroll-thumb: #2b3a4d;
+  --scroll-thumb-hover: #4a9eff;
 }
 
 html[data-theme='light'] {
@@ -77,6 +81,8 @@ html[data-theme='light'] {
   --scrim: rgba(20, 29, 38, 0.45);
   --ph-a: #eef1f5;
   --ph-b: #e7ebf1;
+  --scroll-thumb: #ccd5df;
+  --scroll-thumb-hover: #1f78d1;
 }
 
 /* ============================== Baza ============================== */
@@ -172,16 +178,10 @@ strong { color: var(--heading); }
 }
 .brand:hover { text-decoration: none; }
 .brand-mark {
-  display: inline-grid;
-  place-items: center;
-  height: 30px;
-  padding: 0 9px;
+  display: block;
+  width: 32px;
+  height: 32px;
   border-radius: 8px;
-  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 70%, #8a5c00));
-  color: var(--accent-ink);
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
 }
 .brand-name {
   font-size: 14px;
@@ -345,6 +345,14 @@ main { min-width: 0; }
 /* ============================== Hero ============================== */
 
 .hero { margin-bottom: 20px; }
+
+.hero-logo {
+  display: block;
+  width: 88px;
+  height: 88px;
+  margin: 0 0 14px;
+  border-radius: var(--r-md);
+}
 
 .hero-kicker {
   margin: 0 0 6px;
@@ -673,14 +681,22 @@ body.lightbox-open { overflow: hidden; }
 
 /* ============================== Spis treści ============================== */
 
-.toc-title {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.09em;
-  color: var(--text-3);
-  margin: 0 0 10px;
+/* Pasek przewijania spisu — standard Dashboardu OG-E: Firefox dostaje
+   dwuwartościowe `scrollbar-color` (kciuk, tor), WebKit/Blink własne
+   pseudo-elementy. Bez tego menu nosi chrom systemowy, obcy wobec strony. */
+.toc, .toc-inner {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
 }
+.toc::-webkit-scrollbar,
+.toc-inner::-webkit-scrollbar { width: 10px; height: 10px; }
+.toc::-webkit-scrollbar-track,
+.toc-inner::-webkit-scrollbar-track { background: transparent; }
+.toc::-webkit-scrollbar-thumb,
+.toc-inner::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 999px; }
+.toc::-webkit-scrollbar-thumb:hover,
+.toc-inner::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); }
+
 .toc-list { list-style: none; margin: 0; padding: 0; }
 .toc-cat { margin-top: 16px; }
 .toc-cat:first-child { margin-top: 0; }

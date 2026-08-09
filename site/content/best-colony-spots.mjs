@@ -14,13 +14,13 @@ export default {
 
   name: 'Best Colony Spots — najlepsze miejsca na kolonie',
   oneLiner:
-    'Analiza w Dashboardzie, która ocenia okolice Twoich zeskanowanych galaktyk i mówi, gdzie osiedlić się dla bezpieczeństwa, farmy albo PvP.',
+    'Analiza w Dashboardzie, która ocenia graczy w galaktyce i mówi, gdzie osiedlić się w zgodzie z Twoją strategią (safe, farm, pvp).',
   flagship: true,
   order: 2,
 
   idea: [
     'Best Colony Spots liczy dla każdej okolicy cztery niezależne kanały: **safety** (im mniej zasięgu wrogich flot, tym lepiej), **farm** (ile nieaktywnego łupu leży w zasięgu), **room** (ile wolnych slotów zostało w oknie) i **target** (gęstość aktywnych graczy — okazje PvP). Wybierasz jeden z trzech gotowych profili — **Safe zone**, **Farm hub**, **PvP zone** — a każdy to po prostu inna waga tych samych czterech liczb, więc wynik da się porównywać między profilami i uniwersami.',
-    'Dwa tryby listy pokrywają dwa różne pytania. **Best spots** ocenia okolicę wokół każdego systemu, w którym choć JEDEN wybrany slot jest wolny — szybkie „gdzie jest cokolwiek wolnego". **Longest streaks** szuka ciągłych odcinków, w których KAŻDY wybrany slot stoi pusty — pod farmę wielu kolonii pod rząd. Dane słabiej zeskanowanego okna są świadomie przycinane w dół, żeby jeden szczęśliwy skan nie wybił się ponad okno zeskanowane dokładnie.',
+    'Dwa tryby listy pokrywają dwa różne pytania. **Best spots** ocenia okolicę wokół każdego systemu, w którym choć JEDEN wybrany slot jest wolny — szybkie „gdzie jest cokolwiek wolnego". **Longest streaks** szuka ciągłych odcinków, w których KAŻDY wybrany slot stoi pusty — pod kilka kolonii blisko siebie. Dane są pobierane z **publicznego API OGame** i odświeżane raz w tygodniu.',
   ],
 
   value: [
@@ -29,20 +29,20 @@ export default {
 
   fairplay: {
     summary: [
-      'To wyłącznie **analiza danych, które już masz** — Twoich własnych skanów galaktyki i, dla obszarów nieodwiedzonych, publicznego API statystyk serwera (to samo źródło co narzędzia społeczności). Nie ma tu żadnego zapytania do gry ponad to, co i tak wysyła przeglądanie galaktyki.',
+      'To wyłącznie **analiza danych, które mamy z publicznie dostępnego API** (to samo źródło co narzędzia społeczności).',
       'Wynik jest **czysto informacyjny** — lista i mapa temperatury, bez przycisku wysyłki. Decyzję o kolonizacji podejmujesz Ty, a samo wysłanie kolonizatora dzieje się w module Kolonizacja (FAB) przez natywny formularz gry.',
     ],
   },
 
   details: [
     'Trzy profile — Safe zone / Farm hub / PvP zone — to gotowe wagi; nie trzeba ręcznie stroić żadnego suwaka, żeby dostać sensowny ranking.',
-    'Zasięg slotów do sprawdzenia podajesz jako listę albo zakres (np. „8" albo „12-15").',
-    'Ta sama mapa temperatury (server-wide) stoi za wynikiem listy i za kolorami na podglądzie galaktyki — jeden model, dwa widoki.',
+    'Sam wskazujesz, które sloty Cię interesują, a algorytm szuka wśród nich wolnych pozycji.',
+    'Mapa ma dwa tryby: **Threat / farm** sumuje i uśrednia, budując temperaturę okolicy, a **Occupancy** pokazuje każdą pozycję z osobna — gracza, farmę albo pustkę.',
   ],
 
   screenshots: [
-    { id: 'zones', caption: 'Wybór profilu: Safe zone / Farm hub / PvP zone.' },
-    { id: 'list', caption: 'Ranking okolic w trybie Best spots / Longest streaks.' },
+    { id: 'settings-map', caption: 'Ustawienia analizy (profil, sloty, zasięgi) i mapa serwera w trybie Occupancy.' },
+    { id: 'spot-details', caption: 'Szczegóły proponowanego miejsca: okno systemów, populacja, zagrożenia i najgroźniejsi sąsiedzi.' },
   ],
 
   codeRefs: [

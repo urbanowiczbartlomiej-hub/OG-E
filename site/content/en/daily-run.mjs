@@ -16,8 +16,9 @@ export default {
 
   idea: [
     'The **Daily Run** button runs your daily fleet moves. You define a **route** once (from where, to where, with which fleet and which mission), and then the button walks you through sending the defined routes. The top zone dispatches the defined missions to all targets defined for the active planet that is the starting point — you can pick multiple targets from one planet, different missions, multiple ships, and multiple routes.',
-    'The bottom zone sends everything to the chosen planet and moves on to the next one (**Collect**); holding it changes the target to the active planet. It sends ships and resources according to the options chosen in the Dashboard.',
-    'Targets a fleet is already flying to are skipped, so you will not accidentally send to the same place twice. This also enables farming inactive players.',
+    'The bottom zone sends everything to the chosen planet and moves on to the next one (**Collect**); if you long-press it, you change the target to the active planet. It sends ships and resources according to the options chosen in the Dashboard.',
+    'Targets a fleet is already flying to are skipped, so you will not accidentally send to the same place twice.',
+    'The button also lets you farm inactive players.',
   ],
 
   value: [
@@ -27,7 +28,7 @@ export default {
   fairplay: {
     summary: [
       'This is **player guidance, not a bot**: OG-E does not send the fleet itself — it presses the native dispatch button, and the game performs the dispatch, after your tap.',
-      'The button reads from **the flight list which missions you sent yourself** — not from any background tracking.',
+      'The button reads from **the list of flights you sent yourself** — not from any background tracking.',
     ],
   },
 

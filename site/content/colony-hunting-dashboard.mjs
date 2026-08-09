@@ -17,17 +17,18 @@ export default {
 
   name: 'Big Colony Hunting — histogram i ustawienia',
   oneLiner:
-    'Zakładka Colonizations w Dashboardzie: histogram rozmiarów pól, które osobiście odwiedziłeś, i pokrętła, którymi steruje przycisk Kolonizacja na FAB-ie.',
+    'Zakładka Colonizations w Dashboardzie: histogram rozmiarów pól kolonii, które znalazłeś, i niezbędna konfiguracja dla przycisku Kolonizacja na FAB-ie.',
   flagship: true,
   order: 1,
 
   idea: [
-    'Histogram **„Planet sizes"** liczy rozmiary (liczbę pól) planet i księżyców, które kiedykolwiek widziałeś w przeglądzie ciała — osobno globalnie i osobno per galaktyka — więc od razu widać, czy Twoje dotychczasowe kolonie są duże, czy warto polować dalej.',
-    'Obok histogramu siedzi edytor ustawień, z którego korzysta przycisk **Kolonizacja** na FAB-ie: docelowe pozycje (lista/zakres, np. „8,10-12,15"), czy preferować sąsiednie galaktyki, czy w macierzystej galaktyce celować w najdalszy wolny system, czy w najbliższy, minimalny odstęp między lądowaniami kolonizatorów oraz próg wielkości i hasło do porzucania za małych kolonii.',
+    'Histogram **„Planet sizes"** liczy rozmiary (liczbę pól) planet, które skolonizowałeś — więc od razu widać, czy Twoje dotychczasowe kolonie są duże, czy warto polować dalej.',
+    'Obok histogramu siedzi edytor ustawień, z którego korzysta przycisk **Kolonizacja** na FAB-ie: docelowe pozycje (lista/zakres, np. „8,10-12,15"), czy preferować sąsiednie galaktyki, czy w macierzystej galaktyce celować w najdalszy wolny system, czy w najbliższy, minimalny odstęp między lądowaniami kolonizatorów oraz próg wielkości i hasło do porzucania za małych kolonii. Hasło jest tu po to, żeby autouzupełnić pole, którego gra wymaga przy porzucaniu zbyt małej kolonii.',
   ],
 
   value: [
-    'Histogram odpowiada na pytanie „czy moje kolonie są w ogóle duże", którego nie da się wyczytać z samej listy planet. Ustawienia obok trzymają w jednym miejscu wszystko, co przycisk Kolonizacja i tak musi znać — bez tego każde uruchomienie modułu wymagałoby ręcznego wpisywania tych samych liczb.',
+    'Histogram odpowiada na pytanie „czy moje kolonie są w ogóle duże". Ustawienia obok trzymają w jednym miejscu wszystko, co przycisk Kolonizacja i tak musi znać.',
+    'Razem z przyciskiem FAB umożliwia to polowanie na duże kolonie. A polowanie jest dużo łatwiejsze, kiedy wiesz, jak daleko jesteś od swojej wymarzonej wielkości planety.',
   ],
 
   fairplay: {
@@ -40,12 +41,10 @@ export default {
   details: [
     'Zapis jest automatyczny (autosave z debounce) — nie ma przycisku „Zapisz".',
     'Te same ustawienia (poza hasłem) jadą przez opt-in sync między urządzeniami — patrz rozdział „Sync między urządzeniami".',
-    'Jak przycisk Kolonizacja korzysta z tych ustawień — patrz „Kolonizacja (polowanie na duże kolonie)" w rozdziale „Przycisk OG-E".',
   ],
 
   screenshots: [
-    { id: 'histogram', caption: 'Histogram rozmiarów pól — globalnie i per galaktyka.' },
-    { id: 'settings', caption: 'Edytor ustawień kolonizacji: pozycje, preferencje, odstęp lądowań, próg porzucania.' },
+    { id: 'tab', caption: 'Zakładka Big Colony Hunting: histogram rozmiarów pól i pod nim ustawienia kolonizacji — pozycje, odstęp lądowań, próg porzucania, hasło.' },
   ],
 
   codeRefs: [

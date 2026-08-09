@@ -11,7 +11,7 @@ export default {
 
   name: 'Przycisk OG-E (FAB)',
   oneLiner:
-    'Inteligentny pływający przycisk, który z łatwością tapniesz kciukiem, obsługując rutynowe akcje floty.',
+    'Inteligentny pływający przycisk, który z łatwością tapniesz kciukiem, obsługujący Twoje codzienne akcje.',
   flagship: true,
   order: 1,
 
@@ -21,7 +21,7 @@ export default {
   ],
 
   value: [
-    'Jest pomyślany **mobile-first**: na telefonie OGame skaluje stronę tak, że natywne przyciski robią się malutkie i trudno w nie trafić. FAB daje jeden **duży, wygodny cel pod kciukiem** i skupia rozrzucone akcje floty w jednym miejscu — na desktopie też działa, ale to telefon jest głównym scenariuszem.',
+    'Jest pomyślany **mobile-first**: na telefonie OGame skaluje stronę tak, że natywne przyciski robią się malutkie i trudno w nie trafić. FAB daje jeden **duży, wygodny cel pod kciukiem** i skupia rozrzucone akcje w jednym miejscu — na desktopie też działa, ale to telefon jest głównym scenariuszem.',
   ],
 
   details: [

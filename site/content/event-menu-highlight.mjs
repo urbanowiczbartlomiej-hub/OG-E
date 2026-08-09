@@ -16,12 +16,12 @@ export default {
   order: 4,
 
   idea: [
-    'Gra od czasu do czasu wstawia do lewego paska efemeryczne wpisy (okna nagród, konkursy, sezonowe pozycje) pod tą samą klasą, którą mają stałe, zawsze obecne wpisy Kupiec/Oficerowie/Sklep. Wyglądając identycznie, giną w tle — Event pulse animuje TYLKO te tymczasowe wpisy, więc odróżniają się od stałych sąsiadów.',
-    'Puls gaśnie sam, gdy wykryjemy, że wszystkie dzienne zadania na stronie Rewarding są już zrobione (do resetu o 14:00) — nie trzeba go ręcznie kasować, żeby przestał przypominać o czymś, co już zrobiłeś.',
+    'Gra od czasu do czasu wstawia do lewego paska tymczasowe wpisy (okna nagród, konkursy, sezonowe pozycje) pod tą samą klasą, którą mają stałe, zawsze obecne wpisy Kupiec/Oficerowie/Sklep. Wyglądając identycznie, giną w tle — Event pulse animuje TYLKO te tymczasowe wpisy, więc odróżniają się od stałych sąsiadów.',
+    'Puls gaśnie sam, gdy wykryjemy, że wszystkie dzienne zadania na stronie Rewarding są już zrobione — nie trzeba go ręcznie kasować, żeby przestał przypominać o czymś, co już zrobiłeś.',
   ],
 
   value: [
-    'Ephemeryczne wydarzenia są łatwe do przegapienia w codziennym pośpiechu — wyglądają tak samo jak menu, które i tak ignorujesz. Event pulse daje im wyróżnienie proporcjonalne do tego, że akurat one się kończą, i samo się wyłącza, gdy nie ma już nic do zrobienia.',
+    'Tymczasowe wydarzenia są łatwe do przegapienia w codziennym pośpiechu — wyglądają tak samo jak menu, które i tak ignorujesz. Event pulse daje im wyróżnienie, żebyś nie pominął ani jednego dnia, w którym wydarzenie jest już dostępne — dzięki temu zawsze odbierzesz wszystkie możliwe nagrody.',
   ],
 
   fairplay: {
@@ -32,7 +32,6 @@ export default {
   },
 
   details: [
-    'Wykrywanie wpisów tymczasowych opiera się na tej samej klasie CSS co stałe pozycje menu (`premiumHighligt`) — filtrowane, żeby podświetlić tylko nowe/efemeryczne.',
     'Włącza/wyłącza się w panelu Ustawień OG-E, kafelek „Event pulse".',
   ],
 

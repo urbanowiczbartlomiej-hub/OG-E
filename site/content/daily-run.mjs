@@ -20,7 +20,8 @@ export default {
   idea: [
     'Przycisk **Daily Run** prowadzi Twoje codzienne ruchy flotą. Definiujesz raz **trasę** (skąd, dokąd, jaką flotą i z jaką misją), a potem przycisk prowadzi Cię przez wysyłanie zdefiniowanych tras. Górna strefa rozsyła zdefiniowane misje po wszystkich celach zdefiniowanych dla aktywnej planety będącej miejscem startu — możesz wybrać wiele celów z jednej planety, różne misje, wiele statków i wiele tras.',
     'Dolna strefa wysyła wszystko na wybraną planetę i przechodzi do kolejnej (**Collect**); jeśli ją przytrzymasz, zmienisz cel na aktywną planetę. Wysyła statki i surowce zgodnie z opcjami wybranymi w Dashboardzie.',
-    'Cele, do których flota już leci, są pomijane, więc nie wyślesz przez pomyłkę dwa razy w to samo miejsce. Umożliwia to też farmienie nieaktywnych graczy.',
+    'Cele, do których flota już leci, są pomijane, więc nie wyślesz przez pomyłkę dwa razy w to samo miejsce.',
+    'Przycisk umożliwia również farmienie nieaktywnych graczy.',
   ],
 
   value: [

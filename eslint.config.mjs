@@ -48,7 +48,10 @@ export default [
     // is gitignored per-project state (Claude Code's worktrees + their own built
     // `dist/`); a nested worktree's `dist/**` isn't caught by the root `dist/**`
     // glob, so ignore the whole dir or `eslint .` lints thousands of bundled lines.
-    ignores: ['dist/**', 'node_modules/**', 'coverage/**', '**/*.min.js', '.claude/**'],
+    // `site/dist/**` to wygenerowany output strony (m.in. VERBATIM kopie plików
+    // z `src/` pod `assets/src/…` na potrzeby żywego FAB-a) — lintowanie go
+    // dublowałoby błędy z oryginałów i zależałoby od tego, czy ktoś zbudował stronę.
+    ignores: ['dist/**', 'site/dist/**', 'node_modules/**', 'coverage/**', '**/*.min.js', '.claude/**'],
   },
 
   js.configs.recommended,

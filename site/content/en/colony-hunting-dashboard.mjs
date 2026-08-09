@@ -8,37 +8,36 @@ export default {
   category: 'dashboard',
   locale: 'en',
 
-  name: 'Big Colony Hunting — histogram & settings',
+  name: 'Big Colony Hunting — histogram and settings',
   oneLiner:
-    "The Colonizations tab in the Dashboard: a histogram of the field sizes you've personally visited, plus the knobs the FAB's Colonisation button reads.",
+    "The Colonizations tab in the Dashboard: a histogram of the field sizes of the colonies you have found, and the configuration the FAB's Colonisation button needs.",
   flagship: true,
   order: 1,
 
   idea: [
-    'The **"Planet sizes"** histogram counts the sizes (field counts) of every planet and moon you\'ve ever viewed in the body overview — globally and per galaxy — so you can tell at a glance whether your colonies so far are actually large, or whether hunting further is worth it.',
-    "Next to the histogram sits the settings editor the FAB's **Colonisation** button reads from: target positions (a list or range, e.g. \"8,10-12,15\"), whether to prefer neighbouring galaxies, whether to target the farthest or nearest free system within your home galaxy, the minimum gap between colony-ship landings, and the size threshold plus password for abandoning colonies that turn out too small.",
+    'The **"Planet sizes"** histogram counts the sizes (field counts) of the planets you have colonised — so you can see at once whether your colonies so far are large, or whether it is worth hunting further.',
+    'Next to the histogram sits the settings editor the **Colonisation** button on the FAB reads from: target positions (a list or range, e.g. "8,10-12,15"), whether to prefer neighbouring galaxies, whether to aim for the farthest or the nearest free system within your home galaxy, the minimum gap between colony-ship landings, and the size threshold plus password for abandoning colonies that turn out too small. The password is there to auto-fill the field the game requires when you abandon a colony that is too small.',
   ],
 
   value: [
-    "The histogram answers \"are my colonies actually large\", a question the plain planet list can't answer. The settings next to it keep everything the Colonisation button needs to know in one place — without it, every run of that module would mean typing the same numbers by hand.",
+    'The histogram answers the question "are my colonies large at all". The settings next to it keep everything the Colonisation button has to know in one place.',
+    'Together with the FAB button, this is what makes hunting for big colonies possible. And hunting is far easier when you know how far you are from your dream planet size.',
   ],
 
   fairplay: {
     summary: [
-      "This is purely a **data view and a configuration form** — the histogram counts from your own, already-saved observations, and the settings are plain values read later by the FAB module. Nothing here sends or saves anything to the game.",
-      "The abandon password is stored locally and used only to fill the native colony give-up confirmation form — the same one you would fill by hand.",
+      'This is purely a **data view and a configuration form** — the histogram counts from your own, already-saved observations, and the settings are plain values read later by the FAB module. Nothing here sends or saves anything to the game.',
+      'The abandon password is stored locally and used only to fill the native colony give-up confirmation form — the same one you would fill by hand.',
     ],
   },
 
   details: [
     'Saving is automatic (debounced autosave) — there is no "Save" button.',
-    'These same settings (except the password) travel through opt-in cross-device sync — see "Cross-device sync".',
-    'How the Colonisation button uses these settings — see "Colonisation (big-colony hunting)" in the "The OG-E Button" chapter.',
+    'These same settings (except the password) travel through opt-in cross-device sync — see the "Cross-device sync" chapter.',
   ],
 
   screenshots: [
-    { id: 'histogram', caption: 'The field-size histogram — global and per galaxy.' },
-    { id: 'settings', caption: 'The colonisation settings editor: positions, preferences, landing gap, abandon threshold.' },
+    { id: 'tab', caption: 'The Big Colony Hunting tab: the field-size histogram and, below it, the colonisation settings — positions, landing gap, abandon threshold, password.' },
   ],
 
   codeRefs: [

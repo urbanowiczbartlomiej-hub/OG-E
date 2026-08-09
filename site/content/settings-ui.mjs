@@ -17,12 +17,12 @@ export default {
   order: 1,
 
   idea: [
-    'OG-E dokleja się do menu opcji **AntiGameReborn (AGR)** zamiast stawiać własny, pływający panel — to samo menu, które i tak masz otwarte, dostaje jedną dodatkową zakładkę. Na jej szczycie stoi przycisk **„Otwórz Dashboard"** (prowadzi do pełnostronicowego panelu OG-E), poniżej pasek modułów FAB — kafelki włączają/wyłączają poszczególne przyciski na orbitach (Ekspedycje, Kolonizacja, Discovery, Daily Run, Spyglass…) — i suwak rozmiaru przycisku.',
-    'Pod spodem jedna, bezgłówkowa tabliczka **Preferencji**, pogrupowana cichymi podpisami zamiast złotych nagłówków AGR: grupa **Expeditions** (np. maks. ekspedycji na planetę) i grupa **Display** — Readability, Planet markers, Event pulse, Trader pulse, Attack banner i „Who\'s spying". Każdy kafelek ma podpis-słowo i dłuższy opis pod hoverem/tapnięciem.',
+    'OG-E dokleja się do menu opcji **AntiGameReborn (AGR)** zamiast stawiać własny, pływający panel — to samo menu, co już jest dodane w grze, dostaje jedną dodatkową zakładkę. Na jej szczycie stoi przycisk **„Otwórz Dashboard"** (prowadzi do pełnostronicowego panelu OG-E), poniżej pasek modułów FAB — kafelki włączają/wyłączają poszczególne przyciski na orbitach (Ekspedycje, Kolonizacja, Discovery, Daily Run) — i suwak rozmiaru przycisku.',
+    'Pod spodem siedzą opcje konfiguracji przycisku Ekspedycje oraz grupa **Display** — zmiany interfejsu w samej grze. Każdy kafelek ma podpis-słowo i dłuższy opis po najechaniu myszką; wszystkie zostaną opisane dalej.',
   ],
 
   value: [
-    'Dwa osobne panele do ustawień to dwa miejsca do zapamiętania. Trzymając się jednego menu, którego AGR-owi użytkownicy i tak szukają, OG-E nie dokłada drugiego mentalnego modelu „gdzie to włączyć" — wszystko jest w jednym miejscu, przy okazji dostępne z każdej strony gry.',
+    'Dwa osobne panele do ustawień to dwa miejsca do zapamiętania. Trzymając się jednego menu, którego AGR-owi użytkownicy i tak szukają, OG-E nie dokłada drugiego mentalnego modelu „gdzie to włączyć" — tym bardziej że OG-E i tak wymaga AGR do poprawnego działania.',
   ],
 
   fairplay: {
@@ -34,7 +34,6 @@ export default {
 
   details: [
     'Wymaga zainstalowanego AGR — bez niego nie ma gdzie wstrzyknąć zakładki (ustawienia można edytować ręcznie w localStorage, ale to ścieżka niewspierana).',
-    'Zakładka odtwarza się sama, jeśli AGR przebuduje swój kontener (obserwator DOM), więc przełączniki nie znikają po odświeżeniu menu.',
   ],
 
   screenshots: [

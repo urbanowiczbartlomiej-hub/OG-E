@@ -10,21 +10,22 @@ export default {
 
   name: 'Readability',
   oneLiner:
-    'Trims verbose labels in the top game bar so the numbers that actually matter on a small screen get bigger and easier to read.',
+    'Trims the wordy labels in the top game bar and gives you big galaxy navigation buttons — so what really matters on a small screen is bigger and easier to hit.',
   order: 2,
 
   idea: [
-    'The fleet-event box shows three pieces of information by default (mission count, next mission type + target, countdown), but wraps them in labels ("Missions:", "Next:", "Type:") that eat more space than the payload. Readability collapses those labels to zero, tucks the box under the AGR header, and anchors the countdown full-size on the right, with the rest in a left column that reserves a gutter so a long mission name never slides under the timer.',
+    'The fleet-event box shows three pieces of information by default (mission count, next mission type + target, countdown), but wraps them in labels ("Missions:", "Next:", "Type:") that take more room than the content itself. Readability collapses those labels to zero and puts the countdown on the right at full size, with the rest in a left-hand column with a reserved gutter, so a long mission name never slides under the timer.',
     "The same treatment reaches the fleet-movement link in the fleetdispatch header: the green colour lands only on the link itself (not its children), so the native red 'expedition limit reached' indicator inside it keeps working as intended.",
+    'The same switch also reveals **big navigation buttons in the galaxy view**: jump one galaxy or one system left/right, "Start", and Phalanx / Spy / Discovery as comfortable thumb targets. Moving system by system — for example when phalanxing a whole region — becomes calm tapping instead of aiming a cursor at arrows a dozen pixels wide. It works exactly the same on desktop.',
   ],
 
   value: [
-    "On a phone, AGR/OGame's native layout squeezes the same information into space designed for desktop — labels eat the room the numbers should have. Readability gives that space back to the numbers, so the countdown to your next mission and your slot status are readable without squinting.",
+    "On a phone, the native AGR/OGame layout squeezes the same information into space designed for desktop — labels eat the room the numbers should have. Readability gives that space back to the numbers, so the countdown to your next mission and your slot status are readable without squinting.",
   ],
 
   fairplay: {
     summary: [
-      'This is purely **CSS on already-displayed elements** — no number or label is swapped for a different value, only restyled. Theme colours stay the game\'s own; only layout and size change.',
+      "This is purely **CSS on already-displayed elements** — no number or label is swapped for a different value, only restyled. The theme colours stay the game's own; only layout and size change.",
       'On by default, but one switch in Settings turns everything off at once — with no flash of unstyled content at page start.',
     ],
   },
@@ -36,7 +37,9 @@ export default {
   ],
 
   screenshots: [
-    { id: 'eventbox', caption: 'The fleet-event box before and after trimming its labels.' },
+    { id: 'eventbox-before', caption: 'Before: the fleet-event box with full labels — the content drowns in captions.' },
+    { id: 'eventbox-after', caption: 'After: labels collapsed, countdown and slot status at full size.' },
+    { id: 'galaxy', caption: 'Galaxy view: big buttons for jumping a galaxy or a system, plus Start / Phalanx / Spy / Discovery.' },
   ],
 
   codeRefs: [

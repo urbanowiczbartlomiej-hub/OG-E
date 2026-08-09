@@ -45,6 +45,7 @@ Pięć rozdziałów, w tej kolejności (= kolejność sekcji na stronie i w
 | Discovery lifeform | `discover-lifeforms` | ★ | **drafted** | features/sendLifeform |
 | Daily run (codzienne trasy) | `daily-run` | ★ | **drafted** | features/dailyRun |
 | Przypomnienie o flocie | `fleet-reminder` | | **drafted** | features/alarmClock (część in-tab) |
+| Spyglass (przycisk) | `spyglass-button` | | **drafted** | features/sendSpy, features/dashboard (zakładka Spyglass) |
 
 `og-e-button` teraz też wprost wspomina **Spyglass** jako jeden z orbów FAB
 (włączany/zarządzany z zakładki Spyglass w Dashboardzie) i linkuje do
