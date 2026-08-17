@@ -56,6 +56,7 @@ import { settingsStore } from '../state/settings.js';
 import { bodiesStore } from '../state/bodies.js';
 import { bodyNameIndex, bodyNameFor, nearestBodyDistance } from '../domain/bodies.js';
 import { injectStyle, parseSvg } from '../lib/dom.js';
+import { PLANET_COLOR, MOON_COLOR } from '../lib/bodyColors.js';
 import { EYE_GLYPH } from './shared/buttonGlyphs.js';
 import { navigateGalaxyInPage } from './shared/galaxyNav.js';
 import { ingameComponentUrl } from '../domain/ogameUrl.js';
@@ -193,11 +194,11 @@ const CSS = [
   `#${PANEL_ID} tr.hot .oge-sb-name{color:#f4b4ad;}`,
   `#${PANEL_ID} .oge-sb-skull{margin-right:5px;cursor:help;}`,
   `#${PANEL_ID} .oge-sb-age{font:11px/1 monospace;color:#6b7987;white-space:nowrap;}`,
-  `#${PANEL_ID} .coord{color:#a9c4de;font:11px/1 monospace;}`,
+  `#${PANEL_ID} .coord{color:${PLANET_COLOR};font:11px/1 monospace;}`,
   // Lunar tint — a MOON body's coords (planet and moon share "g:s:p"; the
-  // colour + tooltip is what tells them apart). Same hex as the dashboard's
-  // proximity strip.
-  `#${PANEL_ID} .coord.moon{color:#c9a9e8;cursor:help;}`,
+  // colour + tooltip is what tells them apart). AGR's own planet/moon pair, so
+  // the distinction reads the same here as in the game UI next to it.
+  `#${PANEL_ID} .coord.moon{color:${MOON_COLOR};cursor:help;}`,
   `#${PANEL_ID} .muted{color:#4c5763;}`,
   `#${PANEL_ID} .oge-sb-acts{display:flex;gap:6px;justify-content:flex-end;}`,
   `#${PANEL_ID} .oge-sb-btn{font:11px Verdana,sans-serif;color:#93a3b3;cursor:pointer;`,

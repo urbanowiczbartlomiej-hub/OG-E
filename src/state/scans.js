@@ -264,6 +264,68 @@ export const flushScansStore = () =>
   chromeStore.set(currentScansKey(), stripToDurableMarkers(scansStore.get()));
 
 /**
+ * Project the store's lifeform-discovery markers into the slim wire slot the
+ * gist carries (`sync/merge.js` `LfDiscoverySlot`).
+ *
+ * Only the two LF fields travel. The colonization half of a `SystemScan` —
+ * `scannedAt` and the 15-slot `positions` — stays device-local by design: §4b
+ * dropped the whole scans map from the payload to kill a multi-megabyte upload,
+ * and occupancy is re-derived from the public API anyway. The discovery
+ * markers, by contrast, mirror a 7-day SERVER-side cooldown that is the same on
+ * every device, so they are the one part of this map that must sync.
+ *
+ * @returns {import('../sync/merge.js').LfDiscoverySlot}
+ */
+export const readLfDiscoverySlot = () => {
+  /** @type {import('../sync/merge.js').LfDiscoverySlot} */
+  const out = {};
+  const scans = scansStore.get();
+  for (const key of Object.keys(scans)) {
+    const s = scans[/** @type {keyof GalaxyScans} */ (key)];
+    const at = Number(s?.lfScannedAt);
+    if (!Number.isFinite(at) || at <= 0) continue;
+    const pos = s?.lfPositions;
+    out[key] = { at, ...(pos && Object.keys(pos).length ? { pos } : {}) };
+  }
+  return out;
+};
+
+/**
+ * Fold a merged {@link readLfDiscoverySlot} projection back into the store.
+ *
+ * Systems the projection has never heard of are left untouched, and for the
+ * ones it does carry only the two LF fields are replaced — a remote marker must
+ * never overwrite this device's locally-observed occupancy. A system present
+ * remotely but absent locally is created as a markers-only entry (`scannedAt: 0`,
+ * empty `positions`), which is exactly the shape {@link stripToDurableMarkers}
+ * already persists for a never-browsed-but-discovered system.
+ *
+ * @param {import('../sync/merge.js').LfDiscoverySlot} slot
+ * @returns {Promise<void>}
+ */
+export const writeLfDiscoverySlot = (slot) => {
+  scansStore.update((prev) => {
+    /** @type {GalaxyScans} */
+    const next = { ...prev };
+    for (const [key, entry] of Object.entries(slot)) {
+      const at = Number(entry?.at);
+      if (!Number.isFinite(at) || at <= 0) continue;
+      const k = /** @type {keyof GalaxyScans} */ (key);
+      const existing = next[k] ?? /** @type {SystemScan} */ ({ scannedAt: 0, positions: {} });
+      next[k] = {
+        ...existing,
+        lfScannedAt: at,
+        ...(entry.pos && Object.keys(entry.pos).length ? { lfPositions: entry.pos } : {}),
+      };
+    }
+    return next;
+  });
+  // Adopting a remote marker must survive an immediate navigation, same reason
+  // the discovery stamp itself bypasses the debounce.
+  return flushScansStore();
+};
+
+/**
  * Tear down the persist wiring installed by {@link initScansStore}.
  * Idempotent — does nothing when persistence is not currently wired.
  * Primarily useful between tests so state and subscriptions don't

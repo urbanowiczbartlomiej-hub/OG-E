@@ -116,7 +116,8 @@ export const dailyStateHasData = (ds) =>
       ds.traderAuctionBidAt ||
       ds.traderAuctionQuietUntil ||
       ds.artifactShopDoneUntil ||
-      ds.traderImportNextAt,
+      ds.traderImportNextAt ||
+      ds.traderEventStartAt,
   );
 
 /**
@@ -127,6 +128,7 @@ export const dailyStateHasData = (ds) =>
  * @property {unknown} [traderAuctionQuietUntil]
  * @property {unknown} [artifactShopDoneUntil]
  * @property {unknown} [traderImportNextAt]
+ * @property {unknown} [traderEventStartAt]
  */
 
 /**
@@ -197,6 +199,7 @@ export const sameJSON = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b
  * @param {unknown} merged.dailyRunRoutes
  * @param {unknown} merged.settingsPerUniverse
  * @param {unknown} merged.dailyStatePerUniverse
+ * @param {unknown} [merged.lfDiscoveryPerUniverse]
  * @param {unknown} merged.galaxyScanConfig
  * @param {unknown} merged.alarmClockConfigPerUniverse
  * @param {unknown} [merged.playersPerUniverse]
@@ -221,6 +224,7 @@ export const gistIsCurrent = (remote, merged) =>
   sameJSON(remote?.dailyRunRoutes, merged.dailyRunRoutes) &&
   sameJSON(remote?.settingsPerUniverse, merged.settingsPerUniverse) &&
   sameJSON(remote?.dailyStatePerUniverse, merged.dailyStatePerUniverse) &&
+  sameJSON(remote?.lfDiscoveryPerUniverse, merged.lfDiscoveryPerUniverse) &&
   sameJSON(remote?.galaxyScanConfig, merged.galaxyScanConfig) &&
   sameJSON(remote?.alarmClockConfigPerUniverse, merged.alarmClockConfigPerUniverse) &&
   sameJSON(remote?.playersPerUniverse, merged.playersPerUniverse) &&

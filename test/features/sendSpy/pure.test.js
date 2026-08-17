@@ -78,10 +78,10 @@ function env(over = {}) {
 }
 
 describe('deriveSpy', () => {
-  it('no watched players → null candidate, 0 remaining, hasWatched false', () => {
+  it('no watched players → null candidate, 0 remaining, hasSources false', () => {
     const ctx = deriveSpy(env());
     expect(ctx).toEqual({
-      proposal: null, candidate: null, look: null, remaining: 0, hasWatched: false,
+      proposal: null, candidate: null, look: null, remaining: 0, hasSources: false,
     });
   });
 
@@ -97,7 +97,7 @@ describe('deriveSpy', () => {
         spiedByPlayer: {},
       }),
     );
-    expect(ctx.hasWatched).toBe(true);
+    expect(ctx.hasSources).toBe(true);
     // candidate is the first planet (galaxy→system→position order).
     expect(ctx.candidate).toEqual({ galaxy: 1, system: 2, position: 3, playerId: '42', bodyType: 1 });
     // BOTH watched planets need a scan; the unwatched player's is ignored.
@@ -120,7 +120,7 @@ describe('deriveSpy', () => {
         },
       }),
     );
-    expect(ctx.hasWatched).toBe(true);
+    expect(ctx.hasSources).toBe(true);
     expect(ctx.candidate).toBeNull();
     expect(ctx.remaining).toBe(0);
   });
@@ -375,20 +375,20 @@ describe('deriveSpy — look-first doctrine + reports', () => {
   it('renderSpy paints the reports face (calm, count, tap hint)', () => {
     const paint = renderSpy({
       proposal: 'reports', candidate: null, look: null, remaining: 0,
-      hasWatched: true, pendingReports: 3,
+      hasSources: true, pendingReports: 3,
     });
     expect(paint).toMatchObject({ text: 'Reports', subtext: '3 new', bg: BG_SPY_DONE });
   });
 });
 
 describe('renderSpy', () => {
-  it('hasWatched false → muted "no targets" idle paint', () => {
-    const paint = renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasWatched: false });
+  it('hasSources false → muted "no targets" idle paint', () => {
+    const paint = renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasSources: false });
     expect(paint).toEqual({ text: 'Spy', subtext: 'no targets', bg: BG_SPY_IDLE, dim: true });
   });
 
-  it('hasWatched true, candidate null → "Reports" done paint (BG_SPY_DONE)', () => {
-    const paint = renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasWatched: true });
+  it('hasSources true, candidate null → "Reports" done paint (BG_SPY_DONE)', () => {
+    const paint = renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasSources: true });
     expect(paint.text).toBe('Reports');
     expect(paint.bg).toBe(BG_SPY_DONE);
     expect(paint.dim).toBeUndefined();
@@ -400,7 +400,7 @@ describe('renderSpy', () => {
       candidate: { galaxy: 1, system: 2, position: 3, playerId: '42' },
       look: null,
       remaining: 4,
-      hasWatched: true,
+      hasSources: true,
     });
     expect(paint.text).toBe('Spy');
     expect(paint.bg).toBe(BG_SPY_IDLE);
@@ -417,7 +417,7 @@ describe('renderSpy — probe pre-flight (Etap G)', () => {
     candidate: { galaxy: 1, system: 2, position: 3, playerId: '42' },
     look: null,
     remaining: 4,
-    hasWatched: true,
+    hasSources: true,
   };
 
   it('enough probes on hand → normal "Spy" paint, no shortage hint', () => {
@@ -445,9 +445,9 @@ describe('renderSpy — probe pre-flight (Etap G)', () => {
   });
 
   it('preflight is ignored on the done / no-targets states', () => {
-    expect(renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasWatched: true }, { have: 0, need: 20 }).text)
+    expect(renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasSources: true }, { have: 0, need: 20 }).text)
       .toBe('Reports');
-    expect(renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasWatched: false }, { have: 0, need: 20 }).text)
+    expect(renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasSources: false }, { have: 0, need: 20 }).text)
       .toBe('Spy');
   });
 });
@@ -463,7 +463,7 @@ describe('renderSpy — pulse contract', () => {
     candidate: { galaxy: 1, system: 2, position: 3, playerId: '42' },
     look: null,
     remaining: 4,
-    hasWatched: true,
+    hasSources: true,
   };
 
   it('probe proposal pulses (plain, strike, and probe-shortage variants)', () => {
@@ -478,14 +478,14 @@ describe('renderSpy — pulse contract', () => {
       candidate: null,
       look: { galaxy: 2, system: 40, bodies: 3 },
       remaining: 3,
-      hasWatched: true,
+      hasSources: true,
     }).pulse).toBe(true);
   });
 
   it('non-proposal states never pulse (no targets, done, no-probes error)', () => {
-    expect(renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasWatched: false }).pulse)
+    expect(renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasSources: false }).pulse)
       .toBeUndefined();
-    expect(renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasWatched: true }).pulse)
+    expect(renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasSources: true }).pulse)
       .toBeUndefined();
     expect(renderSpy(probeCtx, { have: 0, need: 20 }).pulse).toBeUndefined();
   });

@@ -172,10 +172,17 @@ export const IMPORT_NEXT_KEY = TRADER_IMPORT_NEXT_KEY;
 export const IMPORT_MODE_KEY = 'oge-trader-import-mode';
 
 /**
- * Epoch-ms START time of the "6× today" message we last auto-switched INTO 6×
- * for. One auto-switch per distinct message: this lets a manual switch-BACK to
- * daily stick (re-reading the inbox won't undo it) and stops a long-expired
- * message from re-arming 6× mode. Local, not synced.
+ * Epoch-ms START time of the "6× today" message THIS DEVICE last auto-switched
+ * INTO 6× for. One auto-switch per distinct message: this lets a manual
+ * switch-BACK to daily stick (re-reading the inbox won't undo it) and stops a
+ * long-expired message from re-arming 6× mode.
+ *
+ * Deliberately device-local, and it must stay that way: it is the record of a
+ * *decision this device already made*, so syncing it would suppress the
+ * auto-switch on every other device (they would see the message as "already
+ * handled" without ever having switched). The announcement itself — the
+ * server-wide fact — is what syncs, as `traderEventStartAt` in the shared
+ * {@link DailyState}; see `state/dailyActions.js`.
  */
 export const IMPORT_EVENT_SEEN_KEY = 'oge-trader-import-event-seen';
 
@@ -700,6 +707,53 @@ const readNewestEventStartMs = () => {
 };
 
 /**
+ * Publish the newest 6× announcement found in the inbox into the synced
+ * {@link DailyState}, so every other device learns the event is running without
+ * having to open its own inbox. Only ever moves forward (a newer announcement
+ * wins), which matches the max-wins merge on the sync side and keeps repeated
+ * inbox visits a no-op.
+ *
+ * Stale announcements are filtered out HERE rather than at read time as well:
+ * a message older than {@link EVENT_RECENCY_MS} describes an event that has
+ * already ended, and publishing it would hand the other devices a fact that is
+ * worthless the moment they receive it.
+ *
+ * @param {Date} now
+ * @returns {boolean} `true` when the synced stamp actually moved.
+ */
+const publishEventStart = (now) => {
+  const startMs = readNewestEventStartMs();
+  if (startMs === null || now.getTime() - startMs >= EVENT_RECENCY_MS) return false;
+  if (startMs <= readDailyState().traderEventStartAt) return false;
+  writeDailyState({ traderEventStartAt: startMs });
+  return true;
+};
+
+/**
+ * Flip the mode to 6× for a known-and-still-running announcement this device
+ * has not auto-switched for yet.
+ *
+ * The recency check is re-applied on the read side too, because the stamp
+ * arrives from the gist and simply persists: without it, a device that syncs a
+ * week later would switch into a cadence for an event that is long over.
+ *
+ * The device-local `IMPORT_EVENT_SEEN_KEY` stamp is what makes this idempotent
+ * AND what preserves the manual override — once this device has switched (or
+ * the user switched back to daily afterwards), the same announcement never
+ * re-arms 6× here again.
+ *
+ * @param {Date} now
+ * @returns {void}
+ */
+const applyEventMode = (now) => {
+  const startMs = readDailyState().traderEventStartAt;
+  if (!startMs || now.getTime() - startMs >= EVENT_RECENCY_MS) return;
+  if (readEventSeen() === startMs) return;
+  safeLS.set(IMPORT_EVENT_SEEN_KEY, String(startMs));
+  writeMode(MODE_6X);
+};
+
+/**
  * Record that the Import/Export container was just taken at `now`. In 6× mode
  * stamp the CURRENT 4-hour slot (suppresses red until the next boundary);
  * otherwise stamp today's once-daily clear. Only ever moves the slot stamp
@@ -761,22 +815,17 @@ const markImportTaken = (now) => {
  * @returns {void}
  */
 const scanTraderSubpages = (now) => {
-  // 6× auto-switch — only on the messages page (keeps the attribute-substring
-  // image scan off the hot Trader / Auctioneer paths). A RECENT "import refreshes
-  // 6× today" announcement flips the mode to 6× ONCE per distinct message (keyed
-  // on its own start time): re-reading the inbox won't undo a manual switch-back,
-  // and a stale/old message can't re-arm it. Switching back to daily is manual.
-  if (location.search.includes('component=messages')) {
-    const startMs = readNewestEventStartMs();
-    if (
-      startMs !== null &&
-      now.getTime() - startMs < EVENT_RECENCY_MS &&
-      readEventSeen() !== startMs
-    ) {
-      safeLS.set(IMPORT_EVENT_SEEN_KEY, String(startMs));
-      writeMode(MODE_6X);
-    }
+  // 6× event PUBLICATION — only on the messages page (keeps the
+  // attribute-substring image scan off the hot Trader / Auctioneer paths).
+  // Record the announcement as a synced FACT; the switch itself happens below,
+  // on every page, from that fact.
+  if (location.search.includes('component=messages') && publishEventStart(now)) {
+    document.dispatchEvent(new CustomEvent(DAILY_STATE_CHANGED_EVENT));
   }
+
+  // 6× AUTO-switch — driven by the synced fact, so it fires on a device that
+  // never opened the inbox itself. Runs on every page for exactly that reason.
+  applyEventMode(now);
 
   // Import/Export — a visible overlay means the current offer is gone (taken).
   // Route through the key-owner + nudge sync only when the stamp actually moved.

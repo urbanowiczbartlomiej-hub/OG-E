@@ -53,6 +53,7 @@ import { populatePositionFilter, renderColonyChart } from './colony.js';
 import { renderFreeRegions, renderServerMap, selectCandidate, resetFreeSelection, highlightPin, _resetFreeStreakForTest } from './freeStreak.js';
 import { chipValue, setChipValue, wireChips, setChipsEnabled, toggleChipOn, setToggleChip, wireToggleChip, watchChip, allianceTagChip, countPill } from './chips.js';
 import { dangerColor01 } from '../../lib/dangerColor.js';
+import { bodyColor } from '../../lib/bodyColors.js';
 import { playerHoverTitle } from './format.js';
 import { digestProximityReports } from '../../domain/proximityDigest.js';
 import { bodyNameIndex, bodyNameFor, nearestBodyDistance } from '../../domain/bodies.js';
@@ -2337,7 +2338,7 @@ const scanHistoryTitle = (scans, coords) =>
 const proximityBodyEl = (coords, moon, scans) => {
   const s = document.createElement('span');
   s.textContent = coords;
-  s.style.cssText = `cursor:help;${moon ? 'color:#c9a9e8;' : ''}`;
+  s.style.cssText = `cursor:help;color:${bodyColor(moon)};`;
   s.title = scanHistoryTitle(scans, coords);
   return s;
 };
@@ -2352,7 +2353,7 @@ const proximityBodyEl = (coords, moon, scans) => {
 const proximityNamedEl = (name, coords, moon, scans) => {
   const s = document.createElement('span');
   s.textContent = name;
-  s.style.cssText = `color:${moon ? '#c9a9e8' : '#a9c4de'};cursor:help;`;
+  s.style.cssText = `color:${bodyColor(moon)};cursor:help;`;
   s.title = scanHistoryTitle(scans, coords);
   return s;
 };
@@ -2374,7 +2375,7 @@ const proximityFromEl = (coords, moon, linkBase) => {
     : null;
   const s = document.createElement(href ? 'a' : 'span');
   s.textContent = coords;
-  s.style.cssText = (moon ? 'color:#c9a9e8;' : 'color:#8fb8e0;')
+  s.style.cssText = `color:${bodyColor(moon)};`
     + (href ? 'cursor:pointer;text-decoration:underline dotted;' : '');
   if (href) {
     const a = /** @type {HTMLAnchorElement} */ (s);

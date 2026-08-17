@@ -51,8 +51,8 @@ const CATEGORY_LABELS = {
  * registry in `sync/scheduler.js` is the writer), plus the alliance-share doc.
  * Everything NOT listed here (most prominently the multi-MB `oge_apiCache`,
  * which is fully re-fetchable from the OGame public API, and the §4b-retired
- * `oge_galaxyScans` / `oge_ownProfile`) is a device-local cache that never
- * enters any gist. This view previously offered no such distinction, so the
+ * `oge_ownProfile`) is a device-local cache that never enters any gist. This
+ * view previously offered no such distinction, so the
  * per-universe Total read as "this much is synced" — the source of the
  * "sync is 2.3 MB, mostly API cache" misread.
  *
@@ -73,12 +73,16 @@ const GIST_SYNCED_BASES = new Set([
 ]);
 
 /**
- * Bases only PARTIALLY synced: `oge_players` ships as the filtered
- * watched ∪ observed "playersLite" subset — the full server roster stays local.
+ * Bases only PARTIALLY synced:
+ *   - `oge_players` ships as the filtered watched ∪ observed "playersLite"
+ *     subset — the full server roster stays local.
+ *   - `oge_galaxyScans` ships ONLY its lifeform-discovery markers
+ *     (`lfDiscoveryPerUniverse`). The fat per-slot occupancy §4b removed is
+ *     still device-local and re-derived from the public API.
  *
  * @type {Set<string>}
  */
-const PARTIAL_SYNCED_BASES = new Set(['oge_players']);
+const PARTIAL_SYNCED_BASES = new Set(['oge_players', 'oge_galaxyScans']);
 
 /**
  * Classify how a base relates to cross-device sync.

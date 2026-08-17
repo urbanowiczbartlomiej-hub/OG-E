@@ -33,6 +33,8 @@ import {
   scansStore,
   initScansStore,
   disposeScansStore,
+  readLfDiscoverySlot,
+  writeLfDiscoverySlot,
 } from '../../src/state/scans.js';
 
 /**
@@ -286,5 +288,76 @@ describe('scansStore — teardown and idempotency', () => {
     );
     vi.advanceTimersByTime(200);
     expect(mockStore.set).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('lifeform-discovery sync projection (readLfDiscoverySlot / writeLfDiscoverySlot)', () => {
+  beforeEach(() => {
+    resetAll();
+  });
+
+  afterEach(() => {
+    disposeScansStore();
+  });
+
+  it('projects ONLY the LF markers — never the colonization half', () => {
+    scansStore.set(/** @type {any} */ ({
+      '4:30': { scannedAt: 555, positions: { 3: 'empty' }, lfScannedAt: 100, lfPositions: { 1: 100 } },
+    }));
+    expect(readLfDiscoverySlot()).toEqual({ '4:30': { at: 100, pos: { 1: 100 } } });
+  });
+
+  it('skips systems that were browsed but never discovered', () => {
+    scansStore.set(/** @type {any} */ ({
+      '4:30': { scannedAt: 555, positions: {} },              // browsed only
+      '4:31': { scannedAt: 0, positions: {}, lfScannedAt: 7 }, // discovered
+    }));
+    expect(Object.keys(readLfDiscoverySlot())).toEqual(['4:31']);
+  });
+
+  it('omits an empty pos map rather than shipping an empty object every round', () => {
+    scansStore.set(/** @type {any} */ ({
+      '4:30': { scannedAt: 0, positions: {}, lfScannedAt: 100, lfPositions: {} },
+    }));
+    expect(readLfDiscoverySlot()).toEqual({ '4:30': { at: 100 } });
+  });
+
+  it('folds a remote marker back in WITHOUT clobbering local occupancy', () => {
+    // The whole risk of this slot: a remote LF marker must not carry away the
+    // positions this device observed itself.
+    scansStore.set(/** @type {any} */ ({
+      '4:30': { scannedAt: 555, positions: { 3: 'empty' } },
+    }));
+    writeLfDiscoverySlot({ '4:30': { at: 100, pos: { 2: 100 } } });
+    expect(scansStore.get()['4:30']).toEqual({
+      scannedAt: 555,
+      positions: { 3: 'empty' },
+      lfScannedAt: 100,
+      lfPositions: { 2: 100 },
+    });
+  });
+
+  it('creates a markers-only entry for a system this device has never seen', () => {
+    writeLfDiscoverySlot({ '7:1': { at: 100 } });
+    expect(scansStore.get()['7:1']).toEqual({
+      scannedAt: 0,
+      positions: {},
+      lfScannedAt: 100,
+    });
+  });
+
+  it('leaves systems the slot does not mention untouched', () => {
+    scansStore.set(/** @type {any} */ ({ '4:30': { scannedAt: 555, positions: {} } }));
+    writeLfDiscoverySlot({ '9:9': { at: 100 } });
+    expect(scansStore.get()['4:30']).toEqual({ scannedAt: 555, positions: {} });
+  });
+
+  it('round-trips: project → fold back is a no-op on the LF fields', () => {
+    const before = /** @type {any} */ ({
+      '4:30': { scannedAt: 555, positions: {}, lfScannedAt: 100, lfPositions: { 1: 100 } },
+    });
+    scansStore.set(before);
+    writeLfDiscoverySlot(readLfDiscoverySlot());
+    expect(scansStore.get()).toEqual(before);
   });
 });

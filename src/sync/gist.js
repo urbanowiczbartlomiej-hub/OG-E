@@ -163,6 +163,15 @@ import { SYNC_STATUS_EVENT } from '../lib/ogeEvents.js';
  *   Merge strategy: per-field max-wins (a later day string / higher timestamp
  *   always beats an earlier one). Per-universe because tasks are server-specific
  *   and must not leak across universes.
+ * @property {Record<string, import('./merge.js').LfDiscoverySlot>} [lfDiscoveryPerUniverse]
+ *   OPTIONAL, additive: lifeform system-discovery markers keyed by universe id.
+ *   The SLIM projection of the two LF fields on a `SystemScan` — deliberately
+ *   NOT `galaxyScansPerUniverse`, which stays retired (§4b): these markers
+ *   mirror the game's own 7-day per-system discovery cooldown, which is
+ *   server-side and identical on every device, so a second device without them
+ *   re-proposes systems the game will only answer with `shipsSent: 0`. Merged
+ *   per system, newer-`at`-wins with a per-position max-union (see
+ *   {@link import('./merge.js').mergeLfDiscovery}).
  * @property {Record<string, import('../state/fleetReminders.js').FleetReminderSlot>} [fleetRemindersPerUniverse]
  *   OPTIONAL, additive: the unified fleet reminders (auto landing arms + the
  *   fleet1 chip's manual marks) per universe. Merge strategy: per-BODY

@@ -114,6 +114,7 @@
 /* global document */
 
 import { historyStore } from '../state/history.js';
+import { readLfDiscoverySlot, writeLfDiscoverySlot, scansStore } from '../state/scans.js';
 import { colonizeDecisionsStore } from '../state/colonizeDecisions.js';
 import { settingsStore } from '../state/settings.js';
 import { dailyRunRoutesStore, dailyRunRoutesKeyFor, dailyRunRoutesTsKeyFor } from '../state/dailyRunRoutes.js';
@@ -136,6 +137,7 @@ import {
   mergeSettings,
   mergeDailyRunRoutes,
   mergeDailyState,
+  mergeLfDiscovery,
   mergeFleetReminders,
   mergeGalaxyScanConfig,
   mergeAlarmClockConfig,
@@ -979,6 +981,17 @@ const SYNC_SLOTS = [
     hasData: (merged) => merged.length > 0,
   },
   {
+    // Lifeform-discovery markers ONLY — deliberately not the scans map that
+    // carries them locally (§4b keeps that out of the payload). See
+    // `state/scans.js` `readLfDiscoverySlot` for why these markers are the one
+    // part of it that has to travel.
+    payloadKey: 'lfDiscoveryPerUniverse',
+    readLocal: readLfDiscoverySlot,
+    writeLocal: writeLfDiscoverySlot,
+    merge: mergeLfDiscovery,
+    hasData: (merged) => Object.keys(merged).length > 0,
+  },
+  {
     payloadKey: 'dailyStatePerUniverse',
     readLocal: readDailyState,
     writeLocal: writeDailyState,
@@ -1300,6 +1313,7 @@ const upload = async () => {
       dailyRunRoutes: slotPayloads.dailyRunRoutes,
       settingsPerUniverse: mergedPerUniverseOut,
       dailyStatePerUniverse: slotPayloads.dailyStatePerUniverse,
+      lfDiscoveryPerUniverse: slotPayloads.lfDiscoveryPerUniverse,
       galaxyScanConfig: slotPayloads.galaxyScanConfig,
       alarmClockConfigPerUniverse: slotPayloads.alarmClockConfigPerUniverse,
       colonizeDecisionsPerUniverse: slotPayloads.colonizeDecisionsPerUniverse,
@@ -1474,10 +1488,17 @@ export const installSync = () => {
     scheduleUpload();
   };
 
-  // Colony history still syncs (the histogram is cross-device). Galaxy scans
-  // and the player roster do NOT (§4b — re-derived from the API per device), so
-  // their stores are no longer subscribed here.
+  // Colony history still syncs (the histogram is cross-device). The player
+  // roster does NOT (§4b — re-derived from the API per device), so that store
+  // is no longer subscribed here.
   const unsubHistory = historyStore.subscribe(onStoreChange);
+  // Galaxy scans are subscribed again, but ONLY the lifeform-discovery markers
+  // ride along (see the `lfDiscoveryPerUniverse` slot) — the fat occupancy data
+  // §4b removed is still never uploaded. A galaxy-browse therefore schedules an
+  // upload that turns out to be a no-op; `gistIsCurrent` catches that before it
+  // costs a request, so the extra wake-up is cheap and a discovery propagates
+  // promptly instead of waiting for some unrelated store to change.
+  const unsubScans = scansStore.subscribe(onStoreChange);
   // Colonization decisions: a send / checkTarget-refusal / colony / abandon
   // writes the decision log → schedule an upload (no stamping, so no anti-loop
   // flag — the `changed` guard + gistIsCurrent skip break the loop).
@@ -1739,6 +1760,7 @@ export const installSync = () => {
   installed = {
     dispose: () => {
       unsubHistory();
+      unsubScans();
       unsubDecisions();
       unsubSettings();
       unsubRoutes();

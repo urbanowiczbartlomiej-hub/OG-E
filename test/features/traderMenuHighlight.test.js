@@ -35,6 +35,7 @@ import {
   MODE_DAILY,
   MODE_6X,
 } from '../../src/features/traderMenuHighlight.js';
+import { TRADER_EVENT_START_KEY } from '../../src/state/dailyActions.js';
 import { settingsStore } from '../../src/state/settings.js';
 
 const STYLE_ID = 'oge-trader-highlight-style';
@@ -212,6 +213,10 @@ describe('installTraderMenuHighlight', () => {
     localStorage.removeItem(IMPORT_MODE_KEY);
     localStorage.removeItem(IMPORT_EVENT_SEEN_KEY);
     localStorage.removeItem(IMPORT_NEXT_KEY);
+    // The SYNCED half of the 6× event (the announcement itself). Distinct from
+    // IMPORT_EVENT_SEEN_KEY, which records this device's own switch — leaving
+    // it set makes every later case start mid-event.
+    localStorage.removeItem(TRADER_EVENT_START_KEY);
     document.getElementById(STYLE_ID)?.remove();
     document.body.innerHTML = '';
     vi.useFakeTimers();
@@ -230,6 +235,10 @@ describe('installTraderMenuHighlight', () => {
     localStorage.removeItem(IMPORT_MODE_KEY);
     localStorage.removeItem(IMPORT_EVENT_SEEN_KEY);
     localStorage.removeItem(IMPORT_NEXT_KEY);
+    // The SYNCED half of the 6× event (the announcement itself). Distinct from
+    // IMPORT_EVENT_SEEN_KEY, which records this device's own switch — leaving
+    // it set makes every later case start mid-event.
+    localStorage.removeItem(TRADER_EVENT_START_KEY);
     document.getElementById(STYLE_ID)?.remove();
     document.body.innerHTML = '';
     vi.useRealTimers();
@@ -368,6 +377,10 @@ describe('installTraderMenuHighlight — sub-page scanning', () => {
     localStorage.removeItem(IMPORT_MODE_KEY);
     localStorage.removeItem(IMPORT_EVENT_SEEN_KEY);
     localStorage.removeItem(IMPORT_NEXT_KEY);
+    // The SYNCED half of the 6× event (the announcement itself). Distinct from
+    // IMPORT_EVENT_SEEN_KEY, which records this device's own switch — leaving
+    // it set makes every later case start mid-event.
+    localStorage.removeItem(TRADER_EVENT_START_KEY);
     document.getElementById(STYLE_ID)?.remove();
     document.body.innerHTML = '';
     // Neutral page: the event-detection scan is gated on `component=messages`,
@@ -387,6 +400,10 @@ describe('installTraderMenuHighlight — sub-page scanning', () => {
     localStorage.removeItem(IMPORT_MODE_KEY);
     localStorage.removeItem(IMPORT_EVENT_SEEN_KEY);
     localStorage.removeItem(IMPORT_NEXT_KEY);
+    // The SYNCED half of the 6× event (the announcement itself). Distinct from
+    // IMPORT_EVENT_SEEN_KEY, which records this device's own switch — leaving
+    // it set makes every later case start mid-event.
+    localStorage.removeItem(TRADER_EVENT_START_KEY);
     document.getElementById(STYLE_ID)?.remove();
     document.body.innerHTML = '';
     location.search = ''; // don't leak the messages-page gate into other files
@@ -499,6 +516,53 @@ describe('installTraderMenuHighlight — sub-page scanning', () => {
     installTraderMenuHighlight();
     expect(localStorage.getItem(IMPORT_MODE_KEY)).toBeNull();
     expect(importTile().classList.contains(RED_CLASS)).toBe(false);
+  });
+
+  it('publishes the 6× announcement into the SYNCED DailyState (so other devices see it)', () => {
+    vi.setSystemTime(new Date('2026-05-28T08:00:00'));
+    location.search = '?page=messages&component=messages';
+    const startMs = new Date('2026-05-28T08:00:00').getTime();
+    buildEventMessage(startMs);
+    installTraderMenuHighlight();
+    expect(localStorage.getItem(TRADER_EVENT_START_KEY)).toBe(String(startMs));
+  });
+
+  it('auto-switches to 6× from a SYNCED announcement, with no message in this inbox', () => {
+    // The whole point of syncing the event: this device never opened the inbox
+    // (no message in the DOM, and not even on the messages page), but another
+    // device did and the announcement arrived through the gist.
+    vi.setSystemTime(new Date('2026-05-28T08:00:00'));
+    location.search = '?page=ingame&component=traderOverview';
+    localStorage.setItem(
+      TRADER_EVENT_START_KEY,
+      String(new Date('2026-05-28T06:00:00').getTime()),
+    );
+    installTraderMenuHighlight();
+    expect(localStorage.getItem(IMPORT_MODE_KEY)).toBe(MODE_6X);
+  });
+
+  it('a SYNCED announcement older than the recency window does not switch the mode', () => {
+    // The stamp persists in the gist long after the event ends, so the recency
+    // check has to be re-applied on the READ side too.
+    vi.setSystemTime(new Date('2026-05-28T08:00:00'));
+    localStorage.setItem(
+      TRADER_EVENT_START_KEY,
+      String(new Date('2026-05-18T08:00:00').getTime()),
+    );
+    installTraderMenuHighlight();
+    expect(localStorage.getItem(IMPORT_MODE_KEY)).toBeNull();
+  });
+
+  it('a manual switch back to daily survives the synced announcement (no re-arm)', () => {
+    vi.setSystemTime(new Date('2026-05-28T08:00:00'));
+    const startMs = new Date('2026-05-28T06:00:00').getTime();
+    localStorage.setItem(TRADER_EVENT_START_KEY, String(startMs));
+    // This device already auto-switched for THIS announcement and the player
+    // then chose daily again — re-reading the fact must not undo that.
+    localStorage.setItem(IMPORT_EVENT_SEEN_KEY, String(startMs));
+    localStorage.setItem(IMPORT_MODE_KEY, MODE_DAILY);
+    installTraderMenuHighlight();
+    expect(localStorage.getItem(IMPORT_MODE_KEY)).toBe(MODE_DAILY);
   });
 
   it('6× mode: a visible overlay stamps the CURRENT 4h slot and drops red for the rest of it', () => {

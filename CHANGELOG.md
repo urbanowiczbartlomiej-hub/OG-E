@@ -4,6 +4,38 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.60.1] — 2026-08-17
+
+### Fixed
+
+- **Neighbours and Patrol now work without a watch list.** If you had starred
+  nobody, the Spyglass button never appeared at all — and with it went the
+  neighbour looks and the patrol sweep, even with a cadence and a radius
+  configured. Neither feature has anything to do with the watch list, so the
+  button now shows whenever *any* of the three is switched on: a watched
+  player, a Neighbours cadence, or a Patrol radius. The dashboard cards were
+  always gated correctly, which is why the settings looked like they should
+  have been working.
+- **Lifeform discoveries are shared between your devices.** Discovery markers
+  lived only on the device that made the send, so a second device saw every
+  system as never-discovered and kept proposing systems already inside their
+  7-day cooldown. They now sync. Only the discovery markers travel — a few
+  bytes per system; the heavy galaxy occupancy data stays local and is still
+  re-derived from the public API, so nothing gets slower.
+- **The Import/Export "6× today" event follows you across devices.** Reading
+  the announcement in your inbox on one device now switches the trader nudge
+  to the 4-hour cadence everywhere, instead of only on whichever device
+  happened to open the message. Switching back to daily by hand still sticks
+  on the device where you did it.
+
+### Changed
+
+- **Moon and planet coordinates now use AGR's own colours** (planets green,
+  moons orange) in the Spyglass panel, "Who's spying on you", the neighbours
+  card and the dossier's activity readout. Same distinction as before, but in
+  the same visual language as the game UI next to it, rather than a second
+  blue/violet pairing that said the same thing in a different dialect.
+
 ## [1.60.0] — 2026-08-09
 
 ### Added

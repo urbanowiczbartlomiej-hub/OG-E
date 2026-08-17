@@ -79,6 +79,8 @@ export const BG_SPY_STRIKE = '#d1571f';
  *       sentAt?: Record<string, number>,
  *       sysLookSec?: Record<string, number>,
  *       homeUnread?: number,
+ *       homeHours?: number,
+ *       patrolSystems?: number,
  *       patrolLooks?: import('../../domain/galaxyWatch.js').GalaxyPlanEntry[] }} SpyEnv
  *   The planner env (see domain/scanPriority.js): watched players, universe
  *   planet rows, per-coord report freshness (planets AND moons), rescan flags,
@@ -187,7 +189,12 @@ export const nearestLaunchPlanet = (target, bodies, bounds = {}) => {
  * @property {SpyTarget | null} candidate   Next body to probe, or null.
  * @property {SpyLook | null} look          Top galaxy-look system, or null.
  * @property {number} remaining             Bodies + systems still needing attention.
- * @property {boolean} hasWatched           Any players are on the watch-list.
+ * @property {boolean} hasSources           Any WORK SOURCE is configured — a
+ *   watched player, a Neighbours cadence, or a Patrol radius. Historically this
+ *   was "the watch-list is non-empty", which silently made Neighbours and
+ *   Patrol dead features for anyone who had starred nobody: both feed the LOOK
+ *   plan and need no watch-list at all, yet the empty-list check painted (and
+ *   above it, unmounted) the button anyway. Any ONE of the three is enough.
  * @property {boolean} [strike]             The probe proposal is a moon-strike
  *   candidate (painted distinctly).
  * @property {'lone'|'newest'|'any'} [strikeTier]  The strike's ladder rung —
@@ -273,7 +280,7 @@ export function deriveSpy(env) {
       candidate: null,
       look: null,
       remaining: 0,
-      hasWatched: (env.players || []).length > 0,
+      hasSources: hasWorkSources(env),
       homeUnread: env.homeUnread,
     };
   }
@@ -288,7 +295,7 @@ export function deriveSpy(env) {
       candidate: null,
       look: null,
       remaining: 0,
-      hasWatched: (env.players || []).length > 0,
+      hasSources: hasWorkSources(env),
       pendingReports,
     };
   }
@@ -323,12 +330,41 @@ export function deriveSpy(env) {
       }
       : null,
     remaining: entries.length + looks.length,
-    hasWatched: (env.players || []).length > 0,
+    hasSources: hasWorkSources(env),
     ...(!pickLook && top?.strike
       ? { strike: true, ...(top.strikeTier ? { strikeTier: top.strikeTier } : {}) }
       : {}),
     ...(why ? { why } : {}),
   };
+}
+
+/**
+ * Does the user have ANY Spyglass work source switched on?
+ *
+ * The Spyglass FAB serves three independent channels, and only the first one
+ * involves the watch-list:
+ *   - PROBE plan  — watched players (`players`)
+ *   - LOOK plan   — Neighbours (`homeHours`) and Patrol (`patrolSystems`)
+ *
+ * Gating the whole button on `players.length > 0` therefore switched off two
+ * features that were fully configured and had nothing to do with the
+ * watch-list. This predicate is the shared, honest gate: the orchestrator uses
+ * it to decide whether to MOUNT the button and {@link renderSpy} uses it to
+ * decide whether to paint the dim "no targets" state, so the two can never
+ * disagree again.
+ *
+ * Config presence, not work presence: with a source on but nothing due right
+ * now the button correctly paints "all scanned ✓" instead of vanishing.
+ *
+ * @param {{ players?: string[], homeHours?: number, patrolSystems?: number }} env
+ * @returns {boolean}
+ */
+export function hasWorkSources(env) {
+  return (
+    (env.players || []).length > 0 ||
+    (env.homeHours ?? 0) > 0 ||
+    (env.patrolSystems ?? 0) > 0
+  );
 }
 
 /**
@@ -345,7 +381,7 @@ export function deriveSpy(env) {
  * @returns {Paint}
  */
 export function renderSpy(ctx, preflight) {
-  if (!ctx.hasWatched) {
+  if (!ctx.hasSources) {
     return { text: 'Spy', subtext: 'no targets', bg: BG_SPY_IDLE, dim: true };
   }
   if (!ctx.proposal) {

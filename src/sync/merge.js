@@ -494,6 +494,90 @@ export const mergeGalaxyScanConfig = (local, remote) => mergeNewestConfigSlot(lo
 export const mergeAlarmClockConfig = (local, remote) => mergeNewestConfigSlot(local, remote);
 
 /**
+ * One system's lifeform-discovery marker on the wire — the SLIM projection of
+ * the two LF fields on a `SystemScan`.
+ *
+ * @typedef {object} LfDiscoveryEntry
+ * @property {number} at   Epoch-ms of the last successful system discovery.
+ * @property {Record<number, number>} [pos]  Per-position epoch-ms from the
+ *   response's `sentToCoordinates`. Fidelity only; the 7-day gate reads `at`.
+ */
+
+/**
+ * @typedef {Record<string, LfDiscoveryEntry>} LfDiscoverySlot
+ */
+
+/**
+ * Merge local + remote lifeform-discovery markers, per system, newer-`at`-wins.
+ *
+ * # Why this exists as its own slot
+ *
+ * The discovery cooldown is 7 days of SERVER-side state: the game refuses a
+ * re-discovery of a system you already covered, no matter which device you
+ * covered it from. Our marker for it lived in `oge_galaxyScans`, which §4b
+ * removed from the gist to kill a 2.6 MB payload. Correct for the fat
+ * per-slot occupancy data — but it also silently un-synced the discovery
+ * markers riding along in the same map, so a second device saw every system
+ * as never-discovered and kept re-proposing systems the game would only
+ * answer with `shipsSent: 0`.
+ *
+ * This slot syncs ONLY the two LF fields (a few bytes per discovered system)
+ * rather than re-admitting the whole scans map, so the §4b shrink stands.
+ * Occupancy is still re-derived from the public API and never restored here.
+ *
+ * # Merge rule
+ *
+ * Per system, the newer `at` wins outright — it is the same quantity on both
+ * sides (when the discovery was sent), so max is unambiguous. `pos` is a
+ * per-position max-union rather than a whole-object overwrite: a fleet cap can
+ * split one system's coverage across two devices, and taking the union keeps
+ * both halves instead of letting the later send erase the earlier one's record.
+ *
+ * `changed` is `true` iff remote contributed something local lacked — a new
+ * system, a newer `at`, or a new/newer position (anti-loop hint; see header).
+ *
+ * @param {LfDiscoverySlot} local
+ * @param {LfDiscoverySlot | undefined | null} remote
+ * @returns {{ merged: LfDiscoverySlot, changed: boolean }}
+ */
+export const mergeLfDiscovery = (local, remote) => {
+  if (!remote || typeof remote !== 'object') return { merged: local, changed: false };
+
+  /** @type {LfDiscoverySlot} */
+  const merged = { ...local };
+  let changed = false;
+
+  for (const [key, r] of Object.entries(remote)) {
+    if (!r || typeof r !== 'object') continue;
+    const rAt = Number(r.at);
+    if (!Number.isFinite(rAt) || rAt <= 0) continue;
+    const l = local[key];
+
+    // Positions first: they merge independently of which side's `at` is newer
+    // (see the split-coverage note above).
+    /** @type {Record<number, number>} */
+    const pos = { ...(l?.pos ?? {}) };
+    let posChanged = false;
+    for (const [slot, ts] of Object.entries(r.pos ?? {})) {
+      const n = Number(ts);
+      if (!Number.isFinite(n) || n <= 0) continue;
+      if (n > (pos[/** @type {any} */ (slot)] ?? 0)) {
+        pos[/** @type {any} */ (slot)] = n;
+        posChanged = true;
+      }
+    }
+
+    const at = Math.max(l?.at ?? 0, rAt);
+    if (at === (l?.at ?? 0) && !posChanged) continue;
+
+    merged[key] = { at, ...(Object.keys(pos).length ? { pos } : {}) };
+    changed = true;
+  }
+
+  return { merged, changed };
+};
+
+/**
  * @typedef {import('../state/dailyActions.js').DailyState} DailyState
  */
 
@@ -535,6 +619,7 @@ export const mergeDailyState = (local, remote) => {
       remote.artifactShopDoneUntil ?? 0,
     ),
     traderImportNextAt: maxNum(local.traderImportNextAt, remote.traderImportNextAt ?? 0),
+    traderEventStartAt: maxNum(local.traderEventStartAt, remote.traderEventStartAt ?? 0),
   };
 
   const changed =
@@ -543,7 +628,8 @@ export const mergeDailyState = (local, remote) => {
     merged.traderAuctionBidAt !== local.traderAuctionBidAt ||
     merged.traderAuctionQuietUntil !== local.traderAuctionQuietUntil ||
     merged.artifactShopDoneUntil !== local.artifactShopDoneUntil ||
-    merged.traderImportNextAt !== local.traderImportNextAt;
+    merged.traderImportNextAt !== local.traderImportNextAt ||
+    merged.traderEventStartAt !== local.traderEventStartAt;
 
   return { merged, changed };
 };

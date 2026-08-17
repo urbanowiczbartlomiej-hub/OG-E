@@ -17,6 +17,7 @@ import {
   mergeGalaxyScanConfig,
   mergeAlarmClockConfig,
   mergeDailyState,
+  mergeLfDiscovery,
   mergeFleetReminders,
 } from '../../src/sync/merge.js';
 import { FR_TOMBSTONE_TTL_SEC } from '../../src/state/fleetReminders.js';
@@ -564,6 +565,7 @@ describe('mergeDailyState', () => {
     traderAuctionQuietUntil: 100,
     artifactShopDoneUntil: 100,
     traderImportNextAt: 100,
+    traderEventStartAt: 100,
   });
 
   it('keeps local (no-write) when remote is missing or not an object', () => {
@@ -581,6 +583,71 @@ describe('mergeDailyState', () => {
   it('keeps the local artifactShopDoneUntil when remote is older or absent', () => {
     expect(mergeDailyState(base(), { artifactShopDoneUntil: 50 }).changed).toBe(false);
     expect(mergeDailyState(base(), {}).merged.artifactShopDoneUntil).toBe(100);
+  });
+
+  it('adopts a newer remote traderEventStartAt (the 6× event, seen on another device)', () => {
+    const r = mergeDailyState(base(), { traderEventStartAt: 200 });
+    expect(r.changed).toBe(true);
+    expect(r.merged.traderEventStartAt).toBe(200);
+  });
+});
+
+describe('mergeLfDiscovery (per-system newer-wins, per-position max-union)', () => {
+  it('keeps local (no-write) when remote is missing or not an object', () => {
+    const local = { '4:30': { at: 100 } };
+    expect(mergeLfDiscovery(local, null).changed).toBe(false);
+    expect(mergeLfDiscovery(local, undefined).merged).toBe(local);
+  });
+
+  it('adopts a system local has never discovered', () => {
+    const r = mergeLfDiscovery({}, { '4:30': { at: 100 } });
+    expect(r.changed).toBe(true);
+    expect(r.merged['4:30'].at).toBe(100);
+  });
+
+  it('takes the newer at, and keeps the local one when remote is older', () => {
+    expect(mergeLfDiscovery({ '4:30': { at: 100 } }, { '4:30': { at: 200 } }).merged['4:30'].at)
+      .toBe(200);
+    const older = mergeLfDiscovery({ '4:30': { at: 200 } }, { '4:30': { at: 100 } });
+    expect(older.changed).toBe(false);
+    expect(older.merged['4:30'].at).toBe(200);
+  });
+
+  it('unions positions instead of overwriting them (a fleet-cap split across two devices)', () => {
+    // Device A covered slots 1-2, device B slots 3-4 of the same system. Taking
+    // the later send's `pos` wholesale would erase the earlier device's record.
+    const r = mergeLfDiscovery(
+      { '4:30': { at: 100, pos: { 1: 100, 2: 100 } } },
+      { '4:30': { at: 200, pos: { 3: 200, 4: 200 } } },
+    );
+    expect(r.changed).toBe(true);
+    expect(r.merged['4:30']).toEqual({ at: 200, pos: { 1: 100, 2: 100, 3: 200, 4: 200 } });
+  });
+
+  it('reports changed for a new position even when the local at is newer', () => {
+    const r = mergeLfDiscovery(
+      { '4:30': { at: 300, pos: { 1: 300 } } },
+      { '4:30': { at: 100, pos: { 2: 100 } } },
+    );
+    expect(r.changed).toBe(true);
+    expect(r.merged['4:30']).toEqual({ at: 300, pos: { 1: 300, 2: 100 } });
+  });
+
+  it('ignores malformed remote entries rather than writing junk markers', () => {
+    const local = { '4:30': { at: 100 } };
+    const r = mergeLfDiscovery(local, {
+      '4:30': /** @type {any} */ (null),
+      '5:1': /** @type {any} */ ({ at: 'nope' }),
+      '5:2': /** @type {any} */ ({ at: 0 }),
+    });
+    expect(r.changed).toBe(false);
+    expect(Object.keys(r.merged)).toEqual(['4:30']);
+  });
+
+  it('preserves other systems untouched', () => {
+    const r = mergeLfDiscovery({ '4:30': { at: 100 } }, { '9:9': { at: 50 } });
+    expect(r.merged['4:30'].at).toBe(100);
+    expect(r.merged['9:9'].at).toBe(50);
   });
 });
 

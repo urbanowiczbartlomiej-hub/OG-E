@@ -81,6 +81,7 @@ import {
   deriveSpy,
   renderSpy,
   nearestLaunchPlanet,
+  hasWorkSources,
   BG_SPY_IDLE,
   BG_SPY_READY,
   BG_SPY_ERROR,
@@ -340,6 +341,11 @@ const captureEnv = () => {
 
   return {
     players: cfg.players,
+    // The two LOOK-plan cadences travel in the env purely so `hasWorkSources`
+    // can see them: they decide whether the button exists at all, and that
+    // verdict must not depend on the watch-list (see the predicate's note).
+    homeHours: cfg.homeHours ?? 0,
+    patrolSystems: cfg.patrolSystems ?? 0,
     universePlanets,
     spiedByPlayer: spiedCoordsByPlayer(reports),
     spiedMoonsByPlayer: spiedMoonsByPlayer(reports),
@@ -423,14 +429,18 @@ const apiContextReady = () => {
 };
 
 /**
- * Is the watch-list value trustworthy yet? True once the async hydrate has
- * settled — or earlier, the moment the store already holds players (a set
- * with content is real data regardless of where it came from). While false
- * the button exists only via the optimistic cache mount and must hold the
- * same dim "loading…" state as a missing apiContext.
+ * Is the watch-list config trustworthy yet? True once the async hydrate has
+ * settled — or earlier, the moment the store already holds a configured work
+ * source (real data regardless of where it came from). While false the button
+ * exists only via the optimistic cache mount and must hold the same dim
+ * "loading…" state as a missing apiContext.
+ *
+ * Reads the same {@link hasWorkSources} predicate as the mount and paint gates:
+ * a Neighbours- or Patrol-only user has an empty `players` array forever, so
+ * keying readiness on that array alone pinned them in "loading…".
  * @returns {boolean}
  */
-const watchReady = () => watchHydrated || watchListStore.get().players.length > 0;
+const watchReady = () => watchHydrated || hasWorkSources(watchListStore.get());
 
 /**
  * Probe availability on the CURRENT planet vs the armed order — `null` when no
@@ -624,7 +634,7 @@ const onSpyClick = async () => {
   // Nothing left to scan → jump to the messages component to read reports
   // (a deliberate navigation on the user's tap, never chained off a send).
   if (!ctx.candidate) {
-    if (ctx.hasWatched) location.href = ingameComponentUrl(location.href, 'messages', {});
+    if (ctx.hasSources) location.href = ingameComponentUrl(location.href, 'messages', {});
     return;
   }
   const target = ctx.candidate;
@@ -757,29 +767,37 @@ export const installSendSpy = () => {
   const updateButtonSize = (size) => controller?.resize(size);
 
   /**
-   * Mount when the watch-list is non-empty — OR, while the async hydrate is
+   * Any Spyglass work source switched on — a watched player, a Neighbours
+   * cadence, or a Patrol radius. Shares {@link hasWorkSources} with the paint
+   * path so the mount gate and the "no targets" gate can never disagree; see
+   * that predicate for why the watch-list alone is the wrong question.
+   * @returns {boolean}
+   */
+  const hasSources = () => hasWorkSources(watchListStore.get());
+
+  /**
+   * Mount when some work source is configured — OR, while the async hydrate is
    * still pending, when last load's reconciled verdict says the button was
    * shown (the optimistic mount that kills the per-navigation blink; the
    * hydrate-driven reconcile below confirms or removes it).
    * @returns {void}
    */
   const gatedMount = () => {
-    if (watchListStore.get().players.length > 0
-      || (!watchHydrated && readSpyFabShown())) mount();
+    if (hasSources() || (!watchHydrated && readSpyFabShown())) mount();
   };
 
   /**
-   * Reconcile mount state against the watch-list: mount when work appears,
-   * remove when the last watched player is cleared. Once the hydrate has
-   * settled, the verdict is also cached for the next load's optimistic mount.
+   * Reconcile mount state against the config: mount when work appears, remove
+   * when the last source is switched off. Once the hydrate has settled, the
+   * verdict is also cached for the next load's optimistic mount.
    * @returns {void}
    */
   const reconcile = () => {
-    const hasWatched = watchListStore.get().players.length > 0;
+    const sourcesOn = hasSources();
     const mounted = !!document.getElementById(BUTTON_ID);
-    if (hasWatched && !mounted && document.body) mount();
-    else if (!hasWatched && mounted && watchHydrated) removeButton();
-    if (watchHydrated) writeSpyFabShown(hasWatched);
+    if (sourcesOn && !mounted && document.body) mount();
+    else if (!sourcesOn && mounted && watchHydrated) removeButton();
+    if (watchHydrated) writeSpyFabShown(sourcesOn);
     refresh();
   };
 

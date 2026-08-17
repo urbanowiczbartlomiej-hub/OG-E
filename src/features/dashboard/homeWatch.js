@@ -33,6 +33,7 @@
 
 import { rankHomeNeighbours, findHomeCoalitions } from '../../domain/homeWatch.js';
 import { dangerColor01 } from '../../lib/dangerColor.js';
+import { PLANET_COLOR } from '../../lib/bodyColors.js';
 import { watchChip, allianceTagChip, countPill } from './chips.js';
 import { playerHoverTitle } from './format.js';
 
@@ -77,7 +78,12 @@ const mk = (tag, css, text) => {
  * @param {string} [label]  Shown instead of the coord (the Coords/Names switch).
  * @returns {HTMLElement}
  */
-const coordEl = (coord, linkBase, css = 'color:#9fd0f0;text-decoration:none;', label = '') => {
+const coordEl = (
+  coord,
+  linkBase,
+  css = `color:${PLANET_COLOR};text-decoration:none;`,
+  label = '',
+) => {
   const [g, s, p] = coord.split(':');
   // `label` is the Coords/Names switch: OUR system read as the body we hold there.
   // The coord never disappears — it moves into the hover, so the link still says

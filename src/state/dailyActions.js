@@ -56,6 +56,23 @@ export const TRADER_AUCTION_QUIET_KEY = 'oge-trader-auction-quiet-until';
 export const TRADER_IMPORT_NEXT_KEY = 'oge-trader-import-next-at';
 
 /**
+ * Epoch-ms START time of the newest "import refreshes 6× today" in-game
+ * announcement we have seen on ANY device. 0/absent ⇒ no event known.
+ *
+ * Why this lives in the synced {@link DailyState} while the resulting *mode*
+ * does not: the announcement is server-wide FACT (the event either runs on this
+ * universe or it doesn't), whereas the 6×/daily chip is a per-device
+ * PREFERENCE. Only the fact syncs. Without it, a device whose inbox was never
+ * opened during the event never learns the event is on and keeps nudging on the
+ * once-daily cadence — the bug this field fixes.
+ *
+ * Max-merged (a newer announcement wins). The consuming feature compares it to
+ * its own device-local "already auto-switched for this message" stamp, so a
+ * manual switch back to daily still sticks on the device that made it.
+ */
+export const TRADER_EVENT_START_KEY = 'oge-trader-import-event-start';
+
+/**
  * @typedef {object} DailyState
  * @property {string} rewardingDoneDay   Game-day key or "" when not yet done.
  * @property {string} traderImportDay    Calendar-day key or "" when not traded.
@@ -63,6 +80,7 @@ export const TRADER_IMPORT_NEXT_KEY = 'oge-trader-import-next-at';
  * @property {number} traderAuctionQuietUntil Epoch-ms quiet window, 0 when absent.
  * @property {number} artifactShopDoneUntil Epoch-ms suppress window, 0 when absent.
  * @property {number} traderImportNextAt   Epoch-ms start of the last taken 4h slot, 0 when absent.
+ * @property {number} traderEventStartAt   Epoch-ms start of the newest known 6× announcement, 0 when absent.
  */
 
 /** @returns {DailyState} */
@@ -73,6 +91,7 @@ export const readDailyState = () => ({
   traderAuctionQuietUntil: safeLS.int(TRADER_AUCTION_QUIET_KEY, 0),
   artifactShopDoneUntil: safeLS.int(ARTIFACT_SHOP_DONE_KEY, 0),
   traderImportNextAt: safeLS.int(TRADER_IMPORT_NEXT_KEY, 0),
+  traderEventStartAt: safeLS.int(TRADER_EVENT_START_KEY, 0),
 });
 
 /**
@@ -93,4 +112,6 @@ export const writeDailyState = (state) => {
     safeLS.set(ARTIFACT_SHOP_DONE_KEY, state.artifactShopDoneUntil);
   if (state.traderImportNextAt != null)
     safeLS.set(TRADER_IMPORT_NEXT_KEY, state.traderImportNextAt);
+  if (state.traderEventStartAt != null)
+    safeLS.set(TRADER_EVENT_START_KEY, state.traderEventStartAt);
 };
