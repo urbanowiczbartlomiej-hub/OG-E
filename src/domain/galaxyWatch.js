@@ -190,6 +190,10 @@ export const RECHECK_BOOST = 50;
  * @property {boolean} [home]  A HOME-watch look: one of our own systems
  *   (domain/homeWatch) — the FAB words it as defence, not as a hunt. Such an
  *   entry may legitimately carry an EMPTY `bodies` list.
+ * @property {boolean} [patrol]  A PATROL look: a territory system around one of
+ *   our bodies (domain/patrol). Flagged for the same reason as `home` — the FAB
+ *   names the feature that proposed the look, so the user can tell a patrol
+ *   sweep from a watch-list look without opening the dashboard.
  */
 
 /**

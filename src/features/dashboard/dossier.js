@@ -29,7 +29,6 @@ import {
 import { compact } from './format.js';
 import { estimateCombatShare } from '../../domain/threatModel.js';
 import { pointsToResources } from '../../domain/unitCosts.js';
-import { bodyColor } from '../../lib/bodyColors.js';
 
 /**
  * @typedef {import('../../domain/targets.js').PlanetPos} PlanetPos
@@ -1678,7 +1677,7 @@ function fsArcsBlock(arcs, nowMs) {
 
     const body = document.createElement('span');
     body.textContent = ` ${arc.coord}${arc.bodyType === 3 ? ' moon' : ''}`;
-    body.style.color = bodyColor(arc.bodyType === 3);
+    body.style.color = arc.bodyType === 3 ? '#c9a9e8' : '#a9c4de';
     row.appendChild(body);
 
     row.appendChild(document.createTextNode(

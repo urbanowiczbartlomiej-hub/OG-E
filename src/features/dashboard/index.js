@@ -53,7 +53,6 @@ import { populatePositionFilter, renderColonyChart } from './colony.js';
 import { renderFreeRegions, renderServerMap, selectCandidate, resetFreeSelection, highlightPin, _resetFreeStreakForTest } from './freeStreak.js';
 import { chipValue, setChipValue, wireChips, setChipsEnabled, toggleChipOn, setToggleChip, wireToggleChip, watchChip, allianceTagChip, countPill } from './chips.js';
 import { dangerColor01 } from '../../lib/dangerColor.js';
-import { bodyColor } from '../../lib/bodyColors.js';
 import { playerHoverTitle } from './format.js';
 import { digestProximityReports } from '../../domain/proximityDigest.js';
 import { bodyNameIndex, bodyNameFor, nearestBodyDistance } from '../../domain/bodies.js';
@@ -2338,7 +2337,7 @@ const scanHistoryTitle = (scans, coords) =>
 const proximityBodyEl = (coords, moon, scans) => {
   const s = document.createElement('span');
   s.textContent = coords;
-  s.style.cssText = `cursor:help;color:${bodyColor(moon)};`;
+  s.style.cssText = `cursor:help;${moon ? 'color:#c9a9e8;' : ''}`;
   s.title = scanHistoryTitle(scans, coords);
   return s;
 };
@@ -2353,7 +2352,7 @@ const proximityBodyEl = (coords, moon, scans) => {
 const proximityNamedEl = (name, coords, moon, scans) => {
   const s = document.createElement('span');
   s.textContent = name;
-  s.style.cssText = `color:${bodyColor(moon)};cursor:help;`;
+  s.style.cssText = `color:${moon ? '#c9a9e8' : '#a9c4de'};cursor:help;`;
   s.title = scanHistoryTitle(scans, coords);
   return s;
 };
@@ -2375,7 +2374,7 @@ const proximityFromEl = (coords, moon, linkBase) => {
     : null;
   const s = document.createElement(href ? 'a' : 'span');
   s.textContent = coords;
-  s.style.cssText = `color:${bodyColor(moon)};`
+  s.style.cssText = (moon ? 'color:#c9a9e8;' : 'color:#8fb8e0;')
     + (href ? 'cursor:pointer;text-decoration:underline dotted;' : '');
   if (href) {
     const a = /** @type {HTMLAnchorElement} */ (s);
@@ -2412,6 +2411,12 @@ const renderProximityStrip = () => {
   // (the date-range chips, Coords/Names) live INSIDE that panel. Carry the offset
   // over so a click halfway down a long prober list stays halfway down.
   const restoreScroll = keepPanelScroll(proximityStripEl);
+  // The raw log's disclosure state, carried across the rebuild. It matters now
+  // that the Coords/Names switch CHANGES what the log says: without this, using
+  // the switch to relabel an open log would collapse the very thing you opened
+  // it to read. Same reasoning as the scroll offset above.
+  const rawWasOpen = !!(/** @type {HTMLDetailsElement | null} */ (
+    proximityStripEl.querySelector('details')))?.open;
   proximityStripEl.textContent = '';
   proximityStripEl.style.display = '';
   // Head tool slot (Coords/Names) — cleared with the strip so an emptied
@@ -2664,6 +2669,7 @@ const renderProximityStrip = () => {
 
   // The undigested per-alert log, for when the exact sequence matters.
   const raw = document.createElement('details');
+  raw.open = rawWasOpen;
   raw.style.cssText = 'margin:6px 0 0 9px;';
   const rawSum = document.createElement('summary');
   rawSum.style.cssText = 'cursor:pointer;color:#667;font-size:11px;list-style:none;';
@@ -2678,7 +2684,14 @@ const renderProximityStrip = () => {
     line.style.cssText = 'font-size:11px;color:#788;margin-top:3px;line-height:1.4;';
     const age = proximityAge(r.ts, nowMs);
     line.appendChild(document.createTextNode(`${r.byPlayerName || `#${r.byPlayerId}`} · near `));
-    line.appendChild(proximityBodyEl(r.atCoords, r.atPlanetType === 3));
+    // `near` is one of OUR bodies → follows the Coords/Names switch, same as the
+    // rows above. It used to be coords-only, so flipping to Names relabelled the
+    // digest but not the log underneath it. `from` is the prober's own body: no
+    // name of ours to show, so it stays a coordinate either way.
+    const rawNm = showBodyNames ? bodyNameFor(nameIdx, r.atCoords, r.atPlanetType === 3) : null;
+    line.appendChild(rawNm
+      ? proximityNamedEl(rawNm, r.atCoords, r.atPlanetType === 3)
+      : proximityBodyEl(r.atCoords, r.atPlanetType === 3));
     if (age) line.appendChild(document.createTextNode(` · ${age} ago`));
     if (r.fromCoords) {
       line.appendChild(document.createTextNode(' · from '));

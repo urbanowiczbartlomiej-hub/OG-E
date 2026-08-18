@@ -106,6 +106,11 @@ export const BG_SPY_STRIKE = '#d1571f';
  *   strike verdict (fleetLanding full-sweep rule).
  * @property {boolean} [home]  A home-watch look — one of OUR systems
  *   (domain/homeWatch), so `bodies` may legitimately be 0.
+ * @property {boolean} [patrol]  A patrol look — a territory system around one of
+ *   our bodies (domain/patrol).
+ * @property {number} [patrolLeft]  How many patrol looks (including this one)
+ *   are still queued. Shown in the button's hint so the sweep reads as finite
+ *   progress rather than an endless series of identical Look proposals.
  */
 
 /**
@@ -274,6 +279,10 @@ export function deriveSpy(env) {
   // nudge follows): a defensive read that is already gathered must never take the
   // button away from work that still needs doing.
   const homeLooksLeft = (env.patrolLooks || []).filter((e) => e.home).length;
+  // Patrol looks still queued — the countdown the button shows. Counted off the
+  // merged plan, not the raw env, so a system the watch-list plan also claimed
+  // (deduped by label above) is not double-counted.
+  const patrolLooksLeft = looks.filter((e) => e.patrol).length;
   if (!top && !lookTop && (env.homeUnread || 0) > 0 && homeLooksLeft === 0) {
     return {
       proposal: 'homeReport',
@@ -327,6 +336,7 @@ export function deriveSpy(env) {
         ...(lookTop.recheck ? { recheck: true } : {}),
         ...(lookTop.sweep ? { sweep: true } : {}),
         ...(lookTop.home ? { home: true } : {}),
+        ...(lookTop.patrol ? { patrol: true, patrolLeft: patrolLooksLeft } : {}),
       }
       : null,
     remaining: entries.length + looks.length,
@@ -368,9 +378,17 @@ export function hasWorkSources(env) {
 }
 
 /**
- * Pure `(SpyContext, preflight?) → Paint` for the idle / candidate / done
- * states. The armed "Send!" state is painted by the orchestrator (it owns the
- * courier step), the same split sendColony uses.
+ * Pure `(SpyContext, preflight?) → Paint | null` for the idle / candidate /
+ * done states. The armed "Send!" state is painted by the orchestrator (it owns
+ * the courier step), the same split sendColony uses.
+ *
+ * **`null` means "there is nothing to show — take the button away"**, and the
+ * orchestrator unmounts on it. It used to paint an idle "Reports · all scanned
+ * ✓" face instead, which put a permanent button in the FAB stack advertising
+ * that it had no work: the stack is scarce, shared space, and a control that
+ * cannot do anything should not occupy it. Keeping the verdict HERE (rather
+ * than re-deriving it in the orchestrator) means the mount decision and the
+ * paint decision cannot disagree.
  *
  * `preflight` is the probe-availability readout (from the fleetdispatch
  * snapshot, when on that page): painting the shortage BEFORE the tap replaces
@@ -378,15 +396,12 @@ export function hasWorkSources(env) {
  *
  * @param {SpyContext} ctx
  * @param {{ have: number, need: number } | null} [preflight]
- * @returns {Paint}
+ * @returns {Paint | null}
  */
 export function renderSpy(ctx, preflight) {
-  if (!ctx.hasSources) {
-    return { text: 'Spy', subtext: 'no targets', bg: BG_SPY_IDLE, dim: true };
-  }
-  if (!ctx.proposal) {
-    return { text: 'Reports', subtext: 'all scanned ✓', bg: BG_SPY_DONE };
-  }
+  // Nothing configured, or everything configured is up to date: no button.
+  if (!ctx.hasSources) return null;
+  if (!ctx.proposal) return null;
   // Home watch has unread news and the own-system sweep is finished — the one
   // moment the button points at the dashboard (see deriveSpy). Pulses: somebody
   // moved in next to you and you have not read it yet.
@@ -419,27 +434,33 @@ export function renderSpy(ctx, preflight) {
       subtext: `[${l.galaxy}:${l.system}]${l.bodies > 1 ? ` ×${l.bodies}` : ''}`,
       // Re-look nudge / account sweep: say WHY this look matters (it settles
       // or unlocks a strike verdict) instead of the generic remaining count.
+      // The hint NAMES THE FEATURE that queued this look. A bare count (or the
+      // old rhetorical 'who moved in?') left the user unable to tell why the
+      // button was asking: Neighbours and Patrol both surface as 'Look', and
+      // they mean very different things. Recheck/sweep still win — those say
+      // something the feature name doesn't. Kept SHORT: the hint is the 0.34em
+      // line on a round rim, so anything wordier bleeds outside the button
+      // (see shared/button.js labelLines).
       hint: l.recheck
         ? 'moon order? · look now'
         : l.sweep
           ? 'strike? · sweep account'
-          // Home watch: the defensive look. A system carrying a fresh arrival
-          // was boosted to the front of the plan, so ask the question the look
-          // answers instead of showing a generic remaining count. Kept SHORT —
-          // the hint is the 0.34em line on a round rim, so anything wordier
-          // bleeds outside the button (see shared/button.js labelLines).
           : l.home
-            ? 'who moved in?'
-            : `${ctx.remaining} left`,
+            ? 'neighbours'
+            // The count needs no legend: it drops by one per tap, so what it
+            // counts is self-evident after the second look.
+            : l.patrol
+              ? `patrol (${l.patrolLeft ?? 0})`
+              : `${ctx.remaining} left`,
       bg: BG_SPY_LOOK,
       // A queued galaxy-look is exactly as actionable as a queued probe scan —
       // the FAB should nudge for it too, not just for 'spy' proposals.
       pulse: true,
     };
   }
-  if (!ctx.candidate) {
-    return { text: 'Reports', subtext: 'all scanned ✓', bg: BG_SPY_DONE };
-  }
+  // A 'probe' proposal with no candidate cannot happen (the proposal is derived
+  // FROM the candidate), but the plan is data — treat it as nothing to do.
+  if (!ctx.candidate) return null;
   const c = ctx.candidate;
   // Line 2 is WHO we're about to scan (the player), not the raw coords — the
   // user reads the target by name; the coords still show on the armed "Send!"

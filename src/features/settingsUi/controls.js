@@ -142,15 +142,27 @@ import { appendGlyph, installButtonChrome } from '../shared/buttonChrome.js';
 /** Id prefix for input elements — used to find controls by option id on sync. */
 const INPUT_ID_PREFIX = 'oge-setting-';
 
-// ─── Style constants ─────────────────────────────────────────────────────
+// ─── Style constants ─────────────────────────────────────
+//
+// # Sizing target: the GAME mobile viewport, not the browser one
+//
+// OGame renders its own chrome around our panel, and on a phone it leaves us
+// roughly half the viewport width. Type sized for a desktop sidebar (11-12 px)
+// arrives there unreadably small, and controls with 4 px of vertical padding
+// end up well under the ~44 px a fingertip reliably hits, so a mis-tap toggles
+// the neighbouring option instead. Every size below is therefore one step up
+// from the desktop-comfortable value, and the interactive rows carry padding
+// chosen for a thumb rather than a cursor. Do not shrink these back for
+// density: on the surface that matters they were not merely dense, they were
+// unusable.────────────────
 
 const RADIO_WRAP_STYLE = 'display:inline-flex;align-items:center;gap:16px;';
 const RADIO_LABEL_STYLE =
-  'display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-size:12px;color:#ccc;';
+  'display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:#ccc;';
 const BUTTON_STYLE =
-  'padding:4px 14px;background:#1a2a3a;border:1px solid #2a4a5a;' +
-  'color:#4a9eff;border-radius:4px;font-size:12px;cursor:pointer;font-weight:bold;';
-const STATIC_STYLE = 'font-size:11px;color:#888;white-space:pre-line;';
+  'padding:8px 16px;background:#1a2a3a;border:1px solid #2a4a5a;' +
+  'color:#4a9eff;border-radius:4px;font-size:13px;cursor:pointer;font-weight:bold;';
+const STATIC_STYLE = 'font-size:12px;color:#888;white-space:pre-line;';
 const STATUS_WRAP_STYLE = 'display:inline-flex;align-items:center;gap:8px;width:100%;';
 
 // ─── Range slider (injected stylesheet, not inline) ──────────────────────
@@ -173,22 +185,27 @@ const RANGE_CSS = [
   // Standalone-row seat (a range option outside the command block): side
   // margins matching `.oge-pref-panel`, equal top/bottom.
   '.oge-range-row{margin:12px 10px;}',
-  '.oge-range-wrap .oge-range-display{min-width:50px;text-align:right;',
-  'font-size:11px;color:#8fa8c0;}',
-  '.oge-range{flex:1;height:18px;margin:0;padding:0;background:transparent;',
+  '.oge-range-wrap .oge-range-display{min-width:54px;text-align:right;',
+  'font-size:12px;color:#8fa8c0;}',
+  // 32px tall, not 18: the height IS the grab area, and dragging a slider is
+  // the one gesture here with no forgiving second attempt (a mis-grab scrolls
+  // the page instead). Track and thumb grow with it so the control still looks
+  // centred rather than a thin rule floating in a tall box.
+  '.oge-range{flex:1;height:32px;margin:0;padding:0;background:transparent;',
   '-webkit-appearance:none;appearance:none;cursor:pointer;min-width:0;}',
   '.oge-range:focus-visible{outline:1px solid #4a9eff;outline-offset:3px;}',
   // Firefox track + progress fill + thumb.
-  '.oge-range::-moz-range-track{height:5px;border-radius:3px;background:#223142;}',
-  '.oge-range::-moz-range-progress{height:5px;border-radius:3px;background:#4a9eff;}',
-  '.oge-range::-moz-range-thumb{width:16px;height:16px;border-radius:50%;',
+  '.oge-range::-moz-range-track{height:7px;border-radius:4px;background:#223142;}',
+  '.oge-range::-moz-range-progress{height:7px;border-radius:4px;background:#4a9eff;}',
+  '.oge-range::-moz-range-thumb{width:24px;height:24px;border-radius:50%;',
   'background:#4a9eff;border:3px solid #0b1016;',
   'box-shadow:0 0 0 1px #2a3a4c,0 0 6px rgba(74,158,255,.55);}',
   '.oge-range:hover::-moz-range-thumb{background:#7db8ff;}',
   // WebKit track + thumb (thumb needs the -5.5px seat onto the 5px track).
-  '.oge-range::-webkit-slider-runnable-track{height:5px;border-radius:3px;background:#223142;}',
-  '.oge-range::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;',
-  'margin-top:-5.5px;border-radius:50%;background:#4a9eff;border:3px solid #0b1016;',
+  '.oge-range::-webkit-slider-runnable-track{height:7px;border-radius:4px;background:#223142;}',
+  // margin-top centres the thumb on the track: (track 7 minus thumb 24) / 2.
+  '.oge-range::-webkit-slider-thumb{-webkit-appearance:none;width:24px;height:24px;',
+  'margin-top:-8.5px;border-radius:50%;background:#4a9eff;border:3px solid #0b1016;',
   'box-shadow:0 0 0 1px #2a3a4c,0 0 6px rgba(74,158,255,.55);}',
   '.oge-range:hover::-webkit-slider-thumb{background:#7db8ff;}',
 ].join('');
@@ -219,9 +236,9 @@ const TILES_CSS = [
   // whole block reads as one family; the gold lens + label is what says
   // "primary CTA, not a module toggle".
   '.oge-dash-launch{display:flex;width:100%;box-sizing:border-box;flex-direction:column;',
-  'align-items:center;justify-content:center;gap:7px;padding:12px 6px 11px;margin:0;border:none;',
+  'align-items:center;justify-content:center;gap:8px;padding:14px 6px 13px;margin:0;border:none;',
   'border-bottom:1px solid #223142;background:#0e141c;color:#e6c054;',
-  'font-size:12px;font-weight:bold;cursor:pointer;}',
+  'font-size:14px;font-weight:bold;cursor:pointer;}',
   '.oge-dash-launch:hover{background:#131c28;color:#f0d27a;}',
   '.oge-dash-launch:focus-visible{outline:1px solid #4a9eff;outline-offset:-2px;}',
   // Bottom segment — the shared size slider, fused into the block (it sizes
@@ -229,11 +246,11 @@ const TILES_CSS = [
   // not floating under it). Same chrome shade as the launcher segment, so
   // the block reads launcher / tiles / slider top-to-bottom.
   '.oge-fab-size{display:flex;box-sizing:border-box;width:100%;',
-  'border-top:1px solid #223142;background:#0e141c;padding:11px 12px;}',
+  'border-top:1px solid #223142;background:#0e141c;padding:14px 12px;}',
   '.oge-module-tiles{display:flex;width:100%;box-sizing:border-box;}',
   '.oge-module-tiles.oge-tiles-disabled{opacity:.35;pointer-events:none;}',
   '.oge-module-tile{flex:1 1 0;display:flex;flex-direction:column;align-items:center;',
-  'gap:7px;padding:12px 6px 11px;margin:0;border:none;background:transparent;',
+  'gap:8px;padding:14px 6px 13px;margin:0;border:none;background:transparent;',
   'cursor:pointer;--mod:#4d5866;}',
   '.oge-module-tile + .oge-module-tile{border-left:1px solid #223142;}',
   '.oge-module-tile.on{--mod:var(--mod-on);',
@@ -245,7 +262,7 @@ const TILES_CSS = [
   // `.oge-art` layer, which needs a positioned ancestor to fill.
   '.oge-module-tile-dome{position:relative;width:38px;height:38px;}',
   '.oge-module-tile:not(.on) .oge-module-tile-dome{--art-opacity:.45;}',
-  '.oge-module-tile-cap{font-size:11px;line-height:1;color:#66727f;}',
+  '.oge-module-tile-cap{font-size:12px;line-height:1;color:#66727f;}',
   '.oge-module-tile.on .oge-module-tile-cap{color:#dfe7f2;}',
 ].join('');
 
@@ -268,7 +285,7 @@ const PREF_CSS = [
   // Group captions carry the same typographic weight as the Dashboard
   // launcher's label (12px bold) so the groups scan as real headings, but
   // stay in the panel's muted blue-grey — gold remains the launcher's mark.
-  '.oge-pref-cap{padding:9px 12px 3px;font-size:12px;font-weight:bold;',
+  '.oge-pref-cap{padding:11px 12px 4px;font-size:13px;font-weight:bold;',
   'letter-spacing:.02em;color:#a7b8cb;}',
   '.oge-pref-cap.sep{border-top:1px solid #1a2735;}',
   '.oge-pref-grid{display:grid;}',
@@ -276,10 +293,10 @@ const PREF_CSS = [
   // segment's and the pill's REAL buttons inside, and interactive content
   // inside a native button is invalid HTML.
   '.oge-pref-tile{position:relative;display:flex;flex-direction:column;align-items:center;',
-  'justify-content:center;gap:7px;padding:13px 6px 12px;margin:0;',
+  'justify-content:center;gap:8px;padding:15px 6px 14px;margin:0;',
   'cursor:pointer;user-select:none;color:#5a6672;}',
-  '.oge-pref-tile svg{width:26px;height:26px;overflow:visible;}',
-  '.oge-pref-tile-cap{font-size:11px;line-height:1;color:#66727f;}',
+  '.oge-pref-tile svg{width:28px;height:28px;overflow:visible;}',
+  '.oge-pref-tile-cap{font-size:12px;line-height:1.15;color:#66727f;}',
   '.oge-pref-tile:hover{background:rgba(74,158,255,.07);}',
   '.oge-pref-tile.on{background:rgba(74,158,255,.10);box-shadow:inset 0 -2px 0 #4a9eff;color:#7db8ff;}',
   '.oge-pref-tile.on .oge-pref-tile-cap{color:#dfe7f2;}',
@@ -290,19 +307,19 @@ const PREF_CSS = [
   // Row variant (columns:1) — a full-width two-zone control: tile body =
   // toggle, embedded segment = its own numeric field.
   '.oge-pref-tile.row{flex-direction:row;justify-content:flex-start;gap:10px;',
-  'padding:11px 12px;text-align:left;}',
-  '.oge-pref-tile.row .oge-pref-tile-cap{font-size:12px;}',
+  'padding:14px 12px;text-align:left;}',
+  '.oge-pref-tile.row .oge-pref-tile-cap{font-size:13px;}',
   '.oge-pref-spacer{flex:1;}',
-  '.oge-pref-segcap{font-size:11px;color:#5f6c7b;}',
+  '.oge-pref-segcap{font-size:12px;color:#5f6c7b;}',
   '.oge-pref-seg{display:inline-flex;border:1px solid #2a3a4c;border-radius:6px;overflow:hidden;}',
-  '.oge-pref-seg button{border:none;margin:0;padding:4px 14px;background:transparent;',
-  'color:#66727f;font-size:12px;cursor:pointer;font-family:inherit;}',
+  '.oge-pref-seg button{border:none;margin:0;padding:8px 16px;background:transparent;',
+  'color:#66727f;font-size:13px;cursor:pointer;font-family:inherit;}',
   '.oge-pref-seg button + button{border-left:1px solid #2a3a4c;}',
   '.oge-pref-seg button.on{background:rgba(74,158,255,.16);color:#cfe4ff;',
   'box-shadow:inset 0 -2px 0 #4a9eff;}',
-  '.oge-pref-pill{position:absolute;top:6px;right:6px;padding:2px 8px;margin:0;',
-  'border:1px solid #3a4a5c;border-radius:9px;background:#101823;color:#8fa8c0;',
-  'font-size:11px;cursor:pointer;font-family:inherit;}',
+  '.oge-pref-pill{position:absolute;top:6px;right:6px;padding:4px 10px;margin:0;',
+  'border:1px solid #3a4a5c;border-radius:10px;background:#101823;color:#8fa8c0;',
+  'font-size:12px;cursor:pointer;font-family:inherit;}',
   // Hover reddens toward the banner it previews.
   '.oge-pref-pill:hover{border-color:#fb7185;color:#ffb3bd;}',
 ].join('');

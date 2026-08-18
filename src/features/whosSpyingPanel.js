@@ -56,7 +56,8 @@ import { settingsStore } from '../state/settings.js';
 import { bodiesStore } from '../state/bodies.js';
 import { bodyNameIndex, bodyNameFor, nearestBodyDistance } from '../domain/bodies.js';
 import { injectStyle, parseSvg } from '../lib/dom.js';
-import { PLANET_COLOR, MOON_COLOR } from '../lib/bodyColors.js';
+import { dangerColor01 } from '../lib/dangerColor.js';
+import { readApiCache } from '../state/apiCache.js';
 import { EYE_GLYPH } from './shared/buttonGlyphs.js';
 import { navigateGalaxyInPage } from './shared/galaxyNav.js';
 import { ingameComponentUrl } from '../domain/ogameUrl.js';
@@ -153,14 +154,17 @@ const CSS = [
   // --sp-accent = the Spyglass gold (sendSpy's BG_SPY_IDLE) — one spy identity
   // across the FAB, this panel and the dashboard tab it deep-links to.
   `#${PANEL_ID}{--sp-accent:#e6c054;--sp-danger:#e2726a;margin:0 0 10px;`,
-  'background:#0d151d;border:1px solid #26323f;border-left:3px solid var(--sp-accent);',
+  // The Spyglass gold rides the panel's TOP edge, level with its header — the
+  // same move the dashboard's cards made. Down the whole left side it was a long
+  // saturated rule beside rows that already carry their own Danger colours.
+  'background:#0d151d;border:1px solid #26323f;border-top:3px solid var(--sp-accent);',
   'border-radius:6px;overflow:hidden;color:#93a3b3;',
   'font-family:Verdana,"Segoe UI",Tahoma,sans-serif;}',
   // FOLD: quiet is the normal state and it is one line, so the panel keeps its
   // body closed and speaks through the header. A NEW alert (newer than the one
   // this panel last showed you) turns the edge alarm-red and opens it by itself;
   // reading it puts the edge back to the spy gold.
-  `#${PANEL_ID}.hot{border-left-color:var(--sp-danger);}`,
+  `#${PANEL_ID}.hot{border-top-color:var(--sp-danger);}`,
   `#${PANEL_ID}:not(.open) table{display:none;}`,
   `#${PANEL_ID}:not(.open) .oge-sb-foot{display:none!important;}`,
   `#${PANEL_ID} .oge-sb-hdr{display:flex;align-items:center;gap:8px;padding:8px 12px;`,
@@ -190,15 +194,44 @@ const CSS = [
   `#${PANEL_ID} tbody td{padding:6px 10px;border-top:1px solid #16212c;vertical-align:middle;}`,
   `#${PANEL_ID} tbody tr.hot{background:linear-gradient(90deg,#2a1512,transparent 70%);`,
   'box-shadow:inset 3px 0 0 var(--sp-danger);}',
-  `#${PANEL_ID} .oge-sb-name{font-weight:700;color:#d8e6f4;}`,
-  `#${PANEL_ID} tr.hot .oge-sb-name{color:#f4b4ad;}`,
+  // The nick wears the prober's DANGER colour, set per row from `--d` (see
+  // buildRow) — the dashboard strip's central move, and the reason the two
+  // surfaces now read the same. Colour means Danger EVERYWHERE in the Spyglass;
+  // the row's left rule is the same value, so a list scans in one pass.
+  `#${PANEL_ID} .oge-sb-name{font-weight:700;color:var(--d,#d8e6f4);`,
+  'cursor:pointer;text-decoration:underline dotted;}',
+  `#${PANEL_ID} tbody tr{box-shadow:inset 3px 0 0 var(--d,#26323f);}`,
+  // Same-system stays RED on both counts: the rule says how dangerous they are,
+  // the tint says they are already inside one of your systems.
+  `#${PANEL_ID} tbody tr.hot .oge-sb-name{color:#f4b4ad;}`,
+  // Alliance tag — dim by default, LIT when this alliance has more than one
+  // prober on you in the window: not "somebody is watching me" but "their
+  // alliance is". Dim otherwise, so the lit state keeps its meaning.
+  //
+  // Metrics and colours copied from the dashboard's shared `allianceTagChip`
+  // (features/dashboard/chips.js): a SQUARE 3px chip in amber, not a rounded
+  // gold pill. Same element on both surfaces or the parity is only skin-deep.
+  `#${PANEL_ID} .oge-sb-tag{margin-left:6px;padding:0 4px;border-radius:3px;`,
+  'font:10px Verdana,sans-serif;letter-spacing:.03em;border:1px solid #2a3542;',
+  'color:#7f8ea0;white-space:nowrap;}',
+  `#${PANEL_ID} .oge-sb-tag.lit{border-color:#e0b45f66;color:#e0b45f;`,
+  'background:#e0b45f14;}',
+  // The undigested per-alert log, for when the exact sequence matters.
+  `#${PANEL_ID} .oge-sb-raw{padding:4px 12px 8px;}`,
+  `#${PANEL_ID} .oge-sb-raw summary{cursor:pointer;color:#5f6b76;font-size:11px;`,
+  'list-style:none;}',
+  `#${PANEL_ID} .oge-sb-raw summary::-webkit-details-marker{display:none;}`,
+  `#${PANEL_ID} .oge-sb-raw .body{max-height:320px;overflow-y:auto;}`,
+  `#${PANEL_ID} .oge-sb-raw .line{font-size:11px;color:#788;margin-top:3px;`,
+  'line-height:1.4;}',
+  `#${PANEL_ID}:not(.open) .oge-sb-raw{display:none;}`,
   `#${PANEL_ID} .oge-sb-skull{margin-right:5px;cursor:help;}`,
   `#${PANEL_ID} .oge-sb-age{font:11px/1 monospace;color:#6b7987;white-space:nowrap;}`,
-  `#${PANEL_ID} .coord{color:${PLANET_COLOR};font:11px/1 monospace;}`,
+  `#${PANEL_ID} .coord{color:#a9c4de;font:11px/1 monospace;}`,
   // Lunar tint — a MOON body's coords (planet and moon share "g:s:p"; the
-  // colour + tooltip is what tells them apart). AGR's own planet/moon pair, so
-  // the distinction reads the same here as in the game UI next to it.
-  `#${PANEL_ID} .coord.moon{color:${MOON_COLOR};cursor:help;}`,
+  // colour + tooltip is what tells them apart). Same hex as the dashboard's
+  // proximity strip.
+  `#${PANEL_ID} .coord.moon{color:#c9a9e8;cursor:help;}`,
   `#${PANEL_ID} .muted{color:#4c5763;}`,
   `#${PANEL_ID} .oge-sb-acts{display:flex;gap:6px;justify-content:flex-end;}`,
   `#${PANEL_ID} .oge-sb-btn{font:11px Verdana,sans-serif;color:#93a3b3;cursor:pointer;`,
@@ -301,6 +334,26 @@ const parseCoords = (coords) => {
 };
 
 /**
+ * Hover for a prober's nick: the Danger score and the reasons behind it.
+ *
+ * Deliberately the same sentence the dashboard's `playerHoverTitle` produces —
+ * the two surfaces answer the same question and a user who learned one reading
+ * should not have to learn a second. Not imported from there because that lives
+ * in `features/dashboard/`, and a feature may not import another feature; the
+ * wording is the contract, the duplication is four lines.
+ *
+ * @param {import('../domain/dangerScore.js').DangerProfile | undefined} prof
+ * @returns {string}
+ */
+const dangerHoverTitle = (prof) => {
+  if (!prof || typeof prof.danger !== 'number' || !Number.isFinite(prof.danger)) {
+    return 'Danger unknown — no public-statistics profile yet.\nClick for the full profile.';
+  }
+  const reasons = prof.reasons?.length ? `\n${prof.reasons.join('\n')}` : '';
+  return `Danger ${prof.danger.toFixed(2)}${reasons}\nClick for the full profile.`;
+};
+
+/**
  * Format an epoch-SECONDS scan time as a compact local `YYYY-MM-DD HH:MM`.
  * @param {number} tsSec
  * @returns {string}
@@ -375,6 +428,14 @@ const bodyEl = (b) => {
  * @property {string} range  Active date-range chip value.
  * @property {(coords: string, moon: boolean) => string | null} nameFor
  * @property {(fromCoords: string | null) => { label: string, cls: string } | null} distFor
+ * @property {(pid: string) => import('../domain/dangerScore.js').DangerProfile | undefined} profFor
+ *   The prober's Danger profile (apiContext handoff, the same join the dashboard
+ *   uses). `undefined` before the handoff lands or for a player with no public
+ *   statistics — an unknown D is NOT a zero D, so the row falls back to neutral
+ *   rather than painting them harmless.
+ * @property {(pid: string) => { tag: string, lit: boolean } | null} allyFor
+ *   Alliance label for the row, and whether this alliance fielded MORE THAN ONE
+ *   prober in the current window.
  */
 
 /**
@@ -405,6 +466,11 @@ const nearBodyEl = (b, ctx) => {
  */
 const buildRow = (p, ctx) => {
   const tr = el('tr', p.sameSystem ? 'hot' : undefined);
+  const pid = String(p.byPlayerId);
+  const prof = ctx.profFor(pid);
+  // `--d` drives BOTH the nick colour and the row's left rule (see CSS), so the
+  // two can never drift apart. The fallback is the panel's neutral text colour.
+  tr.style.setProperty('--d', dangerColor01(prof?.danger, '#d8e6f4'));
 
   const nameTd = el('td');
   if (p.sameSystem) {
@@ -412,7 +478,21 @@ const buildRow = (p, ctx) => {
     skull.title = 'In your system — can strike at moon/RIP speed';
     nameTd.appendChild(skull);
   }
-  nameTd.appendChild(el('span', 'oge-sb-name', p.name || `#${p.byPlayerId}`));
+  // The nick is the action here too — it opens the dossier, same as every
+  // clickable nick on the dashboard's Spyglass tab. The Spyglass BUTTON in the
+  // actions cell stays: on touch a dotted underline is not an obvious target.
+  const who = el('span', 'oge-sb-name', p.name || `#${pid}`);
+  who.title = dangerHoverTitle(prof);
+  who.addEventListener('click', () => openSpyglass(p.byPlayerId));
+  nameTd.appendChild(who);
+  const ally = ctx.allyFor(pid);
+  if (ally && ally.tag) {
+    const chip = el('span', `oge-sb-tag${ally.lit ? ' lit' : ''}`, ally.tag);
+    chip.title = ally.lit
+      ? 'More than one player from this alliance probed you in this window'
+      : 'Alliance';
+    nameTd.appendChild(chip);
+  }
   // Distance from this prober's origin to our nearest body — its OWN line under
   // the name (0 sys = in-empire strike range; the colour carries the severity).
   const dist = ctx.distFor(p.fromCoords);
@@ -443,6 +523,11 @@ const buildRow = (p, ctx) => {
   // thinner copy of it here).
   const actTd = el('td');
   const acts = el('div', 'oge-sb-acts');
+  // Deliberately NO watch toggle here. Starring somebody changes what the
+  // Spyglass FAB proposes and what the dashboard's tables hold — none of which
+  // is on screen on the messages page, so the button's effect would be
+  // invisible at the moment of pressing it. The one action this panel offers is
+  // the jump to the dossier, which is also where watching belongs.
   const dossierBtn = el('button', 'oge-sb-btn', 'Spyglass');
   dossierBtn.title = "Open this player's profile in the OG-E dashboard (Spyglass tab)";
   dossierBtn.addEventListener('click', () => openSpyglass(p.byPlayerId));
@@ -522,6 +607,14 @@ const buildShell = (onToggleNames, onRange) => {
   panel.appendChild(table);
 
   panel.appendChild(el('div', 'oge-sb-foot'));
+  // The undigested per-alert log — the dashboard strip's `show raw log` details,
+  // for when the exact sequence matters rather than the per-prober rollup.
+  // Collapsed by default and hidden entirely while the panel is folded.
+  const raw = document.createElement('details');
+  raw.className = 'oge-sb-raw';
+  raw.appendChild(document.createElement('summary'));
+  raw.appendChild(el('div', 'body'));
+  panel.appendChild(raw);
   return panel;
 };
 
@@ -540,13 +633,16 @@ const markSeen = (panel) => {
 };
 
 /**
- * Paint the summary line, rows and footnote from a digest.
+ * Paint the summary line, rows, footnote and raw log from a digest.
  * @param {HTMLElement} panel
  * @param {ReturnType<typeof digestProximityReports>} digest
  * @param {RenderCtx} ctx
+ * @param {import('../domain/espionageReport.js').ProximityReport[]} reports
+ *   The SAME window-filtered list the digest was built from — the raw log must
+ *   never disagree with the rollup above it.
  * @returns {void}
  */
-const renderInto = (panel, digest, ctx) => {
+const renderInto = (panel, digest, ctx, reports) => {
   // Fold state. "New" = an alert newer than the one this panel last showed
   // (settings.spySeenTs): red edge + unfolded, so the user reads it and the edge
   // returns to the spy gold. Nothing new = folded, gold, one header line. A
@@ -602,6 +698,36 @@ const renderInto = (panel, digest, ctx) => {
       foot.style.display = 'none';
     }
   }
+
+  // Raw log — one line per alert, newest first, exactly the dashboard's wording:
+  // `<prober> · near <our body> · <age> ago · from <their body>`.
+  //
+  // `near` is one of OUR bodies, so it follows the Coords/Names switch like every
+  // other own-body coord in the panel — it used to render raw coordinates always,
+  // which left the log speaking a different language than the table above it the
+  // moment the switch said Names. `from` is THEIR body: we hold no name for it,
+  // so it stays a coordinate in both modes.
+  const raw = /** @type {HTMLElement | null} */ (panel.querySelector('.oge-sb-raw'));
+  const rawSum = raw?.querySelector('summary');
+  const rawBody = raw?.querySelector('.body');
+  if (raw && rawSum && rawBody) {
+    const n = digest.totalReports;
+    rawSum.textContent = `show raw log (${n} ${n === 1 ? 'alert' : 'alerts'}) ▸`;
+    rawBody.textContent = '';
+    for (const r of reports) {
+      const line = el('div', 'line');
+      line.appendChild(document.createTextNode(`${r.byPlayerName || `#${r.byPlayerId}`} · near `));
+      line.appendChild(nearBodyEl({ coords: r.atCoords, moon: r.atPlanetType === 3, scans: [] }, ctx));
+      const age = ageStr(r.ts ?? null);
+      if (age) line.appendChild(document.createTextNode(` · ${age}`));
+      if (r.fromCoords) {
+        line.appendChild(document.createTextNode(' · from '));
+        line.appendChild(bodyEl({ coords: r.fromCoords, moon: r.fromPlanetType === 3, scans: [] }));
+      }
+      rawBody.appendChild(line);
+    }
+    raw.style.display = n > 0 ? '' : 'none';
+  }
 };
 
 /** Last painted render signature — skips no-op rebuilds on idle <body> churn. */
@@ -620,6 +746,21 @@ export const installWhosSpyingPanel = () => {
   if (installed) return installed.dispose;
 
   injectStyle(STYLE_ID, CSS);
+
+  /**
+   * alliances.xml rows (id → {name, tag}) from the device cache, for the row's
+   * `[TAG]` chip. Read ONCE per install, asynchronously: the feed refreshes on a
+   * daily cadence, so a value cached at mount is as current as anything we could
+   * re-read per repaint, and this keeps the render path synchronous. Empty until
+   * the read lands (and on a cold cache) — the chip is simply not drawn then.
+   * @type {Record<string, { name?: string, tag?: string }>}
+   */
+  let alliancesById = {};
+  void readApiCache().then((cache) => {
+    if (!installed) return;
+    alliancesById = cache?.alliances?.alliances ?? {};
+    refresh({ force: true });
+  });
 
   /**
    * Mount/remove + repaint the table to match the current tab + digest. Cheap
@@ -676,6 +817,21 @@ export const installWhosSpyingPanel = () => {
     // into the render signature so a fresh planet-bar capture repaints.
     const inv = bodiesStore.get();
     const nameMap = bodyNameIndex(inv.bodies);
+    // Danger profiles ride the apiContext handoff — the SAME join the dashboard
+    // reads, so the two surfaces cannot disagree about a player's D.
+    const dangerMap = getApiContext()?.danger;
+    /** @param {string} pid */
+    const profFor = (pid) => dangerMap?.get(Number(pid));
+    // Alliances fielding TWO OR MORE distinct probers in this window: one member
+    // scanning you is a player looking at you; three members of one tag is that
+    // ALLIANCE looking at you, and that changes who you expect over the horizon.
+    // Counted per PLAYER — one prober flying twenty probes is still one player.
+    /** @type {Map<string, number>} allianceId → distinct prober count */
+    const allyCounts = new Map();
+    for (const p of digest.players) {
+      const aid = profFor(String(p.byPlayerId))?.allianceId;
+      if (aid) allyCounts.set(aid, (allyCounts.get(aid) ?? 0) + 1);
+    }
     /** @type {RenderCtx} */
     const ctx = {
       showNames,
@@ -683,13 +839,23 @@ export const installWhosSpyingPanel = () => {
       nameFor: (coords, moon) => bodyNameFor(nameMap, coords, moon),
       distFor: (fromCoords) =>
         nearestBodyDistance(fromCoords, inv.bodies, getApiContext()?.server ?? {}),
+      profFor,
+      allyFor: (pid) => {
+        const aid = profFor(pid)?.allianceId;
+        if (!aid) return null;
+        // `alliancesById` is filled asynchronously from the device cache; before
+        // it lands we simply render no chip rather than a placeholder.
+        const a = alliancesById[aid];
+        const tag = (a && (a.tag || a.name)) || '';
+        return tag ? { tag, lit: (allyCounts.get(aid) ?? 0) > 1 } : null;
+      },
     };
     const shown = digest.players.slice(0, MAX_ROWS);
     const sig = `${digest.playerCount}|${digest.totalReports}|${digest.sameSystemCount}`
       + `|${showNames ? 'n' : 'c'}|${range}|${inv.capturedAt}|`
       + shown.map((p) => `${p.byPlayerId}:${p.count}:${p.lastTs}`).join(',');
     if (force || sig !== lastSig) {
-      renderInto(panel, digest, ctx);
+      renderInto(panel, digest, ctx, filtered);
       lastSig = sig;
     }
   };

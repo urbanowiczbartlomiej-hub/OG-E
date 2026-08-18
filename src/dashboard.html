@@ -742,11 +742,17 @@
     position: fixed; right: 12px; bottom: 58px;
     width: min(440px, calc(100vw - 24px)); max-height: min(72vh, 660px); overflow-y: auto;
     background: #121922; border: 1px solid #2b3a4d;
-    border-left: 3px solid #e6c054; border-radius: 10px; padding: 0 14px 12px;
+    /* The Spyglass gold sits on the panel's TOP edge, level with its header.
+       It used to run the full height as a left border, which on an expanded
+       panel is a 600 px saturated stripe beside content that already carries
+       danger colours, watch chips and alliance tags — it competed with the data
+       instead of labelling the panel. Confined to the head it still says
+       "Spyglass", and it says it where the eye enters the panel. */
+    border-top: 3px solid #e6c054; border-radius: 10px; padding: 0 14px 12px;
     box-shadow: 0 18px 44px #000000b3;
     scrollbar-width: thin; scrollbar-color: #2b3a4d transparent;
   }
-  .spy-fold-card.hot > .spy-fold-body { border-left-color: #e06c5f; }
+  .spy-fold-card.hot > .spy-fold-body { border-top-color: #e06c5f; }
   .spy-fold-card > .spy-fold-body::-webkit-scrollbar { width: 10px; }
   .spy-fold-card > .spy-fold-body::-webkit-scrollbar-track { background: transparent; }
   .spy-fold-card > .spy-fold-body::-webkit-scrollbar-thumb { background: #2b3a4d; border-radius: 999px; }
@@ -837,14 +843,16 @@
        rightmost, the far corner, out of the way of the two defensive pills. DOM
        order serves the pills; `order` flips it for the sidebar only. */
     .spy-dock > #spyScanPrefs { order: -1; }
-    /* Each panel is a card again: header bar + body, gold left edge (the
-       Spyglass identity — the same rule the pills wear), red while something
-       unread sits inside. */
+    /* Each panel is a card again: header bar + body, gold edge along its HEAD
+       (the Spyglass identity — the same colour the pills wear), red while
+       something unread sits inside. Along the head rather than the full left
+       side: expanded, that side rule was a long saturated stripe next to rows
+       that already carry their own colours. */
     .spy-dock > .spy-fold-card {
-      background: #121922; border: 1px solid #223044; border-left: 3px solid #e6c054;
+      background: #121922; border: 1px solid #223044; border-top: 3px solid #e6c054;
       border-radius: 8px; overflow: hidden;
     }
-    .spy-dock > .spy-fold-card.hot { border-left-color: #e06c5f; }
+    .spy-dock > .spy-fold-card.hot { border-top-color: #e06c5f; }
     .spy-dock .spy-dock-tab {
       display: flex; width: 100%; border: none; border-radius: 0;
       padding: 9px 14px; box-shadow: none; background: transparent;

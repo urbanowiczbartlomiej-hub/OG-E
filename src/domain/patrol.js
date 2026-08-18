@@ -224,6 +224,7 @@ export const buildPatrolPlan = ({ systems, scans, occupants, nowMs, staleMs }) =
       })),
       worst: status,
       priority: PATROL_LOOK_WEIGHT * stalenessWeight(status, ageMs, staleMs),
+      patrol: true,
       why: `patrol · ${slots.length} ${slots.length === 1 ? 'slot' : 'slots'}`,
     });
   }

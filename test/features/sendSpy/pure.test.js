@@ -17,6 +17,24 @@ import {
   BG_SPY_ERROR,
 } from '../../../src/features/sendSpy/pure.js';
 
+/**
+ * `renderSpy` that asserts a paint came back.
+ *
+ * The real function returns `Paint | null`, where `null` means "nothing to do —
+ * take the button away". Cases that EXPECT the null call `renderSpy` directly;
+ * every other case goes through this, so a regression that silently removes the
+ * button fails on the assertion here instead of throwing on a property access.
+ *
+ * @param {Parameters<typeof renderSpy>[0]} ctx
+ * @param {Parameters<typeof renderSpy>[1]} [preflight]
+ * @returns {NonNullable<ReturnType<typeof renderSpy>>}
+ */
+const renderSpyP = (ctx, preflight) => {
+  const p = renderSpy(ctx, preflight);
+  expect(p).not.toBeNull();
+  return /** @type {NonNullable<typeof p>} */ (p);
+};
+
 const NOW = 1_700_000_000_000;
 
 describe('nearestLaunchPlanet — probe launch-site picker', () => {
@@ -373,7 +391,7 @@ describe('deriveSpy — look-first doctrine + reports', () => {
   });
 
   it('renderSpy paints the reports face (calm, count, tap hint)', () => {
-    const paint = renderSpy({
+    const paint = renderSpyP({
       proposal: 'reports', candidate: null, look: null, remaining: 0,
       hasSources: true, pendingReports: 3,
     });
@@ -382,20 +400,25 @@ describe('deriveSpy — look-first doctrine + reports', () => {
 });
 
 describe('renderSpy', () => {
-  it('hasSources false → muted "no targets" idle paint', () => {
-    const paint = renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasSources: false });
-    expect(paint).toEqual({ text: 'Spy', subtext: 'no targets', bg: BG_SPY_IDLE, dim: true });
+  it('hasSources false → null (no button at all)', () => {
+    expect(renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasSources: false }))
+      .toBeNull();
   });
 
-  it('hasSources true, candidate null → "Reports" done paint (BG_SPY_DONE)', () => {
-    const paint = renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasSources: true });
-    expect(paint.text).toBe('Reports');
-    expect(paint.bg).toBe(BG_SPY_DONE);
-    expect(paint.dim).toBeUndefined();
+  it('sources on but nothing proposed → null (the button leaves the FAB stack)', () => {
+    // It used to paint an idle 'Reports · all scanned ✓' face and sit in the
+    // stack advertising that it had no work.
+    expect(renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasSources: true }))
+      .toBeNull();
+  });
+
+  it("a 'probe' proposal with no candidate → null rather than a done face", () => {
+    expect(renderSpy({ proposal: 'probe', candidate: null, look: null, remaining: 0, hasSources: true }))
+      .toBeNull();
   });
 
   it('candidate set → "Spy" paint with the coord in the subtext', () => {
-    const paint = renderSpy({
+    const paint = renderSpyP({
       proposal: 'probe',
       candidate: { galaxy: 1, system: 2, position: 3, playerId: '42' },
       look: null,
@@ -421,7 +444,7 @@ describe('renderSpy — probe pre-flight (Etap G)', () => {
   };
 
   it('enough probes on hand → normal "Spy" paint, no shortage hint', () => {
-    const paint = renderSpy(ctx, { have: 20, need: 20 });
+    const paint = renderSpyP(ctx, { have: 20, need: 20 });
     expect(paint.text).toBe('Spy');
     expect(paint.bg).toBe(BG_SPY_IDLE);
     // With enough probes the hint is the remaining-count ("N left"), NOT a
@@ -431,24 +454,26 @@ describe('renderSpy — probe pre-flight (Etap G)', () => {
   });
 
   it('too few probes (but some) → hint shows have/need, still armable', () => {
-    const paint = renderSpy(ctx, { have: 5, need: 20 });
+    const paint = renderSpyP(ctx, { have: 5, need: 20 });
     expect(paint.text).toBe('Spy');
     expect(paint.hint).toBe('5/20 probes');
     expect(paint.subtext).toContain('1:2:3');
   });
 
   it('zero probes on hand → error "No probes" paint before the tap', () => {
-    const paint = renderSpy(ctx, { have: 0, need: 20 });
+    const paint = renderSpyP(ctx, { have: 0, need: 20 });
     expect(paint.text).toBe('No probes');
     expect(paint.bg).toBe(BG_SPY_ERROR);
     expect(paint.subtext).toContain('1:2:3');
   });
 
-  it('preflight is ignored on the done / no-targets states', () => {
-    expect(renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasSources: true }, { have: 0, need: 20 }).text)
-      .toBe('Reports');
-    expect(renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasSources: false }, { have: 0, need: 20 }).text)
-      .toBe('Spy');
+  it('a probe shortage cannot resurrect a button that has no work', () => {
+    // preflight only ever DECORATES a real proposal. With nothing proposed the
+    // answer stays "no button", however short of probes the planet is.
+    expect(renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasSources: true }, { have: 0, need: 20 }))
+      .toBeNull();
+    expect(renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasSources: false }, { have: 0, need: 20 }))
+      .toBeNull();
   });
 });
 
@@ -467,13 +492,13 @@ describe('renderSpy — pulse contract', () => {
   };
 
   it('probe proposal pulses (plain, strike, and probe-shortage variants)', () => {
-    expect(renderSpy(probeCtx).pulse).toBe(true);
-    expect(renderSpy({ ...probeCtx, strike: true }).pulse).toBe(true);
-    expect(renderSpy(probeCtx, { have: 5, need: 20 }).pulse).toBe(true);
+    expect(renderSpyP(probeCtx).pulse).toBe(true);
+    expect(renderSpyP({ ...probeCtx, strike: true }).pulse).toBe(true);
+    expect(renderSpyP(probeCtx, { have: 5, need: 20 }).pulse).toBe(true);
   });
 
   it('look proposal also pulses — a queued look is as actionable as a queued scan', () => {
-    expect(renderSpy({
+    expect(renderSpyP({
       proposal: 'look',
       candidate: null,
       look: { galaxy: 2, system: 40, bodies: 3 },
@@ -482,12 +507,11 @@ describe('renderSpy — pulse contract', () => {
     }).pulse).toBe(true);
   });
 
-  it('non-proposal states never pulse (no targets, done, no-probes error)', () => {
-    expect(renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasSources: false }).pulse)
-      .toBeUndefined();
-    expect(renderSpy({ proposal: null, candidate: null, look: null, remaining: 0, hasSources: true }).pulse)
-      .toBeUndefined();
-    expect(renderSpy(probeCtx, { have: 0, need: 20 }).pulse).toBeUndefined();
+  it('the no-probes error state never pulses', () => {
+    // The other two former cases here (no targets / all scanned) no longer paint
+    // at all — they return null and the button leaves the stack, so there is no
+    // paint whose pulse could be asserted.
+    expect(renderSpyP(probeCtx, { have: 0, need: 20 }).pulse).toBeUndefined();
   });
 });
 

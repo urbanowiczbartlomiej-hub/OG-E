@@ -135,6 +135,46 @@ let showingLoading = false;
  * that window instead of flashing a misleading derived state.
  */
 let watchHydrated = false;
+/**
+ * Mount / unmount hooks, wired by {@link installSendSpy} (they close over its
+ * button-building state). {@link refresh} needs them because the button's
+ * PRESENCE is now part of the derived verdict: `renderSpy` returning `null`
+ * means "no work", and no work means no button in the FAB stack. Module-level
+ * refs are the smallest bridge from the module-scope refresh to the two
+ * closures, and they stay `null` while uninstalled so every call is safe.
+ * @type {(() => void) | null}
+ */
+let mountHook = null;
+/** @type {(() => void) | null} */
+let unmountHook = null;
+/**
+ * Last presence verdict written to the optimistic-mount cache, or `null` when
+ * nothing has been written this session.
+ *
+ * The cache exists so the next page load can mount before the async hydrate
+ * settles. Now that presence also depends on whether there is WORK, the cached
+ * bit has to mean "a button was actually shown", not merely "a source was
+ * configured" — otherwise every load of an idle, fully-configured account
+ * mounts a button that the first derive immediately takes away again, which is
+ * exactly the blink the cache was introduced to prevent.
+ *
+ * @type {boolean | null}
+ */
+let lastShownCache = null;
+
+/**
+ * Write the presence verdict to the optimistic-mount cache, but only when it
+ * actually changed — {@link refresh} runs on a 2 s ticker and this is a
+ * localStorage write.
+ *
+ * @param {boolean} shown
+ * @returns {void}
+ */
+const cacheShown = (shown) => {
+  if (lastShownCache === shown) return;
+  lastShownCache = shown;
+  writeSpyFabShown(shown);
+};
 
 // ─── sent-coords (survives the post-send reload via sessionStorage) ─────────
 // Shared module (lib/spySentSession.js): this feature marks sends with their
@@ -490,22 +530,42 @@ const paintZone = (p) => {
  * @returns {void}
  */
 const refresh = () => {
-  if (!controller || busy) return;
-  if (spyReady && spyTarget && courierStep() === 'fleet2') {
+  if (busy) return;
+  if (controller && spyReady && spyTarget && courierStep() === 'fleet2') {
     showingLoading = false;
     paintZone({ text: 'Send', subtext: coordsLabel(spyTarget), bg: BG_SPY_READY });
     return;
   }
   // Hold a dim "loading…" state until the apiContext handoff lands AND the
-  // watch-list hydrate settles — before then there are no candidates and the
-  // "all scanned" done state would flash.
+  // watch-list hydrate settles — before then there are no candidates, so the
+  // verdict would read as "no work" and take the button away on every page load.
+  // Nothing is mounted OR unmounted here: the optimistic mount already decided
+  // whether a button exists through this window, and neither answer is
+  // trustworthy yet.
   if (!apiContextReady() || !watchReady()) {
+    if (!controller) return;
     showingLoading = true;
     paintZone({ text: 'Spy', subtext: 'loading…', bg: BG_SPY_IDLE, dim: true });
     return;
   }
+  // The verdict now decides PRESENCE as well as paint: `null` = nothing to do,
+  // so the button leaves the FAB stack instead of sitting there advertising
+  // that it has no work. It comes back by itself — this runs on the repaint
+  // ticker, so the next stale system / fresh report re-mounts it.
+  const paint = renderSpy(deriveSpy(captureEnv()), probePreflight());
   showingLoading = false;
-  paintZone(renderSpy(deriveSpy(captureEnv()), probePreflight()));
+  cacheShown(!!paint);
+  if (!paint) {
+    unmountHook?.();
+    return;
+  }
+  if (!controller) {
+    // mount() tail-calls refresh(), which re-derives and paints — so return
+    // rather than painting into the controller we are about to build.
+    mountHook?.();
+    return;
+  }
+  paintZone(paint);
 };
 
 // ─── click handler (two intentional taps, mirrors sendColony) ───────────────
@@ -753,6 +813,7 @@ export const installSendSpy = () => {
     if (!controller) return;
     refresh();
   };
+  mountHook = mount;
 
   /** Detach the button. Safe unmounted. @returns {void} */
   const removeButton = () => {
@@ -762,6 +823,7 @@ export const installSendSpy = () => {
     controller?.dispose();
     controller = null;
   };
+  unmountHook = removeButton;
 
   /** Live-resize the mounted button. @param {number} size @returns {void} */
   const updateButtonSize = (size) => controller?.resize(size);
@@ -776,28 +838,40 @@ export const installSendSpy = () => {
   const hasSources = () => hasWorkSources(watchListStore.get());
 
   /**
-   * Mount when some work source is configured — OR, while the async hydrate is
-   * still pending, when last load's reconciled verdict says the button was
-   * shown (the optimistic mount that kills the per-navigation blink; the
-   * hydrate-driven reconcile below confirms or removes it).
+   * Mount optimistically iff LAST load ended with a button on screen.
+   *
+   * This used to also mount whenever a source was merely configured, which now
+   * produces a visible flash: a configured-but-idle account would mount a dim
+   * "loading…" button and then have it removed the moment the first derive said
+   * "no work". The cached verdict already carries the right answer — it records
+   * what was actually SHOWN, not what was configured — so the cache alone is the
+   * honest optimistic gate.
+   *
+   * The cost is one load: a fresh install with work waiting has no cache entry,
+   * so its button appears when the apiContext handoff lands rather than
+   * instantly. That load writes the cache, and every load after it is instant.
    * @returns {void}
    */
   const gatedMount = () => {
-    if (hasSources() || (!watchHydrated && readSpyFabShown())) mount();
+    if (readSpyFabShown()) mount();
   };
 
   /**
-   * Reconcile mount state against the config: mount when work appears, remove
-   * when the last source is switched off. Once the hydrate has settled, the
-   * verdict is also cached for the next load's optimistic mount.
+   * Reconcile against the config after a watch-list change.
+   *
+   * This only handles the ONE verdict {@link refresh} cannot reach: every source
+   * switched off, which is knowable without the apiContext handoff and means the
+   * button is gone for good. Mounting is deliberately NOT done here any more —
+   * `refresh` owns it, because presence depends on whether there is work and
+   * mounting here would mount a button that the derive immediately removes.
    * @returns {void}
    */
   const reconcile = () => {
-    const sourcesOn = hasSources();
-    const mounted = !!document.getElementById(BUTTON_ID);
-    if (sourcesOn && !mounted && document.body) mount();
-    else if (!sourcesOn && mounted && watchHydrated) removeButton();
-    if (watchHydrated) writeSpyFabShown(sourcesOn);
+    if (!hasSources() && watchHydrated) {
+      cacheShown(false);
+      removeButton();
+      return;
+    }
     refresh();
   };
 
@@ -870,6 +944,11 @@ export const _resetSendSpyForTest = () => {
   spyTarget = null;
   showingLoading = false;
   watchHydrated = false;
+  mountHook = null;
+  unmountHook = null;
+  // Not a cached VALUE but a write-suppressor — leaving it set would make the
+  // next case's first cacheShown() a silent no-op.
+  lastShownCache = null;
   if (sentLockTimer) {
     clearTimeout(sentLockTimer);
     sentLockTimer = null;

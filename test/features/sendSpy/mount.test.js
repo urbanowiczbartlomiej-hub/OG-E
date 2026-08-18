@@ -1,10 +1,16 @@
 // @vitest-environment happy-dom
 //
 // Behavioural tests for the Spyglass FAB's mount gating (see
-// `src/features/sendSpy/index.js` — lifecycle section). Visibility is driven by
-// whether ANY work source is configured — a watched player, a Neighbours
-// cadence, or a Patrol radius (`hasWorkSources`) — and that config hydrates
-// ASYNC from chrome.storage.
+// `src/features/sendSpy/index.js` — lifecycle section). Visibility takes TWO
+// verdicts:
+//
+//   1. is any work SOURCE configured — a watched player, a Neighbours cadence,
+//      or a Patrol radius (`hasWorkSources`); and
+//   2. is there any work to DO right now (`renderSpy` returning non-null).
+//
+// The second one needs the apiContext handoff, which these tests never
+// populate — so they exercise (1) and the optimistic-mount cache, and a button
+// that survives here is one holding the dim "loading…" state.
 //
 // The gate used to read `players.length > 0` alone, which switched the button
 // off for a Neighbours-or-Patrol-only user and took two fully configured
@@ -110,17 +116,18 @@ describe('sendSpy — optimistic mount (spyFabCache)', () => {
     expect(document.getElementById(BUTTON_ID)?.textContent).toContain('loading');
   });
 
-  it('does NOT mount optimistically without the cache flag (pre-cache behaviour)', async () => {
-    watchListStore.set({ ...INITIAL, ...NO_SOURCES });
+  it('does NOT mount without the cache flag, and the hydrate alone is not enough', async () => {
     initWatchListStore();
     installSendSpy();
     expect(mounted()).toBe(false);
-    // The hydrate then lands players → the button appears AND the verdict is
-    // cached for the next load's optimistic mount.
+    // Landing players no longer mounts on its own: presence is the DERIVED
+    // verdict now, and these tests never populate the apiContext handoff, so no
+    // verdict is reachable. On a real page the handoff lands and the button
+    // appears then — one load later than the cached path, which is the whole
+    // reason the cache exists.
     settleHydrate(['7']);
     await flushMicrotasks();
-    expect(mounted()).toBe(true);
-    expect(localStorage.getItem(SPY_FAB_SHOWN_KEY)).toBe('1');
+    expect(mounted()).toBe(false);
   });
 
   it('removes the optimistic button and clears the cache when the hydrate finds no sources', async () => {

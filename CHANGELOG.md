@@ -4,7 +4,47 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
-## [1.60.1] — 2026-08-17
+## [1.60.2] — 2026-08-18
+
+### Fixed
+
+- **The raw alert log now follows the Coords/Names switch.** In "Who's spying
+  on you" — both in-game and on the dashboard — flipping to Names relabelled
+  the prober list but left the raw log underneath it in coordinates, so the two
+  halves of the same panel spoke different languages. Only the `near` half
+  changes: that is one of your own bodies. The `from` coordinate belongs to the
+  scout, and you hold no name for it, so it stays a coordinate either way.
+  Opening the log and then using the switch no longer collapses it.
+
+### Changed
+
+- **The Spyglass button now disappears when it has nothing to do**, instead of
+  sitting in the button stack showing "all scanned". The stack is small and
+  shared; a control that cannot do anything should not take a slot in it. It
+  comes back on its own the moment a system goes stale or a report lands.
+- **The button says which feature is asking.** A neighbours look reads
+  "neighbours" (it used to ask "who moved in?"), and a patrol look reads
+  "patrol (12)" with the number of sweeps still queued — it drops by one per
+  tap, so it needs no legend. Both surface as "Look" and mean very different
+  things, which previously you could not tell apart.
+- **Moon and planet coordinates are back to their previous colours.** The AGR
+  green/orange introduced in 1.60.1 competed with the colours these panels
+  already use for danger and alerts, which made them harder to read rather
+  than easier.
+- **The gold edge on Spyglass panels sits along the header** instead of running
+  the full height of the panel. Expanded, that rule was a long saturated stripe
+  next to rows that carry their own colours.
+- **Bigger type and touch targets in the in-game OG-E Settings panel.** OGame
+  leaves the panel about half the screen width on a phone, where the old sizes
+  were too small to read and too tight to hit. The button-size slider is now
+  nearly twice as tall — it is the one control here with no forgiving second
+  attempt, since a missed grab scrolls the page instead.
+- **"Who's spying on you" in-game now shows what the dashboard shows.** Each
+  prober is coloured by their Danger score, with the score and its reasons on
+  hover, their alliance tag beside the name (lit when more than one of their
+  members has probed you in the window), and the full per-alert log. The name
+  itself opens their dossier. It stays where it is, on the messages page.
+## [1.60.1] — 2026-08-18
 
 ### Fixed
 
