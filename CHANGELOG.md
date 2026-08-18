@@ -44,7 +44,7 @@ version numbers follow [Semantic Versioning](https://semver.org).
   hover, their alliance tag beside the name (lit when more than one of their
   members has probed you in the window), and the full per-alert log. The name
   itself opens their dossier. It stays where it is, on the messages page.
-## [1.60.1] — 2026-08-18
+## [1.60.1] — 2026-08-17
 
 ### Fixed
 
