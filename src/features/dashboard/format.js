@@ -33,7 +33,7 @@ export function compact(n) {
  * a fact lives (CLAUDE.md: a tooltip may explain, it may never carry).
  *
  * An absent profile says so. An unknown Danger is not a zero Danger, and
- * printing `D 0.00` for "we have no public-statistics row yet" reads as
+ * printing `D 0` for "we have no public-statistics row yet" reads as
  * "harmless", which is the one thing it does not mean.
  *
  * @param {{ danger?: number, reasons?: string[] } | undefined | null} prof
@@ -44,5 +44,6 @@ export function playerHoverTitle(prof) {
     return 'Danger unknown — no public-statistics profile yet.\nClick for the full profile.';
   }
   const reasons = prof.reasons?.length ? `\n${prof.reasons.join('\n')}` : '';
-  return `Danger ${prof.danger.toFixed(2)}${reasons}\nClick for the full profile.`;
+  // 0–100 — the scale the dossier / target rows / map dots all print.
+  return `Danger ${Math.round(prof.danger * 100)}${reasons}\nClick for the full profile.`;
 }

@@ -153,7 +153,7 @@ const currentRange = () => {
 const CSS = [
   // --sp-accent = the Spyglass gold (sendSpy's BG_SPY_IDLE) — one spy identity
   // across the FAB, this panel and the dashboard tab it deep-links to.
-  `#${PANEL_ID}{--sp-accent:#e6c054;--sp-danger:#e2726a;margin:0 0 10px;`,
+  `#${PANEL_ID}{--sp-accent:#e6c054;--sp-danger:#e2726a;margin:8px 0 10px;`,
   // The Spyglass gold rides the panel's TOP edge, level with its header — the
   // same move the dashboard's cards made. Down the whole left side it was a long
   // saturated rule beside rows that already carry their own Danger colours.
@@ -350,7 +350,10 @@ const dangerHoverTitle = (prof) => {
     return 'Danger unknown — no public-statistics profile yet.\nClick for the full profile.';
   }
   const reasons = prof.reasons?.length ? `\n${prof.reasons.join('\n')}` : '';
-  return `Danger ${prof.danger.toFixed(2)}${reasons}\nClick for the full profile.`;
+  // 0–100, the SAME scale every other Danger readout uses (dossier, target
+  // rows, map dots). The raw score is 0–1; printing it unscaled here made the
+  // hover the one surface speaking a different language.
+  return `Danger ${Math.round(prof.danger * 100)}${reasons}\nClick for the full profile.`;
 };
 
 /**
@@ -699,8 +702,8 @@ const renderInto = (panel, digest, ctx, reports) => {
     }
   }
 
-  // Raw log — one line per alert, newest first, exactly the dashboard's wording:
-  // `<prober> · near <our body> · <age> ago · from <their body>`.
+  // Raw log — one line per alert, newest first, ordered origin → time → target:
+  // `<prober> · from <their body> · <age> · near <our body>`.
   //
   // `near` is one of OUR bodies, so it follows the Coords/Names switch like every
   // other own-body coord in the panel — it used to render raw coordinates always,
@@ -716,14 +719,16 @@ const renderInto = (panel, digest, ctx, reports) => {
     rawBody.textContent = '';
     for (const r of reports) {
       const line = el('div', 'line');
-      line.appendChild(document.createTextNode(`${r.byPlayerName || `#${r.byPlayerId}`} · near `));
-      line.appendChild(nearBodyEl({ coords: r.atCoords, moon: r.atPlanetType === 3, scans: [] }, ctx));
-      const age = ageStr(r.ts ?? null);
-      if (age) line.appendChild(document.createTextNode(` · ${age}`));
+      line.appendChild(document.createTextNode(`${r.byPlayerName || `#${r.byPlayerId}`} · `));
       if (r.fromCoords) {
-        line.appendChild(document.createTextNode(' · from '));
+        line.appendChild(document.createTextNode('from '));
         line.appendChild(bodyEl({ coords: r.fromCoords, moon: r.fromPlanetType === 3, scans: [] }));
+        line.appendChild(document.createTextNode(' · '));
       }
+      const age = ageStr(r.ts ?? null);
+      if (age) line.appendChild(document.createTextNode(`${age} · `));
+      line.appendChild(document.createTextNode('near '));
+      line.appendChild(nearBodyEl({ coords: r.atCoords, moon: r.atPlanetType === 3, scans: [] }, ctx));
       rawBody.appendChild(line);
     }
     raw.style.display = n > 0 ? '' : 'none';

@@ -123,7 +123,7 @@ const dangerPill = (prof) => {
   const pill = mk('span',
     `font-size:11px;color:${col};border:1px solid ${col}59;background:${col}1a;`
     + 'border-radius:999px;padding:0 7px;white-space:nowrap;',
-    `D ${prof.danger.toFixed(2)}`);
+    `D ${Math.round(prof.danger * 100)}`);
   if (prof.reasons && prof.reasons.length) pill.title = prof.reasons.join('\n');
   return pill;
 };

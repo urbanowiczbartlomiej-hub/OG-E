@@ -4,6 +4,36 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.61.0] — 2026-08-20
+
+### Added
+
+- **The messages pager is finally usable on a phone.** OGame ships the page
+  arrows as 16px buttons — under half the size a finger needs, on the control
+  you press most on that page. They are now scaled up 2.2× (by transform, so
+  the game's own button skin scales as one piece instead of stretching out of
+  shape) and given room to breathe. The bottom pager is pinned to the bottom of
+  the screen, clear of the site footer, so paging no longer means scrolling
+  past the whole message list first; the duplicate pager above the list is
+  hidden, and the game's own "hide it when there's only one page" behaviour is
+  preserved.
+
+### Changed
+
+- **The raw alert log reads origin first.** In "Who's spying on you" — both
+  in-game and on the dashboard — a line now goes `prober · from <their body> ·
+  <age> · near <your body>`. The scout's origin is what you act on (that is the
+  system you phalanx or hit), so it leads; your own coordinates close the line.
+- **The "Who's spying on you" panel no longer touches the component above it.**
+  Its gold (or red) top edge had no space above it on the messages page.
+
+### Fixed
+
+- **Danger in a hover now reads on the same 0–100 scale as everywhere else.**
+  Hovering a player's name printed the raw score (`Danger 0.91`) while the
+  dossier, the target rows and the map dots all print 0–100 — the one surface
+  speaking a different language. Same fix for the `D` pill in the home watch.
+
 ## [1.60.2] — 2026-08-18
 
 ### Fixed

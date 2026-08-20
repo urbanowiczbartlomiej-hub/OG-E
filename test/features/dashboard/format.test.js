@@ -31,8 +31,10 @@ describe('playerHoverTitle', () => {
     expect(playerHoverTitle({})).toMatch(/^Danger unknown/);
   });
 
-  it('reports the Danger number to two decimals', () => {
-    expect(playerHoverTitle({ danger: 0.913 })).toMatch(/^Danger 0\.91/);
+  it('reports the Danger number on the 0–100 scale the rest of the UI prints', () => {
+    expect(playerHoverTitle({ danger: 0.913 })).toMatch(/^Danger 91\b/);
+    expect(playerHoverTitle({ danger: 0 })).toMatch(/^Danger 0\b/);
+    expect(playerHoverTitle({ danger: 1 })).toMatch(/^Danger 100\b/);
   });
 
   it('includes every reason on its own line when present', () => {

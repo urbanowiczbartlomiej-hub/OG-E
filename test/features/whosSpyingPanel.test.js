@@ -206,6 +206,26 @@ describe('installWhosSpyingPanel — AGR overview present (tier 1)', () => {
   });
 });
 
+describe('installWhosSpyingPanel — raw log', () => {
+  it('reads origin → time → our body ("from … · … · near …")', () => {
+    // The alert answers "who scanned me, from where, when, and what of mine".
+    // Origin leads because it is what you act on (that is the system you
+    // phalanx or hit); our own coords close the line.
+    buildMessagesDom();
+    proximityReportsStore.set([report()]);
+    installWhosSpyingPanel();
+
+    const line = panel()?.querySelector('.oge-sb-raw .body .line');
+    const text = line?.textContent ?? '';
+    expect(text).toContain('GumkaVIP');
+    expect(text.indexOf('from')).toBeGreaterThan(-1);
+    expect(text.indexOf('near')).toBeGreaterThan(text.indexOf('from'));
+    // The scanner's coords sit in the `from` half, ours in the `near` half.
+    expect(text.indexOf('4:431:9')).toBeLessThan(text.indexOf('near'));
+    expect(text.indexOf('4:471:15')).toBeGreaterThan(text.indexOf('near'));
+  });
+});
+
 describe('installWhosSpyingPanel — lifecycle', () => {
   it('is idempotent and dispose removes the panel + style', () => {
     buildMessagesDom();

@@ -67,6 +67,21 @@ import { createVisibilityObserver } from '../lib/visibilityObserver.js';
 //     would only catch step 1, so we pair the rules with a sibling
 //     selector keyed on the step-2 wrapper id.
 //
+// # Messages paginator (`.messagePaginator`)
+//
+// OGame's page arrows on the messages page are 16px `sq16` gradient
+// buttons — under half the ~40px a finger needs, and they are the most
+// used control on that page. We scale each arrow up 2.2× with a CSS
+// `transform` rather than resizing its box — the skin is cut for a 16px
+// square, so resizing stretches the frame off the glyph. The bottom pager
+// is also pinned to the viewport bottom (`position: sticky`) so the arrows
+// are in reach without scrolling past the whole list — which makes the page's
+// second, top copy of the pager redundant, so that one is hidden. The CSS
+// block carries
+// the two constraints that bite here: the layout price a transform charges,
+// and why we must never touch the row's `display` (OGame's own
+// hide-when-single-page is an inline `display:none`).
+//
 // # Why a single stylesheet
 //
 // Both concerns are CSS-only, run at `document_start` before `<body>`,
@@ -423,6 +438,89 @@ a.ago_movement.tooltip .ago_color_palered,
 #notificationbarcomponent,
 #notificationbarcomponent * {
   font-family: Roboto, Arial, sans-serif !important;
+}
+
+/* ===== Messages paginator (touch targets) =====
+   OGame ships the messages pager as five 16px sq16 gradient buttons
+   (⟪ ⟨ 1/7 ⟩ ⟫). 16px is under half the ~40px a finger needs, so on a
+   phone the prev/next arrows are a coin-flip to hit — the single most
+   used control on the messages page.
+
+   We enlarge them with a TRANSFORM, not by resizing the box. The button's
+   look is a gradient-button skin cut for a 16px square (frame + gradient
+   slices); growing width/height stretches the frame away from the glyph and
+   the enabled/disabled variants end up different sizes. scale() blows up
+   the rendered result as a unit, so every arrow stays exactly the game's
+   button — just 2.2× bigger — and disabled ones keep their dimmed look.
+
+   The trade-off is that a transform does NOT affect layout: each arrow still
+   occupies its unscaled 16px, so the overhang (16px × 2.2 ≈ 35px ⇒ ~19px)
+   has to be paid for by hand — margins on the buttons, padding on the row.
+
+   NEVER set display on .messagePaginator. OGame hides the whole pager on
+   a single-page tab with jQuery .hide() (inline display:none) and brings
+   it back with .show() (inline display:block) — an !important display
+   here outranks the inline none and the pager stops disappearing, while a
+   non-important one loses to the inline block and the layout mode we asked
+   for never applies. Both ways lose, so we spend margins instead and leave
+   the row's layout to the game.
+
+   The BOTTOM pager (:last-child — the top one is followed by
+   #filteredHeadersRow) is pinned to the bottom of the viewport with
+   position: sticky: on a phone the arrows are otherwise a full message
+   list away. Sticky, not fixed — it keeps its place in the flow, so it can't
+   cover the last message, and display:none still hides it.
+
+   It parks 19px up, not at 0: OGame's own #siteFooter (the "Ustawienia
+   serwera | Discord | Forum" strip) is position:fixed, bottom:0, height:19px
+   with z-index 999999 — pinning at 0 puts the arrows underneath it. */
+/* Room for the scaled arrows. The game lays the row out as a flex box with
+   gap:5px and a fixed height:20px, and pins every arrow's wrapper div to
+   width:20px (#messages .firstPage/.previousPage/.nextPage/.lastPage) — so a
+   margin on the button itself buys NOTHING: the flex item keeps its 20px and
+   the scaled button just overhangs it. The air has to come from the wrapper
+   width + the row's gap instead. 16px × 2.2 ≈ 35px ⇒ a 38px wrapper holds the
+   arrow, and gap:14px is then real air between two of them. */
+.messagePaginator {
+  height: auto !important;
+  gap: 14px !important;
+  padding: 10px 0 !important;
+}
+.messagePaginator .firstPage,
+.messagePaginator .previousPage,
+.messagePaginator .nextPage,
+.messagePaginator .lastPage {
+  width: 38px !important;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+}
+.messagePaginator gradient-button {
+  display: inline-block !important;
+  transform: scale(2.2) !important;
+  transform-origin: center !important;
+}
+/* The messages page renders the pager TWICE (above the list and below it).
+   With the bottom one pinned to the viewport it is always in reach, so the
+   top copy is pure duplication — hide it. Keyed on "another pager follows
+   me", not on position, so a page that ships only ONE pager keeps it. */
+.messagePaginator:has(~ .messagePaginator) {
+  display: none !important;
+}
+.messagePaginator:last-child {
+  position: sticky !important;
+  bottom: 19px !important;
+  z-index: 30 !important;
+  background: rgba(9, 13, 18, 0.92) !important;
+  border-top: 1px solid rgb(39 43 54) !important;
+  box-shadow: 0 -4px 10px rgba(0, 0, 0, 0.55) !important;
+}
+/* The "1/7" readout between the arrows — sized up with them so the row
+   reads as one control strip. */
+.messagePaginator .currentPage {
+  font-size: 16px !important;
+  padding: 0 2px !important;
+  white-space: nowrap !important;
 }
 `;
 

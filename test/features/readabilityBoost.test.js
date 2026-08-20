@@ -156,6 +156,65 @@ describe('readabilityBoost', () => {
     expect(css).toContain('.next_event .countdown');
   });
 
+  // ── Messages paginator ──────────────────────────────────────────
+  //
+  // Three constraints, each one a bug we already shipped once:
+  //   1. the arrows grow by TRANSFORM (resizing the box stretches the
+  //      16px-cut skin off the glyph),
+  //   2. we never set `display` on the row (OGame hides a single-page pager
+  //      with an inline `display:none` that an !important display beats),
+  //   3. the pinned row clears the fixed 19px #siteFooter.
+
+  it('paginator arrows are enlarged by transform, not by resizing the box', () => {
+    installReadabilityBoost();
+    const css = document.getElementById(STYLE_ID)?.textContent ?? '';
+    const rule = css.match(/\.messagePaginator gradient-button\s*\{([^}]*)\}/);
+    expect(rule).not.toBeNull();
+    const body = rule?.[1] ?? '';
+    expect(body).toMatch(/transform:\s*scale\(/);
+    expect(body).not.toMatch(/(?:^|\s)(?:width|height):/);
+  });
+
+  it('never forces `display` on the paginator row (game hides it inline)', () => {
+    installReadabilityBoost();
+    const css = document.getElementById(STYLE_ID)?.textContent ?? '';
+    // Every rule whose selector is the row itself — the wrapper divs and the
+    // hide-the-duplicate rule are allowed to set display, the row is not.
+    // Selector is the row and nothing else — no descendant, no :has() (the
+    // wrapper divs and the hide-the-duplicate rule may set display freely).
+    for (const m of css.matchAll(/\.messagePaginator(:[a-z-]+)?\s*\{([^}]*)\}/g)) {
+      expect(m[2]).not.toMatch(/display:/);
+    }
+  });
+
+  it('the duplicate top pager is hidden and the surviving one is pinned clear of #siteFooter', () => {
+    installReadabilityBoost();
+    const css = document.getElementById(STYLE_ID)?.textContent ?? '';
+    // Hidden by "another pager follows me", so a lone pager is never hidden.
+    expect(css).toMatch(/\.messagePaginator:has\(~ \.messagePaginator\)\s*\{[^}]*display:\s*none/);
+    const pinned = css.match(/\.messagePaginator:last-child\s*\{([^}]*)\}/);
+    expect(pinned).not.toBeNull();
+    const body = pinned?.[1] ?? '';
+    expect(body).toMatch(/position:\s*sticky/);
+    // #siteFooter is fixed at bottom:0 with height:19px — pinning at 0 would
+    // park the arrows underneath it.
+    const bottom = body.match(/bottom:\s*(\d+)px/);
+    expect(bottom).not.toBeNull();
+    expect(parseInt(bottom?.[1] ?? '0', 10)).toBeGreaterThanOrEqual(19);
+  });
+
+  it('the arrow wrappers are widened past the game\'s fixed 20px', () => {
+    // `#messages .firstPage…` pins each wrapper to 20px, so a scaled 35px
+    // arrow overhangs its own flex item and reads as touching its neighbour.
+    installReadabilityBoost();
+    const css = document.getElementById(STYLE_ID)?.textContent ?? '';
+    const rule = css.match(/\.messagePaginator \.firstPage,[^{]*\{([^}]*)\}/);
+    expect(rule).not.toBeNull();
+    const width = rule?.[1].match(/width:\s*(\d+)px/);
+    expect(width).not.toBeNull();
+    expect(parseInt(width?.[1] ?? '0', 10)).toBeGreaterThanOrEqual(35);
+  });
+
   it('removes the <style> when settings.readabilityBoost flips to false', () => {
     installReadabilityBoost();
     expect(document.getElementById(STYLE_ID)).not.toBeNull();

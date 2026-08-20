@@ -2683,7 +2683,16 @@ const renderProximityStrip = () => {
     const line = document.createElement('div');
     line.style.cssText = 'font-size:11px;color:#788;margin-top:3px;line-height:1.4;';
     const age = proximityAge(r.ts, nowMs);
-    line.appendChild(document.createTextNode(`${r.byPlayerName || `#${r.byPlayerId}`} · near `));
+    // Ordered origin → time → target: `<prober> · from <their body> · <age> ago
+    // · near <our body>`.
+    line.appendChild(document.createTextNode(`${r.byPlayerName || `#${r.byPlayerId}`} · `));
+    if (r.fromCoords) {
+      line.appendChild(document.createTextNode('from '));
+      line.appendChild(proximityBodyEl(r.fromCoords, r.fromPlanetType === 3));
+      line.appendChild(document.createTextNode(' · '));
+    }
+    if (age) line.appendChild(document.createTextNode(`${age} ago · `));
+    line.appendChild(document.createTextNode('near '));
     // `near` is one of OUR bodies → follows the Coords/Names switch, same as the
     // rows above. It used to be coords-only, so flipping to Names relabelled the
     // digest but not the log underneath it. `from` is the prober's own body: no
@@ -2692,11 +2701,6 @@ const renderProximityStrip = () => {
     line.appendChild(rawNm
       ? proximityNamedEl(rawNm, r.atCoords, r.atPlanetType === 3)
       : proximityBodyEl(r.atCoords, r.atPlanetType === 3));
-    if (age) line.appendChild(document.createTextNode(` · ${age} ago`));
-    if (r.fromCoords) {
-      line.appendChild(document.createTextNode(' · from '));
-      line.appendChild(proximityBodyEl(r.fromCoords, r.fromPlanetType === 3));
-    }
     rawBody.appendChild(line);
   }
   raw.appendChild(rawBody);
