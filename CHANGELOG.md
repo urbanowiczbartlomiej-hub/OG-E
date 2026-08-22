@@ -4,6 +4,21 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.61.1] — 2026-08-22
+
+### Fixed
+
+- **The Spyglass button now advances its label the moment a system is
+  scanned.** On a Neighbours/Patrol sweep the button kept showing the system
+  you had just visited — e.g. `[4:480]` — for a couple of seconds after the
+  tap, even though the next tap already jumped to the correct next system. The
+  repaint was wired only to the activity rings, which are recorded
+  asynchronously and only when a player's activity actually changed, so a quiet
+  system produced no repaint at all and the label waited for the slow ticker.
+  It now also listens to the per-system browse stamp, which is written on every
+  galaxy ingest — the label steps to the next target as soon as the system
+  loads.
+
 ## [1.61.0] — 2026-08-20
 
 ### Added

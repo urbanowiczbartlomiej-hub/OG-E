@@ -903,6 +903,15 @@ export const installSendSpy = () => {
   // A galaxy ingest (oge:galaxyScanned → rings) flips a looked-at system to
   // fresh — the look proposal self-advances on this repaint.
   const unsubActivity = activityObsStore.subscribe(refresh);
+  // …but the rings are NOT the whole signal. `state/activityObs` records the
+  // ingest asynchronously and writes only when an activity block actually
+  // changed, so a quiet system (the common case on a patrol/neighbours sweep)
+  // produces no ring update at all. The per-system browse stamp in
+  // `state/scans` IS written synchronously on every `oge:galaxyScanned`, and it
+  // is what clears a patrol/home look from the plan — subscribe to it so the
+  // label advances the instant the system is ingested, instead of sitting on
+  // the just-visited coords until the slow ticker (≤ REPAINT_TICK_MS) catches up.
+  const unsubScans = scansStore.subscribe(refresh);
   // Repaint the instant the apiContext handoff lands — clears the dim
   // "loading…" state immediately instead of waiting up to REPAINT_TICK_MS for
   // the next slow tick (the visible post-reload lag on the Spyglass button).
@@ -920,6 +929,7 @@ export const installSendSpy = () => {
       unsubWatch();
       unsubReports();
       unsubActivity();
+      unsubScans();
       if (sentLockTimer) {
         clearTimeout(sentLockTimer);
         sentLockTimer = null;

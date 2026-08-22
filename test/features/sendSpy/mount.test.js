@@ -43,6 +43,7 @@ import {
   disposeWatchListStore,
 } from '../../../src/state/watchList.js';
 import { SPY_FAB_SHOWN_KEY } from '../../../src/state/spyFabCache.js';
+import { scansStore } from '../../../src/state/scans.js';
 
 const BUTTON_ID = 'oge-send-spy';
 
@@ -102,6 +103,7 @@ afterEach(() => {
   _resetSendSpyForTest();
   disposeWatchListStore();
   watchListStore.set(INITIAL);
+  scansStore.set({});
   delete (/** @type {any} */ (globalThis)).chrome;
 });
 
@@ -190,5 +192,40 @@ describe('sendSpy — optimistic mount (spyFabCache)', () => {
     await flushMicrotasks();
     expect(mounted()).toBe(false);
     expect(localStorage.getItem(SPY_FAB_SHOWN_KEY)).toBeNull();
+  });
+});
+
+// A galaxy ingest must repaint the FAB *now*, not on the next slow ticker.
+// `state/activityObs` (the rings) is not a reliable trigger — it records the
+// ingest asynchronously and writes only when an activity block actually
+// changed, so a quiet patrol/neighbours system produces no ring update at all.
+// `state/scans` IS stamped synchronously on every `oge:galaxyScanned`, and it
+// is what clears a patrol/home look from the plan, so the FAB subscribes to it
+// too. Without that the label sat on the just-visited coords for up to
+// REPAINT_TICK_MS (the "it keeps showing [4:480]" report).
+describe('sendSpy — repaints on a galaxy ingest (state/scans)', () => {
+  it('a scans change repaints the label', async () => {
+    localStorage.setItem(SPY_FAB_SHOWN_KEY, '1');
+    initWatchListStore();
+    installSendSpy();
+    const el = document.getElementById(BUTTON_ID);
+    expect(el?.textContent).toContain('loading');
+    // Clobber the painted label, then let a system ingest land: only a real
+    // repaint can put the text back.
+    const label = el?.querySelector('.oge-btn-label');
+    if (label) label.textContent = 'STALE';
+    expect(el?.textContent).not.toContain('loading');
+    scansStore.set({ '4:480': { scannedAt: 1, positions: {} } });
+    expect(el?.textContent).toContain('loading');
+  });
+
+  it('stops repainting once disposed', async () => {
+    localStorage.setItem(SPY_FAB_SHOWN_KEY, '1');
+    initWatchListStore();
+    const dispose = installSendSpy();
+    dispose();
+    // No button left to repaint — a late ingest must not resurrect one.
+    scansStore.set({ '4:481': { scannedAt: 2, positions: {} } });
+    expect(mounted()).toBe(false);
   });
 });
