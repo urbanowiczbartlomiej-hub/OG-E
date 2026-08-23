@@ -4,6 +4,21 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.61.2] — 2026-08-23
+
+### Fixed
+
+- **The messages pager is pinned to the bottom of the screen right away.** On a
+  phone it only appeared once you had already scrolled halfway down the message
+  list — which is precisely the scrolling the pinned pager exists to spare you.
+  Two causes, both of which left the arrows riding along with the list: the
+  bottom pager was picked as "the last node in its container", so anything the
+  game leaves after it meant no pager was pinned at all; and the pin itself
+  could be cancelled out by the surrounding layout. The strip is now pinned to
+  the viewport itself and identified as "the pager with no pager after it", so
+  the arrows are on screen from the moment the page opens. The list gets extra
+  room at the end so the last message can still be scrolled clear of the strip.
+
 ## [1.61.1] — 2026-08-22
 
 ### Fixed

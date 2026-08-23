@@ -465,11 +465,30 @@ a.ago_movement.tooltip .ago_color_palered,
    for never applies. Both ways lose, so we spend margins instead and leave
    the row's layout to the game.
 
-   The BOTTOM pager (:last-child — the top one is followed by
-   #filteredHeadersRow) is pinned to the bottom of the viewport with
-   position: sticky: on a phone the arrows are otherwise a full message
-   list away. Sticky, not fixed — it keeps its place in the flow, so it can't
-   cover the last message, and display:none still hides it.
+   The BOTTOM pager is pinned to the bottom of the viewport: on a phone the
+   arrows are otherwise a full message list away.
+
+   Two things about that pin were wrong before, and both fail the same way —
+   the pager scrolls with the list and only turns up once you have already
+   scrolled most of the way down, i.e. exactly what the pin exists to avoid:
+
+   1. WHICH pager. ":last-child" means "last node in the parent", not "last
+      pager". Nothing guarantees the bottom pager is the final child of its
+      container — anything the game leaves after it (a footer row, a spacer, a
+      script-injected node) makes the selector miss and then NOTHING is pinned.
+      We key on "no pager follows me" instead — the exact mirror of the rule
+      above that hides the top copy — so it holds whatever trails behind it.
+
+   2. sticky vs fixed. position:sticky is relative to the nearest scrolling
+      ancestor and is clamped to its own containing block: it can lift the
+      pager only as far as that parent box allows, so if an ancestor scrolls
+      (or the parent simply ends just below the pager) the lift is zero.
+      position:fixed answers to the viewport alone, so the strip is on screen
+      from the first paint. display:none still hides it, as the game expects.
+
+   Fixed costs us the one thing sticky gave for free — a fixed box holds no
+   space in the flow, so it would sit on top of the last message. We buy that
+   space back with bottom padding on the document (the body rule below).
 
    It parks 19px up, not at 0: OGame's own #siteFooter (the "Ustawienia
    serwera | Discord | Forum" strip) is position:fixed, bottom:0, height:19px
@@ -507,13 +526,23 @@ a.ago_movement.tooltip .ago_color_palered,
 .messagePaginator:has(~ .messagePaginator) {
   display: none !important;
 }
-.messagePaginator:last-child {
-  position: sticky !important;
+.messagePaginator:not(:has(~ .messagePaginator)) {
+  position: fixed !important;
+  left: 0 !important;
+  right: 0 !important;
   bottom: 19px !important;
-  z-index: 30 !important;
+  z-index: 500 !important;
+  justify-content: center !important;
+  text-align: center !important;
   background: rgba(9, 13, 18, 0.92) !important;
   border-top: 1px solid rgb(39 43 54) !important;
   box-shadow: 0 -4px 10px rgba(0, 0, 0, 0.55) !important;
+}
+/* The flow space the fixed strip no longer takes, handed back at the end of
+   the document so the last message can always be scrolled clear of it. Keyed
+   on "this page has a pager" so no other page pays for it. */
+body:has(.messagePaginator) {
+  padding-bottom: 76px !important;
 }
 /* The "1/7" readout between the arrows — sized up with them so the row
    reads as one control strip. */

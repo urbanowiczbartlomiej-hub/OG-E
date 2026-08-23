@@ -192,15 +192,36 @@ describe('readabilityBoost', () => {
     const css = document.getElementById(STYLE_ID)?.textContent ?? '';
     // Hidden by "another pager follows me", so a lone pager is never hidden.
     expect(css).toMatch(/\.messagePaginator:has\(~ \.messagePaginator\)\s*\{[^}]*display:\s*none/);
-    const pinned = css.match(/\.messagePaginator:last-child\s*\{([^}]*)\}/);
+    // Pinned by "no pager follows me" — the mirror of the hide rule above.
+    // NOT :last-child: the bottom pager is not guaranteed to be the final
+    // child of its container, and when it isn't, nothing gets pinned at all.
+    const pinned = css.match(
+      /\.messagePaginator:not\(:has\(~ \.messagePaginator\)\)\s*\{([^}]*)\}/,
+    );
     expect(pinned).not.toBeNull();
     const body = pinned?.[1] ?? '';
-    expect(body).toMatch(/position:\s*sticky/);
+    // fixed, not sticky: sticky is clamped to its own containing block, so an
+    // ancestor that scrolls (or ends right below the pager) lifts it nowhere.
+    expect(body).toMatch(/position:\s*fixed/);
+    expect(body).not.toMatch(/position:\s*sticky/);
     // #siteFooter is fixed at bottom:0 with height:19px — pinning at 0 would
     // park the arrows underneath it.
     const bottom = body.match(/bottom:\s*(\d+)px/);
     expect(bottom).not.toBeNull();
     expect(parseInt(bottom?.[1] ?? '0', 10)).toBeGreaterThanOrEqual(19);
+  });
+
+  it('gives back the flow space the fixed pager no longer takes', () => {
+    // A fixed box holds no space in the flow, so without this the strip sits
+    // on the last message. Scoped with :has() so only a page with a pager pays.
+    installReadabilityBoost();
+    const css = document.getElementById(STYLE_ID)?.textContent ?? '';
+    const rule = css.match(/body:has\(\.messagePaginator\)\s*\{([^}]*)\}/);
+    expect(rule).not.toBeNull();
+    const pad = rule?.[1].match(/padding-bottom:\s*(\d+)px/);
+    expect(pad).not.toBeNull();
+    // Taller than the pinned strip itself (scaled arrows + its 19px offset).
+    expect(parseInt(pad?.[1] ?? '0', 10)).toBeGreaterThanOrEqual(54);
   });
 
   it('the arrow wrappers are widened past the game\'s fixed 20px', () => {
