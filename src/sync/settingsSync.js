@@ -18,7 +18,8 @@
 //     lead time, templates — live in the per-universe `alarmClockConfig` slot.)
 //
 //   - UNIVERSE_SCOPED: game-logic parameters that are meaningful only on a
-//     specific server (alarmClockNtfyToken, maxExpeditionsPerPlanet).
+//     specific server (maxExpeditionsPerPlanet, autoRedirectExpedition,
+//     alarmClockNtfyToken).
 //     Stored in `settingsPerUniverse[universeId]` and in a per-universe
 //     chrome.storage timestamp map under `<universeId>:oge_settingsTs`.
 //
@@ -57,6 +58,14 @@ export const UNIVERSE_SCOPED_SETTINGS = new Set([
   // per-universe galaxyScanConfig store (which syncs on its own slot); the
   // wave/ad-hoc knobs live in the per-universe alarmClockConfig slot.
   'maxExpeditionsPerPlanet',
+  // Same tile as the cap above (Settings → Expeditions), and for the same
+  // reason: whether sending an expedition should jump to the next planet is a
+  // per-server routine. On a one-planet or hand-played universe the redirect
+  // is a nuisance; on the main it is the whole point. Locally these keys were
+  // ALWAYS per-universe (localStorage is per-origin, and each universe is its
+  // own origin) — it was cloud sync that flattened them into one global value
+  // and pushed it onto every server.
+  'autoRedirectExpedition',
   'alarmClockNtfyToken',
 ]);
 

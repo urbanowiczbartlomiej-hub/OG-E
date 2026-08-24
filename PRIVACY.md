@@ -80,6 +80,10 @@ service [ntfy.sh](https://ntfy.sh):
 ## Permissions
 
 - `storage` — local scan database and colony history.
+- `unlimitedStorage` — lifts the browser's 10 MB default cap on that same
+  local database. Nothing new is collected or sent; it only stops writes
+  from failing once you play several universes (each keeps its own scan
+  cache). Data still never leaves your device unless you opt into sync.
 - `host: ogame.gameforge.com` — content scripts run on game tabs;
   the XHR observer reads requests the game already fires. The Spyglass
   dashboard's **⟳ Refresh** button also fetches the same universe's

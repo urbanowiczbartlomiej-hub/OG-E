@@ -316,3 +316,71 @@ describe('persist — unsubscribe', () => {
     }).not.toThrow();
   });
 });
+
+describe('persist — a failed save is reported, never silently dropped', () => {
+  // The bug this pins: `writeNow` used to call `save()` and discard the
+  // returned promise. chromeStore.set REJECTS when the browser refuses the
+  // write (a full storage quota is the real-world case), so the store kept the
+  // value in memory, storage never got it, and the change vanished on the next
+  // page load with nothing in the console. Losing data must at minimum be
+  // visible.
+  /** @type {any} */
+  let errSpy;
+
+  beforeEach(() => {
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('logs when an async save rejects', async () => {
+    const store = createStore('initial');
+    persist({
+      store,
+      load: () => null,
+      save: () => Promise.reject(new Error('QUOTA_BYTES quota exceeded')),
+    });
+
+    store.set('next');
+    // Let the rejection settle — the log happens in the promise's catch.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(errSpy).toHaveBeenCalled();
+    const msg = errSpy.mock.calls
+      .map((/** @type {unknown[]} */ c) => c.map(String).join(' '))
+      .join('\n');
+    expect(msg).toContain('change NOT saved');
+    expect(msg).toContain('QUOTA_BYTES');
+  });
+
+  it('logs when a sync save throws, and does not break the subscription', () => {
+    const store = createStore('initial');
+    let calls = 0;
+    persist({
+      store,
+      load: () => null,
+      save: () => {
+        calls += 1;
+        if (calls === 1) throw new Error('disk on fire');
+      },
+    });
+
+    expect(() => store.set('a')).not.toThrow();
+    expect(errSpy).toHaveBeenCalled();
+    // A throw must not unsubscribe the write-through: the NEXT change still
+    // reaches storage (this is what makes a transient failure recoverable).
+    store.set('b');
+    expect(calls).toBe(2);
+  });
+
+  it('stays quiet when the save resolves', async () => {
+    const store = createStore('initial');
+    persist({ store, load: () => null, save: () => Promise.resolve() });
+    store.set('next');
+    await Promise.resolve();
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+});

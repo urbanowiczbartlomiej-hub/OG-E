@@ -12,6 +12,7 @@ import {
   classifySyncFreshness,
   formatBytes,
   SYNC_STATUS_BASE,
+  universeStorageKeys,
 } from '../../../src/features/dashboard/syncInventory.js';
 
 const HOUR = 60 * 60 * 1000;
@@ -212,5 +213,46 @@ describe('formatBytes', () => {
   it('≥ 1 MB → X.X MB', () => {
     expect(formatBytes(1024 * 1024)).toBe('1.0 MB');
     expect(formatBytes(Math.round(2.5 * 1024 * 1024))).toBe('2.5 MB');
+  });
+});
+
+describe('universeStorageKeys', () => {
+  // The abandon flow's delete list. Deliberately WIDER than the inventory:
+  // plumbing and bases this build has never heard of must go too, or a
+  // surviving `…Ts` stamp poisons the next re-import and a surviving
+  // `oge_ownProfile` keeps the universe alive in the dashboard's selector.
+  const snapshot = {
+    's163-pl:oge_colonyHistory': [1],
+    's163-pl:oge_galaxyScanConfigTs': 5,
+    's163-pl:oge_syncStatus': { up: 'x' },
+    's163-pl:oge_somethingAddedNextYear': true,
+    's163-plus:oge_colonyHistory': [2],
+    's808-en:oge_colonyHistory': [3],
+    'oge_sharedSettings': { token: 'x' },
+    'unrelated': 1,
+  };
+
+  it('returns every namespaced key of that universe, plumbing included', () => {
+    expect(universeStorageKeys(snapshot, 's163-pl')).toEqual([
+      's163-pl:oge_colonyHistory',
+      's163-pl:oge_galaxyScanConfigTs',
+      's163-pl:oge_somethingAddedNextYear',
+      's163-pl:oge_syncStatus',
+    ]);
+  });
+
+  it('never touches other universes, prefix look-alikes, or global keys', () => {
+    const keys = universeStorageKeys(snapshot, 's163-pl');
+    // `s163-plus` shares the first 8 chars with `s163-pl` — a naive
+    // startsWith('s163-pl') would delete another server's history.
+    expect(keys).not.toContain('s163-plus:oge_colonyHistory');
+    expect(keys).not.toContain('s808-en:oge_colonyHistory');
+    expect(keys).not.toContain('oge_sharedSettings');
+    expect(keys).not.toContain('unrelated');
+  });
+
+  it('returns nothing for an empty id or an unknown universe', () => {
+    expect(universeStorageKeys(snapshot, '')).toEqual([]);
+    expect(universeStorageKeys(snapshot, 's404-xx')).toEqual([]);
   });
 });

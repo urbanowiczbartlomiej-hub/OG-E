@@ -28,6 +28,11 @@ vi.mock('../../../src/lib/storage.js', async (importActual) => {
         store.set(k, v);
         return Promise.resolve();
       }),
+      getAll: vi.fn(() => Promise.resolve(Object.fromEntries(store))),
+      remove: vi.fn((k) => {
+        for (const key of Array.isArray(k) ? k : [k]) store.delete(key);
+        return Promise.resolve();
+      }),
     },
   };
 });
@@ -36,10 +41,14 @@ import {
   exportAllData,
   importAllData,
   exportColonyCsv,
+  purgeUniverseData,
 } from '../../../src/features/dashboard/io.js';
 import { chromeStore } from '../../../src/lib/storage.js';
 import { historyKeyFor } from '../../../src/state/history.js';
 import { scansKeyFor } from '../../../src/state/scans.js';
+import { playersKeyFor } from '../../../src/state/players.js';
+import { ownProfileKeyFor } from '../../../src/state/ownProfile.js';
+import { homeWatchKeyFor } from '../../../src/state/homeWatch.js';
 import { watchListKeyFor, watchListTsKeyFor } from '../../../src/state/watchList.js';
 
 const UNI = 's163-pl';
@@ -73,6 +82,77 @@ beforeEach(() => {
   store.clear();
   /** @type {import('vitest').Mock} */ (chromeStore.get).mockClear();
   /** @type {import('vitest').Mock} */ (chromeStore.set).mockClear();
+  /** @type {import('vitest').Mock} */ (chromeStore.getAll).mockClear();
+  /** @type {import('vitest').Mock} */ (chromeStore.remove).mockClear();
+});
+
+describe('purgeUniverseData', () => {
+  it('removes every key of the target universe — plumbing included — in one call', async () => {
+    store.set(HKEY, [colony(1)]);
+    store.set(`${UNI}:oge_apiCache`, { universe: {} });
+    store.set(`${UNI}:oge_galaxyScanConfigTs`, 123);   // plumbing
+    store.set(`${UNI}:oge_syncStatus`, { up: 'now' }); // bookkeeping mirror
+    store.set(`${UNI}:oge_futureThingWeHaveNotWrittenYet`, 1);
+    store.set('s999-en:oge_colonyHistory', [colony(9)]); // another universe
+    store.set('oge_sharedSettings', { gistToken: 'x' }); // global key
+
+    const res = await purgeUniverseData(UNI);
+
+    expect(res.keys).toBe(5);
+    expect(res.bytes).toBeGreaterThan(0);
+    expect([...store.keys()].sort()).toEqual(['oge_sharedSettings', 's999-en:oge_colonyHistory']);
+    // ONE storage transaction, not five racing writes.
+    expect(/** @type {import('vitest').Mock} */ (chromeStore.remove)).toHaveBeenCalledTimes(1);
+  });
+
+  it('is a no-op for an unknown universe and for an empty id', async () => {
+    store.set(HKEY, [colony(1)]);
+    expect(await purgeUniverseData('s404-xx')).toEqual({ keys: 0, bytes: 0 });
+    expect(await purgeUniverseData('')).toEqual({ keys: 0, bytes: 0 });
+    expect(store.has(HKEY)).toBe(true);
+    expect(/** @type {import('vitest').Mock} */ (chromeStore.remove)).not.toHaveBeenCalled();
+  });
+});
+
+describe('importAllData — device-local slots are fill-the-gap only', () => {
+  // Restoring your OWN archive into a wiped universe must adopt; importing
+  // someone ELSE's file into a live universe must not silently make you them.
+  it('adopts own profile / home watch when local is empty', async () => {
+    const res = await importAllData(
+      jsonFile({
+        version: 2,
+        data: {
+          ownProfile: { id: 7, name: 'Restored' },
+          homeWatch: { baseline: { '3:4': {} }, arrivals: [] },
+        },
+      }),
+      UNI,
+    );
+
+    expect(store.get(ownProfileKeyFor(UNI))).toEqual({ id: 7, name: 'Restored' });
+    expect(/** @type {any} */ (store.get(homeWatchKeyFor(UNI))).baseline).toEqual({ '3:4': {} });
+    expect(res.parts.map((p) => p.label)).toContain('own profile');
+  });
+
+  it('never overwrites an own profile / home watch that is already there', async () => {
+    store.set(ownProfileKeyFor(UNI), { id: 1, name: 'Mine' });
+    store.set(homeWatchKeyFor(UNI), { baseline: { '1:2': {} }, arrivals: [] });
+
+    const res = await importAllData(
+      jsonFile({
+        version: 2,
+        data: {
+          ownProfile: { id: 2, name: 'SomeoneElse' },
+          homeWatch: { baseline: { '9:9': {} }, arrivals: [] },
+        },
+      }),
+      UNI,
+    );
+
+    expect(store.get(ownProfileKeyFor(UNI))).toEqual({ id: 1, name: 'Mine' });
+    expect(/** @type {any} */ (store.get(homeWatchKeyFor(UNI))).baseline).toEqual({ '1:2': {} });
+    expect(res.parts).toEqual([]);
+  });
 });
 
 describe('importAllData — guards', () => {
@@ -308,6 +388,67 @@ describe('export round-trips', () => {
     expect(text).not.toContain('SECRET');
     expect(text).not.toContain('gistToken');
     expect(text).not.toContain('sharedSettings');
+  });
+
+  // ── Archive mode: the restore image the abandon flow forces ──────────
+  //
+  // The distinction that matters: a SHARE export may reduce (watched players
+  // only, no device-local slots), an ARCHIVE may not — it is the only copy of
+  // a universe about to be deleted.
+  it('an archive ships the FULL player roster; a share export ships watched only', async () => {
+    store.set(HKEY, [colony(1)]);
+    store.set(watchListKeyFor(UNI), { version: 1, players: [1001] });
+    store.set(playersKeyFor(UNI), { 1001: { n: 'watched' }, 1002: { n: 'seen once' } });
+
+    await exportAllData(UNI);
+    const share = JSON.parse(await blobs[0].text());
+    expect(Object.keys(share.data.players)).toEqual(['1001']);
+
+    await exportAllData(UNI, { archive: true });
+    const archive = JSON.parse(await blobs[1].text());
+    expect(Object.keys(archive.data.players).sort()).toEqual(['1001', '1002']);
+  });
+
+  it('archiveOnly slots (own profile, home watch) ride the archive, not the share export', async () => {
+    store.set(HKEY, [colony(1)]);
+    store.set(ownProfileKeyFor(UNI), { id: 99, name: 'Me', rank: 250 });
+    store.set(homeWatchKeyFor(UNI), { baseline: { '1:2': {} }, arrivals: [] });
+
+    await exportAllData(UNI);
+    const share = JSON.parse(await blobs[0].text());
+    expect(share.data.ownProfile).toBeUndefined();
+    expect(share.data.homeWatch).toBeUndefined();
+
+    await exportAllData(UNI, { archive: true });
+    const archive = JSON.parse(await blobs[1].text());
+    expect(archive.data.ownProfile).toEqual({ id: 99, name: 'Me', rank: 250 });
+    expect(archive.data.homeWatch.baseline).toEqual({ '1:2': {} });
+  });
+
+  it('the archive filename says archive (so it is not mistaken for a share file)', async () => {
+    store.set(HKEY, [colony(1)]);
+    await exportAllData(UNI, { archive: true });
+    expect(downloads[0]).toMatch(/^oge-s163-pl-archive-\d{4}-\d{2}-\d{2}\.json$/);
+  });
+
+  // The round-trip the abandon flow promises: archive → purge → import puts
+  // the universe back. Runs the three real functions against one store.
+  it('archive → purge → import restores the universe', async () => {
+    store.set(HKEY, [colony(1), colony(2)]);
+    store.set(playersKeyFor(UNI), { 1001: { n: 'a' }, 1002: { n: 'b' } });
+    store.set(ownProfileKeyFor(UNI), { id: 99, name: 'Me' });
+
+    await exportAllData(UNI, { archive: true });
+    const file = new File([await blobs[0].text()], 'archive.json', { type: 'application/json' });
+
+    await purgeUniverseData(UNI);
+    expect(store.has(HKEY)).toBe(false);
+
+    const res = await importAllData(file, UNI);
+    expect(res.warning).toBeUndefined();
+    expect(store.get(HKEY)).toHaveLength(2);
+    expect(Object.keys(/** @type {any} */ (store.get(playersKeyFor(UNI))))).toHaveLength(2);
+    expect(store.get(ownProfileKeyFor(UNI))).toEqual({ id: 99, name: 'Me' });
   });
 
   it('exportColonyCsv emits a header + rows sorted newest-first', async () => {

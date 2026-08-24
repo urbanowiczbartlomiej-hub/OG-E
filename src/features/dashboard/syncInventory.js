@@ -172,6 +172,33 @@ export const parsePerUniverseKey = (key) => {
 };
 
 /**
+ * Every chrome.storage.local key belonging to one universe — the exact set the
+ * abandon flow deletes.
+ *
+ * DELIBERATELY WIDER than the inventory above: this includes the plumbing the
+ * inventory hides (`…Ts` ledgers, the `oge_syncStatus` mirror, the
+ * `oge_syncRequestAt` command key) and any base this build has never heard of.
+ * Abandoning must leave NOTHING behind — a surviving `…Ts` stamp would make the
+ * next re-import lose every LWW race against a ghost, and a surviving
+ * `oge_ownProfile` would keep the universe alive in the dashboard's selector
+ * (`discoverUniverses` counts it as evidence of play). Structural rule, not a
+ * whitelist, so a base added after this code was written is still purged.
+ *
+ * Global (non-namespaced) keys are never touched: they belong to the other
+ * universes too.
+ *
+ * @param {Record<string, unknown>} all  chromeStore.getAll() result.
+ * @param {string} universeId
+ * @returns {string[]}  Full keys, sorted for a stable log/undo order.
+ */
+export const universeStorageKeys = (all, universeId) => {
+  if (!universeId) return [];
+  return Object.keys(all)
+    .filter((key) => parsePerUniverseKey(key)?.universeId === universeId)
+    .sort();
+};
+
+/**
  * Whether a base is sync PLUMBING rather than stored data: the `…Ts`
  * conflict-resolution timestamps that sit beside each synced slot, and the
  * command-channel keys the dashboard/scheduler use to signal one another

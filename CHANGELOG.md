@@ -4,6 +4,49 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.63.0] — 2026-08-24
+
+### Fixed
+
+- **New colonies were silently missing from the histogram.** If you play
+  several servers, OG-E had quietly run out of storage: the browser caps an
+  extension's local database at 10 MB, and the per-server API cache alone —
+  half a megabyte to three megabytes each — was enough to fill it. Once full,
+  every write was refused. Nothing warned you, because the refusal was
+  discarded: the recorded colony sat in memory looking saved and was gone on
+  the next page load. That is why the Abandon button still judged planet sizes
+  correctly (it only reads the page) while the histogram stopped growing —
+  in one case for a month. OG-E now asks for unlimited local storage, so the
+  cap is gone, and a refused write is reported in the console instead of
+  vanishing. Nothing new is collected or sent.
+
+- **"Auto next planet" is now a per-server setting.** Locally it always was —
+  but cloud sync flattened it into one global value and pushed it onto every
+  universe, so turning it off on the server you hand-play turned it off on your
+  main. It now travels per server, like the expedition cap on the same tile.
+  Your current value is kept on every universe; from now on they diverge.
+
+### Added
+
+- **Abandon a server you stopped playing** — Sync tab, per server card. It
+  deletes every OG-E record for that server on this device and gives the space
+  back. Archiving first is not a suggestion: the delete control stays locked
+  until the archive file has actually downloaded, and then asks you to type the
+  server's id, because "free some space" and "lose two years of intel" are one
+  tap apart. Re-importing the archive puts the server back — that round trip is
+  tested end to end.
+
+- **The export file is now complete enough to restore from.** Two things were
+  missing entirely (your own profile on that server, and the home-watch
+  baseline), and the player cache shipped only the players you watch. An
+  archive now carries the full roster and both missing pieces, while the
+  ordinary export you might hand to an ally stays as narrow as before — no own
+  profile, watched players only. Importing someone else's file can never
+  overwrite who you are: those two datasets are only adopted when yours is
+  empty. The API cache and alliance intel are deliberately left out (both
+  re-download themselves), and the colonize password is never written to a
+  file — the abandon panel lists exactly this, on screen.
+
 ## [1.62.0] — 2026-08-24
 
 ### Added

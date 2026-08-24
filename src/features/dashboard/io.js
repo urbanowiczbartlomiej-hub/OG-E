@@ -1,7 +1,21 @@
 // @ts-check
 
 // Histogram page I/O — Export / Import of the selected universe's dataset
-// (JSON) + CSV dump of the colony history.
+// (JSON) + CSV dump of the colony history + the PURGE half of the Sync tab's
+// abandon flow (archive → delete).
+//
+// # Three verbs over one registry
+//
+//   - EXPORT (share): every slot's `exportRead ?? read`. Reductions are
+//     welcome here — the player cache ships watched-only, the scan config
+//     ships without its password.
+//   - ARCHIVE (`exportAllData(uni, { archive: true })`): same format, but
+//     `archiveRead` first, so nothing the user cannot rebuild is dropped. This
+//     is a RESTORE IMAGE — the abandon flow will not delete a universe until
+//     one has been downloaded. See {@link ARCHIVE_OMITS} for what an archive
+//     still leaves out, and why each omission is safe.
+//   - PURGE ({@link purgeUniverseData}): delete every `<uni>:oge_*` key. No
+//     undo other than re-importing the archive.
 //
 // This module is the only place the histogram page talks to
 // `chrome.storage.local` for the export/import round-trip. It never hits the
@@ -54,6 +68,9 @@
 // merges).
 
 import { chromeStore } from '../../lib/storage.js';
+import { universeStorageKeys } from './syncInventory.js';
+import { ownProfileKeyFor } from '../../state/ownProfile.js';
+import { homeWatchKeyFor } from '../../state/homeWatch.js';
 import { historyKeyFor } from '../../state/history.js';
 import { scansKeyFor } from '../../state/scans.js';
 import { targetReportsKeyFor } from '../../state/targets.js';
@@ -159,6 +176,19 @@ const extensionVersion = () => {
  * @property {string} label  Plural noun for the import summary ("+3 <label>").
  * @property {(uni: string) => Promise<any>} read
  * @property {(uni: string) => Promise<any>} [exportRead]
+ * @property {(uni: string) => Promise<any>} [archiveRead]  Overrides
+ *   `exportRead` in ARCHIVE mode only — for slots whose share-export is a
+ *   deliberate REDUCTION (the player cache) and would make an archive lossy.
+ *   Reader precedence is `archiveRead → exportRead → read`, so a slot that
+ *   only wants the export narrowed for privacy/secrecy reasons (the scan
+ *   config's password scrub) needs no archive entry and keeps the scrub.
+ * @property {boolean} [archiveOnly]  Omit from the SHARE export; include only
+ *   in an archive. For "who am I / what did this device see" slots: harmless
+ *   in your own restore image, wrong in a file you hand to someone else. The
+ *   adopt-if-empty merges make importing them safe, but a brand-new device
+ *   (own profile still empty) importing a FRIEND's file would briefly score
+ *   neighbours against the friend's rank. Not shipping it is simpler than
+ *   relying on that window being short.
  * @property {(uni: string, merged: any) => Promise<void>} write
  * @property {(local: any, incoming: any) => { merged: any, changed: boolean }} merge
  * @property {(local: any, merged: any) => number} count  Entries the import
@@ -309,6 +339,10 @@ const IO_SLOTS = [
     field: 'players',
     label: 'player profiles',
     read: async (uni) => asObj(await chromeStore.get(playersKeyFor(uni))),
+    // An ARCHIVE takes the whole roster: it is the restore-image for a
+    // universe we are about to delete, so "rebuild-able" is not good enough —
+    // the rebuild needs a galaxy re-scan the user may never do again.
+    archiveRead: async (uni) => asObj(await chromeStore.get(playersKeyFor(uni))),
     // Export ONLY the watched players' metadata ("playersLite") — the full
     // roster cache grows with every player ever seen server-wide and would
     // bloat the file with rebuild-able data; the watched subset is what makes
@@ -385,6 +419,71 @@ const IO_SLOTS = [
     },
   },
   lwwConfigSlot('alarmClockConfig', 'alarm config', alarmClockConfigKeyFor, alarmClockConfigTsKeyFor),
+  // ── Device-local memory: exported so an ARCHIVE is restorable, merged
+  //    fill-the-gap-only so a SHARED file can never overwrite it. ──────────
+  //
+  // Both slots below answer "who am I / what did THIS device see", not "what is
+  // true about the server". A friend's export legitimately carries their own
+  // answer, and adopting it would be actively wrong (neighbour ranks scored
+  // against the wrong player; someone else's home systems as our baseline).
+  // Hence `adoptIfEmpty`: restoring your own archive into a wiped universe
+  // adopts it, importing anyone else's file into a live universe does not.
+  // Both are also re-derived by the game side (the header bar on every page
+  // load; the next galaxy sighting), so the fill-the-gap rule costs nothing.
+  {
+    archiveOnly: true,
+    field: 'ownProfile',
+    label: 'own profile',
+    read: async (uni) => asObj(await chromeStore.get(ownProfileKeyFor(uni))),
+    write: (uni, merged) => chromeStore.set(ownProfileKeyFor(uni), merged),
+    merge: (local, incoming) => {
+      const inc = asObj(incoming);
+      const empty = Object.keys(local).length === 0;
+      return empty && Object.keys(inc).length > 0
+        ? { merged: inc, changed: true }
+        : { merged: local, changed: false };
+    },
+    count: () => 1,
+    nonEmpty: (v) => Object.keys(v).length > 0,
+  },
+  {
+    archiveOnly: true,
+    field: 'homeWatch',
+    label: 'home watch',
+    read: async (uni) => {
+      const raw = asObj(await chromeStore.get(homeWatchKeyFor(uni)));
+      return { baseline: asObj(raw.baseline), arrivals: asArr(raw.arrivals) };
+    },
+    write: (uni, merged) => chromeStore.set(homeWatchKeyFor(uni), merged),
+    merge: (local, incoming) => {
+      const inc = asObj(incoming);
+      const empty = Object.keys(local.baseline).length === 0 && local.arrivals.length === 0;
+      const incHas = Object.keys(asObj(inc.baseline)).length > 0 || asArr(inc.arrivals).length > 0;
+      return empty && incHas
+        ? { merged: { baseline: asObj(inc.baseline), arrivals: asArr(inc.arrivals) }, changed: true }
+        : { merged: local, changed: false };
+    },
+    count: (_local, merged) => Object.keys(merged.baseline).length,
+    nonEmpty: (v) => Object.keys(v.baseline).length > 0 || v.arrivals.length > 0,
+  },
+];
+
+/**
+ * What an ARCHIVE deliberately leaves out, as user-facing lines for the
+ * abandon panel's disclosure. Lives here, next to {@link IO_SLOTS}, because
+ * this list is the *complement* of that registry — stating it anywhere else
+ * would drift the moment a slot is added.
+ *
+ * Everything named here is either re-derivable without a trace of loss or a
+ * secret that must not be written to a file the user may hand around.
+ *
+ * @type {string[]}
+ */
+export const ARCHIVE_OMITS = [
+  'API cache — re-downloads from OGame\'s public API on the next visit',
+  'Alliance intel — re-pulls from the alliance gist',
+  'Colonize password — device-local secret, never written to a file',
+  'In-game preferences (localStorage on the game origin) — unreachable from this page',
 ];
 
 /**
@@ -444,15 +543,29 @@ const readFileAsText = (file) =>
  * Filename embeds the universe id so a user managing several servers can
  * tell exports apart at a glance: `oge-s163-pl-2026-07-08.json`.
  *
+ * ARCHIVE mode (`{ archive: true }`) is the same file in the same format —
+ * import reads it identically — with two differences: every slot uses its
+ * `archiveRead` where one exists (the player cache ships whole instead of
+ * watched-only), and the filename says `-archive-`. It is the restore image
+ * the abandon flow forces the user to take before deleting a universe, so
+ * "lossy but rebuild-able" is not acceptable there. What an archive still
+ * omits on purpose is enumerated in {@link ARCHIVE_OMITS}.
+ *
  * @param {string} universeId  Selected universe (e.g. `'s163-pl'`).
+ * @param {{ archive?: boolean }} [opts]
  * @returns {Promise<{ datasets: number, bytes: number }>} What was written
  *   (dataset count + serialized size) for the status line.
  */
-export const exportAllData = async (universeId) => {
+export const exportAllData = async (universeId, opts) => {
+  const archive = opts?.archive === true;
   /** @type {Record<string, unknown>} */
   const data = {};
   for (const slot of IO_SLOTS) {
-    const value = await (slot.exportRead ?? slot.read)(universeId);
+    if (slot.archiveOnly && !archive) continue;
+    const reader = archive
+      ? (slot.archiveRead ?? slot.exportRead ?? slot.read)
+      : (slot.exportRead ?? slot.read);
+    const value = await reader(universeId);
     if (slot.nonEmpty(value)) data[slot.field] = value;
   }
 
@@ -471,7 +584,10 @@ export const exportAllData = async (universeId) => {
   // callers running under node/test environments can await us safely.
   if (typeof document === 'undefined') return result;
 
-  downloadBlob(new Blob([json], { type: 'application/json' }), `oge-${universeId}-${todayIso()}.json`);
+  const name = archive
+    ? `oge-${universeId}-archive-${todayIso()}.json`
+    : `oge-${universeId}-${todayIso()}.json`;
+  downloadBlob(new Blob([json], { type: 'application/json' }), name);
   return result;
 };
 
@@ -547,6 +663,53 @@ export const importAllData = async (file, universeId) => {
   }
 
   return { parts, skipped };
+};
+
+/**
+ * Delete EVERY `<universeId>:oge_*` key from chrome.storage.local — the
+ * destructive half of the abandon flow, run only after the caller has taken an
+ * archive ({@link exportAllData} with `{ archive: true }`).
+ *
+ * Irreversible from inside the extension: there is no tombstone, no trash, no
+ * undo. The archive file IS the undo, and re-importing it into a re-created
+ * universe is the documented recovery path — which is why the UI refuses to
+ * reach this function before a download has succeeded.
+ *
+ * Two things it CANNOT reach, both disclosed in {@link ARCHIVE_OMITS} and in
+ * the panel:
+ *   1. Game-origin `localStorage` (the per-universe Settings values, lifeform
+ *      artifacts, daily flags). Another origin — a few KB, recreated with
+ *      defaults on the next visit.
+ *   2. The personal gist. The sync token lives on the game origin, so this
+ *      page cannot PATCH it away. Consequence worth stating plainly: with
+ *      cloud sync ON, opening that server again re-adopts whatever the gist
+ *      still holds for it. That is a safety net, not a leak — but it means
+ *      "abandon" frees space on THIS device, not everywhere.
+ *
+ * Batched into ONE `remove` call so the deletion is a single storage
+ * transaction rather than N racing writes (and one `onChanged` for the
+ * listeners).
+ *
+ * @param {string} universeId
+ * @returns {Promise<{ keys: number, bytes: number }>} What was removed —
+ *   key count + approximate freed size, for the status line.
+ */
+export const purgeUniverseData = async (universeId) => {
+  if (!universeId) return { keys: 0, bytes: 0 };
+  const all = /** @type {Record<string, unknown>} */ (await chromeStore.getAll());
+  const keys = universeStorageKeys(all, universeId);
+  if (keys.length === 0) return { keys: 0, bytes: 0 };
+  let bytes = 0;
+  for (const key of keys) {
+    try {
+      bytes += JSON.stringify(all[key])?.length ?? 0;
+    } catch {
+      // Unserializable value (shouldn't happen for stored JSON) — its size is
+      // unknown, not zero, but the byte count is cosmetic. Delete it anyway.
+    }
+  }
+  await chromeStore.remove(keys);
+  return { keys: keys.length, bytes };
 };
 
 /**

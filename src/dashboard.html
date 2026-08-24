@@ -1368,6 +1368,47 @@
   .sync-tag-local   { background: #26262e; color: #9fb4c4; }
   .sync-tag-partial { background: #2f2a14; color: #d9c24a; }
 
+  /* ── Abandon a server (archive → delete), inside the universe card ────
+        Mobile-first: the stepper rows wrap, and every control clears the
+        36px touch target used across the tools row. The destructive button
+        is the ONLY red control on the card, and it stays visibly disabled
+        until the archive has downloaded and the id has been typed. */
+  .abandon-foot { display: flex; justify-content: flex-end; margin-top: 10px; }
+  .abandon-toggle, .abandon-archive, .abandon-delete {
+    background: #18222e; border: 1px solid #2b3a4d; color: #9fb4c4;
+    padding: 5px 14px; border-radius: 999px; font-size: 12px; cursor: pointer;
+    min-height: 36px; -webkit-tap-highlight-color: transparent;
+  }
+  @media (hover: hover) {
+    .abandon-toggle:hover, .abandon-archive:hover { border-color: #4a9eff; color: #cfe4ff; }
+    .abandon-delete:not([disabled]):hover { background: #3a1a1a; color: #ff9090; }
+  }
+  .abandon-delete { border-color: #5a2a2a; color: #ff8a89; }
+  .abandon-delete[disabled], .abandon-archive[disabled] {
+    opacity: 0.4; cursor: default;
+  }
+  .abandon-panel {
+    margin-top: 10px; padding: 10px 12px;
+    background: #140f10; border: 1px solid #4a2222; border-radius: 6px;
+  }
+  .abandon-warn { color: #ff8a89; font-size: 13px; line-height: 1.45; margin-bottom: 10px; }
+  .abandon-step {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px;
+  }
+  .abandon-state { color: #8a97a3; font-size: 12px; }
+  .abandon-state.ok { color: #4af74d; }
+  .abandon-confirm {
+    flex: 1 1 140px; min-width: 0; min-height: 36px;
+    background: #0d1620; border: 1px solid #2b3a4d; border-radius: 6px;
+    color: #cfe4ff; font-size: 13px; padding: 4px 10px;
+  }
+  .abandon-confirm:focus { outline: none; border-color: #4a9eff; }
+  .abandon-confirm[disabled] { opacity: 0.4; }
+  .abandon-note { color: #8a97a3; font-size: 12px; line-height: 1.45; margin-top: 8px; }
+  .abandon-note-head { color: #9fb4c4; font-weight: 600; margin-bottom: 2px; }
+  .abandon-omits { margin: 0; padding-left: 18px; }
+  .abandon-omits li { margin: 1px 0; }
+
   /* ── Moved settings controls (Sync + AlarmClock tabs) ───────────────── */
   .rem-master-row { display: inline-flex; align-items: center; gap: 8px; margin-top: 2px; }
   .rem-card input.rem-mono { width: auto; }

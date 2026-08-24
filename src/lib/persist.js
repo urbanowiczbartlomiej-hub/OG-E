@@ -63,8 +63,10 @@ import { debounce } from './debounce.js';
  *   Read the stored value. May be sync or async. Return `undefined`/`null`
  *   to mean "nothing stored yet, keep the store's initial value".
  * @param {(value: T) => void | Promise<void>} cfg.save
- *   Persist the given value. Return type is ignored — we don't wait on
- *   async saves. Storage errors are the callback's responsibility.
+ *   Persist the given value. We never WAIT on an async save, but a returned
+ *   promise IS observed: a rejection is logged as "change NOT saved" rather
+ *   than silently swallowed (see `writeNow`). Recovery/retry remains the
+ *   callback's concern.
  * @param {number} [cfg.debounceMs=0]
  *   If > 0, debounce write-through by this many ms. Default 0 =
  *   immediate write on every change.
@@ -85,7 +87,32 @@ export const persist = ({ store, load, save, debounceMs = 0, onHydrate }) => {
   // The alternative order — hydrate, then subscribe — would silently
   // drop the hydrate value on the floor, leaving storage and store in
   // agreement but never confirming that agreement by round-trip.
-  const writeNow = () => { save(store.get()); };
+  // A rejected `save` used to be dropped on the floor: `chromeStore.set`
+  // rejects when the browser refuses the write (quota exhausted, shutdown),
+  // and with the promise unobserved the store kept the value in memory while
+  // storage never got it — the change simply vanished on the next page load.
+  // That is exactly how a full `chrome.storage.local` (several universes'
+  // apiCache against the 10 MB default) silently stopped recording new
+  // colonies. We cannot recover the write here, but it must never be
+  // INVISIBLE: log it loudly and let the caller's own error surfacing (the
+  // durability-critical flush paths already try/catch) do the rest.
+  const writeNow = () => {
+    try {
+      const r = save(store.get());
+      if (r && typeof (/** @type {any} */ (r)).then === 'function') {
+        /** @type {Promise<void>} */ (r).catch((err) => {
+          // Raw console, NOT lib/logger: that sink is opt-in (off unless the
+          // user sets the debug flag), and losing a write must be visible to
+          // the user who never knew a flag existed.
+          // eslint-disable-next-line no-console -- silent data loss is worse than a stray log
+          console.error('[OG-E] persist: write failed, change NOT saved:', err);
+        });
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console -- see above
+      console.error('[OG-E] persist: write threw, change NOT saved:', err);
+    }
+  };
   const write = debounceMs > 0 ? debounce(writeNow, debounceMs) : writeNow;
   const unsubscribe = store.subscribe(write);
 

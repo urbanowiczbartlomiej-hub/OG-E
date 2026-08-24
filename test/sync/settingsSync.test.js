@@ -71,10 +71,14 @@ describe('isUniverseScopedSetting / UNIVERSE_SCOPED_SETTINGS', () => {
     // colPositions / colPreferOtherGalaxies, the colony* knobs (B2) and the
     // fleet-save fs* knobs (B3) moved OUT to the per-universe Galaxy-Scan
     // config store (synced via the gist's galaxyScanConfig slot).
-    expect(UNIVERSE_SCOPED_SETTINGS.size).toBe(2);
+    expect(UNIVERSE_SCOPED_SETTINGS.size).toBe(3);
     expect(isUniverseScopedSetting('colonyPassword')).toBe(false);
     expect(isUniverseScopedSetting('fsThreshold')).toBe(false);
     expect(isUniverseScopedSetting('maxExpeditionsPerPlanet')).toBe(true);
+    // Same Settings tile as the cap above: "jump to the next planet after
+    // sending" is a per-server routine, and cloud sync used to flatten it into
+    // one global value that every universe then adopted.
+    expect(isUniverseScopedSetting('autoRedirectExpedition')).toBe(true);
     expect(isUniverseScopedSetting('alarmClockNtfyToken')).toBe(true);
     expect(isUniverseScopedSetting('colPositions')).toBe(false);
     expect(isUniverseScopedSetting('colPreferOtherGalaxies')).toBe(false);
