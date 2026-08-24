@@ -29,21 +29,48 @@ const setSettings = () => {
   settingsStore.set(/** @type {any} */ (s));
 };
 
-/** Stage the overview page of a fresh small colony. @param {string} [coords] */
+/** Stage the overview page of a fresh small colony.
+ *
+ * The two-row `#planetList` is load-bearing: the abandon gate refuses to offer
+ * the LAST planet, so a single-row list would (correctly) yield no button.
+ *
+ * @param {string} [coords] */
 const stageOverview = (coords = '[4:30:8]') => {
   location.search = '?page=ingame&component=overview&cp=12345';
   document.body.innerHTML = `
     <div id="diameterContentField">12345km (0/100)</div>
     <div id="positionContentField"><a>${coords}</a></div>
+    <div id="planetList">
+      <div class="smallplanet" id="planet-1001">
+        <a class="planetlink" data-tooltip-title="Home [4:30:7] 12.000km (120/188)">
+          <span class="planet-name">Home</span>
+        </a>
+      </div>
+      <div class="smallplanet" id="planet-1002">
+        <a class="planetlink" data-tooltip-title="Fresh ${coords} 12.345km (0/100)">
+          <span class="planet-name">Fresh</span>
+        </a>
+      </div>
+    </div>
   `;
 };
 
 /** Stage a galaxy page with a fresh colony in the planet list (navigate state).
+ *
+ * The established Home row ahead of it is load-bearing twice over: the scan
+ * skips it (usedFields > 0) and it is what makes the fresh colony not the
+ * account's last planet, which the abandon gate requires.
+ *
  * @param {number} [max] the colony's max fields (default below the keep threshold) */
 const stageFreshElsewhere = (max = 163) => {
   location.search = '?page=ingame&component=galaxy';
   document.body.innerHTML = `
     <div id="planetList">
+      <div class="smallplanet" id="planet-1001">
+        <a class="planetlink" data-tooltip-title="Home [1:2:3] 12.000km (120/188)">
+          <span class="planet-name">Home</span>
+        </a>
+      </div>
       <div class="smallplanet" id="planet-1002">
         <a class="planetlink" data-tooltip-title="Fresh [1:2:4] 9.000km (0/${max})">
           <span class="planet-name">Fresh</span>

@@ -75,6 +75,28 @@ const parsePlanetRow = (row) => {
 };
 
 /**
+ * Does the account hold MORE than one planet — i.e. is any planet abandonable
+ * at all?
+ *
+ * OGame forbids giving up your last planet: an account must always own at
+ * least one. Early game that is exactly the case the abandon FAB got wrong —
+ * the starting homeworld is usually small (well under the default 320-field
+ * keep threshold) and has nothing built on it yet, so it reads as a textbook
+ * "fresh colony, too small to keep" and the button offered to delete the only
+ * planet the player has. The game would refuse it; the button must not propose
+ * it in the first place.
+ *
+ * Counted off `#planetList` rows carrying a `planet-<n>` id — moon rows have no
+ * such id, so a planet+moon account still reads as one planet. A list we cannot
+ * read at all counts as zero and therefore also blocks: for an irreversible
+ * action, "unsure" must fail closed.
+ *
+ * @returns {boolean}
+ */
+export const hasAbandonableSurplus = () =>
+  document.querySelectorAll(GAME.SMALL_PLANET_ONLY).length > 1;
+
+/**
  * Scan `#planetList` and return the first row whose `usedFields` is exactly
  * zero (a freshly-colonized planet with nothing built). Document order — the
  * first hit matches the sidebar's visual order.
@@ -89,6 +111,8 @@ const parsePlanetRow = (row) => {
  */
 export const findFirstFreshPlanet = ({ belowFields } = {}) => {
   const rows = document.querySelectorAll(GAME.SMALL_PLANET_ONLY);
+  // Never offer the LAST planet (see {@link hasAbandonableSurplus}).
+  if (!hasAbandonableSurplus()) return null;
   for (const row of rows) {
     const p = parsePlanetRow(row);
     if (!p) continue;

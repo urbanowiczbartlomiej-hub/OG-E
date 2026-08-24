@@ -38,7 +38,12 @@ const resetSettingsToDefaults = () => {
 /**
  * Paint the overview page bits `checkAbandonState` + the flow read on entry.
  *
- * @param {{ isOverview?: boolean, usedFields?: number, maxFields?: number, coords?: string }} [opts]
+ * `planets` is how many `#planetList` rows the account owns. It defaults to
+ * 2 because the gate refuses to offer the LAST planet (OGame forbids a
+ * 0-planet account) — a one-row list is the early-game case, covered by its
+ * own test below.
+ *
+ * @param {{ isOverview?: boolean, usedFields?: number, maxFields?: number, coords?: string, planets?: number }} [opts]
  * @returns {void}
  */
 const setupOverviewScene = ({
@@ -46,13 +51,24 @@ const setupOverviewScene = ({
   usedFields = 0,
   maxFields = 100,
   coords = '[4:30:8]',
+  planets = 2,
 } = {}) => {
   location.search = isOverview
     ? '?page=ingame&component=overview&cp=12345'
     : '?page=ingame&component=galaxy';
+  const rows = Array.from(
+    { length: planets },
+    (_, i) => `
+      <div class="smallplanet" id="planet-100${i}">
+        <a class="planetlink" data-tooltip-title="P${i} [4:30:${i + 1}] 12.345km (0/100)">
+          <span class="planet-name">P${i}</span>
+        </a>
+      </div>`,
+  ).join('');
   document.body.innerHTML = `
     <div id="diameterContentField">12345km (${usedFields}/${maxFields})</div>
     <div id="positionContentField"><a>${coords}</a></div>
+    <div id="planetList">${rows}</div>
   `;
 };
 
@@ -127,11 +143,32 @@ describe('checkAbandonState', () => {
     setupOverviewScene({ usedFields: 5, maxFields: 100 });
     expect(checkAbandonState()).toBeNull();
   });
+
+  // The early-game trap: a starting homeworld is small and empty, so it reads
+  // as a textbook "fresh colony, too small to keep" — but it is the only
+  // planet the account has and OGame would refuse to give it up.
+  it('returns null on a single-planet account (the last planet is never abandonable)', () => {
+    setupOverviewScene({ usedFields: 0, maxFields: 100, planets: 1 });
+    expect(checkAbandonState()).toBeNull();
+  });
+
+  // An unreadable planet list must fail CLOSED — this is an irreversible
+  // action, so "cannot tell how many planets you own" blocks it.
+  it('returns null when the planet list cannot be read at all', () => {
+    setupOverviewScene({ usedFields: 0, maxFields: 100, planets: 0 });
+    expect(checkAbandonState()).toBeNull();
+  });
 });
 
 describe('createAbandonFlow — entry gates', () => {
   it('returns null when checkAbandonState is invalid (not overview)', () => {
     setupOverviewScene({ isOverview: false });
+    setPassword('secret');
+    expect(createAbandonFlow()).toBeNull();
+  });
+
+  it('returns null on a single-planet account', () => {
+    setupOverviewScene({ usedFields: 0, maxFields: 100, planets: 1 });
     setPassword('secret');
     expect(createAbandonFlow()).toBeNull();
   });

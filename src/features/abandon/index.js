@@ -58,6 +58,7 @@ import {
 import { withDecision, DEC_ABANDONED } from '../../domain/colonizeDecisions.js';
 import { safeClick, waitFor } from '../../lib/dom.js';
 import { GAME } from '../../lib/gameDom.js';
+import { hasAbandonableSurplus } from './detect.js';
 
 /**
  * Mark a galaxy slot as abandoned in {@link scansStore} so the galaxy overlay
@@ -114,6 +115,10 @@ const cleanupAbandonedPlanet = (galaxy, system, position) => {
 export const checkAbandonState = (config) => {
   const s = config ?? galaxyScanConfigStore.get();
   if (!location.search.includes('component=overview')) return null;
+  // The last planet can never be given up (OGame forbids a 0-planet account),
+  // and early game that IS this page: the small, empty starting homeworld reads
+  // as a fresh too-small colony. See `detect.hasAbandonableSurplus`.
+  if (!hasAbandonableSurplus()) return null;
   // Moons are never abandonable — the game has no "abandon" for them, and a
   // fresh moon reads used===0 with a small field max, so without this guard the
   // FAB wrongly offered "Abandon · N fields · too small" on a moon. The body

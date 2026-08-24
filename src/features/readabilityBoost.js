@@ -442,20 +442,25 @@ a.ago_movement.tooltip .ago_color_palered,
 
 /* ===== Messages paginator (touch targets) =====
    OGame ships the messages pager as five 16px sq16 gradient buttons
-   (⟪ ⟨ 1/7 ⟩ ⟫). 16px is under half the ~40px a finger needs, so on a
-   phone the prev/next arrows are a coin-flip to hit — the single most
-   used control on the messages page.
+   (⟪ ⟨ 1/7 ⟩ ⟫). 16px is under a third of the 48px a finger needs, so on
+   a phone the prev/next arrows are a coin-flip to hit — the single most
+   used control on the messages page. Mobile is worse than the raw numbers
+   suggest: OGame's mobile layout hands the game itself only ~60% of the
+   viewport, so the pager row is squeezed into a fraction of the screen the
+   16px button was never drawn for. We scale to a full 48px — the platform
+   touch-target minimum — rather than merely "bigger than stock".
 
    We enlarge them with a TRANSFORM, not by resizing the box. The button's
    look is a gradient-button skin cut for a 16px square (frame + gradient
    slices); growing width/height stretches the frame away from the glyph and
    the enabled/disabled variants end up different sizes. scale() blows up
    the rendered result as a unit, so every arrow stays exactly the game's
-   button — just 2.2× bigger — and disabled ones keep their dimmed look.
+   button — just 3× bigger — and disabled ones keep their dimmed look.
 
    The trade-off is that a transform does NOT affect layout: each arrow still
-   occupies its unscaled 16px, so the overhang (16px × 2.2 ≈ 35px ⇒ ~19px)
-   has to be paid for by hand — margins on the buttons, padding on the row.
+   occupies its unscaled 16px, so the overhang (16px × 3 = 48px ⇒ ~32px
+   total) has to be paid for by hand — margins on the buttons, padding on
+   the row.
 
    NEVER set display on .messagePaginator. OGame hides the whole pager on
    a single-page tab with jQuery .hide() (inline display:none) and brings
@@ -498,25 +503,28 @@ a.ago_movement.tooltip .ago_color_palered,
    width:20px (#messages .firstPage/.previousPage/.nextPage/.lastPage) — so a
    margin on the button itself buys NOTHING: the flex item keeps its 20px and
    the scaled button just overhangs it. The air has to come from the wrapper
-   width + the row's gap instead. 16px × 2.2 ≈ 35px ⇒ a 38px wrapper holds the
-   arrow, and gap:14px is then real air between two of them. */
+   width + the row's gap instead. 16px × 3 = 48px ⇒ a 52px wrapper holds the
+   arrow, and gap:18px is then real air between two of them. The row's own
+   padding pays the VERTICAL overhang: the wrapper stays 20px tall, so a 48px
+   arrow spills (48-20)/2 = 14px above and below it, and 16px of padding
+   clears that. */
 .messagePaginator {
   height: auto !important;
-  gap: 14px !important;
-  padding: 10px 0 !important;
+  gap: 18px !important;
+  padding: 16px 0 !important;
 }
 .messagePaginator .firstPage,
 .messagePaginator .previousPage,
 .messagePaginator .nextPage,
 .messagePaginator .lastPage {
-  width: 38px !important;
+  width: 52px !important;
   display: flex !important;
   justify-content: center !important;
   align-items: center !important;
 }
 .messagePaginator gradient-button {
   display: inline-block !important;
-  transform: scale(2.2) !important;
+  transform: scale(3) !important;
   transform-origin: center !important;
 }
 /* The messages page renders the pager TWICE (above the list and below it).
@@ -542,13 +550,13 @@ a.ago_movement.tooltip .ago_color_palered,
    the document so the last message can always be scrolled clear of it. Keyed
    on "this page has a pager" so no other page pays for it. */
 body:has(.messagePaginator) {
-  padding-bottom: 76px !important;
+  padding-bottom: 96px !important;
 }
 /* The "1/7" readout between the arrows — sized up with them so the row
    reads as one control strip. */
 .messagePaginator .currentPage {
-  font-size: 16px !important;
-  padding: 0 2px !important;
+  font-size: 18px !important;
+  padding: 0 4px !important;
   white-space: nowrap !important;
 }
 `;

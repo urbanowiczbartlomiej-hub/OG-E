@@ -53,7 +53,12 @@ export const preferencesSection = {
               seg: {
                 key: 'maxExpeditionsPerPlanet',
                 caption: 'Max / planet',
-                choices: [1, 2],
+                // 3 is the early-game case: expedition slots scale with
+                // Astrophysics, so a 1–3 planet account can already run 9
+                // expeditions while having far fewer planets to spread them
+                // over — the cap has to reach 3 or the send counter stops
+                // short of the slots the player actually owns.
+                choices: [1, 2, 3],
                 hint: 'Max expeditions per planet',
               },
             },

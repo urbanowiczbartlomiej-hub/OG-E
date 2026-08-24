@@ -4,6 +4,38 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.62.0] — 2026-08-24
+
+### Added
+
+- **The expedition send cap now goes up to 3 per planet.** It stopped at 2,
+  which quietly short-changed a young account: expedition slots scale with
+  Astrophysics, so a 1–3 planet account can already run 9 expeditions while
+  having far fewer planets to spread them over. With the cap at 2 the send
+  counter ran out before the slots did, and the rest of the fleet stayed home.
+  Settings → Preferences → Expeditions → Max / planet.
+
+### Fixed
+
+- **The Abandon button no longer offers to give up your only planet.** Early
+  game the starting homeworld is small and has nothing built on it yet, so it
+  read as a textbook "fresh colony, too small to keep" — and the button
+  proposed deleting the one planet the account owns. OGame would have refused
+  it anyway, but the button should never have proposed it. It now stays away
+  unless you hold more than one planet, and if the planet list can't be read at
+  all it also stays away: for something this irreversible, "unsure" has to mean
+  "no".
+
+- **The messages pager arrows are big enough to actually hit.** They were
+  already enlarged, but not enough — the arrows landed just under the size a
+  finger needs, so the prev/next taps on the most-used control of the messages
+  page were still a coin flip. They are now a full 48px, the platform's
+  touch-target minimum, with real space between them and the page readout sized
+  to match. This matters more on a phone than the numbers suggest: OGame's
+  mobile layout gives the game itself only about 60% of the viewport, so the
+  pager row is squeezed into a fraction of the screen the original 16px button
+  was never drawn for.
+
 ## [1.61.2] — 2026-08-23
 
 ### Fixed
