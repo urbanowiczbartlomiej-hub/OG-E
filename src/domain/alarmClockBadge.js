@@ -20,6 +20,12 @@
 // States, in priority order:
 //
 //   - cancelled    — the user tore it down (waves tombstone; ad-hoc delete).
+//   - reminders off — this KIND is switched off (its tab's master switch), so
+//                    nothing was ever set for it. Distinguished from "not set"
+//                    because the two need opposite fixes: flip the switch vs
+//                    wait for sync / paste a token. A bare "not set" on a
+//                    fleet-save the player deliberately isn't tracking reads
+//                    as a fault in OG-E.
 //   - not set      — nothing on ntfy: no token, or sync hasn't run yet.
 //   - > 3 days out — detected but deferred: ntfy delivers at most 3 days ahead,
 //                    so the reminder is set once the fleet is within range
@@ -34,7 +40,7 @@
 /**
  * @typedef {object} AlarmClockBadge
  * @property {string} text  Human label shown in the pill.
- * @property {'queued'|'fired'|'scheduled'|'none'|'far'|'cancelled'} cls
+ * @property {'queued'|'fired'|'scheduled'|'none'|'far'|'cancelled'|'off'} cls
  *   State key → maps to a `.rem-badge.<cls>` colour (see `dashboard.html`).
  */
 
@@ -49,6 +55,9 @@
  * @param {boolean} [o.hasNtfyData]   Whether the live ntfy queue was fetched
  *   (false ⇒ we can't tell pending from fired).
  * @param {boolean} [o.tooFar]        Deferred beyond ntfy's 3-day horizon.
+ * @param {boolean} [o.kindOff]       This kind's master switch is off. Only
+ *   consulted when nothing is scheduled: a reminder already set stays "set"
+ *   (it will still ring) even if the kind was switched off afterwards.
  * @returns {AlarmClockBadge}
  */
 export const alarmClockBadge = ({
@@ -57,9 +66,11 @@ export const alarmClockBadge = ({
   pendingCount = 0,
   hasNtfyData = false,
   tooFar = false,
+  kindOff = false,
 } = {}) => {
   if (cancelled) return { text: 'cancelled', cls: 'cancelled' };
   if (scheduledCount <= 0) {
+    if (kindOff) return { text: 'reminders off', cls: 'off' };
     return tooFar
       ? { text: '> 3 days out', cls: 'far' }
       : { text: 'not set', cls: 'none' };

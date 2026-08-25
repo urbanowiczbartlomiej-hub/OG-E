@@ -123,6 +123,7 @@ import { installAlarmClock, _resetAlarmClockForTest } from './alarmClock.js';
 import { installRoutes } from './routes.js';
 import { installScanColonyConfig } from './scanConfig.js';
 import { installAlarmClockConfig } from './alarmClockConfig.js';
+import { installAlarmTabs, _resetAlarmTabsForTest } from './alarmTabs.js';
 import { installSync } from './sync.js';
 import { installSettingsControls } from './settingsControls.js';
 import { installAllianceShare } from './allianceShare.js';
@@ -281,6 +282,16 @@ let scanColonyConfigApi = null;
  * @type {{ refresh: () => void } | null}
  */
 let alarmClockConfigApi = null;
+
+/**
+ * Handle to the AlarmClock section's sub-tab strip, set by
+ * `installAlarmTabs` at boot. Its `refresh()` repaints the per-kind on/off
+ * markers, which are per-universe — so the universe-selector change handler
+ * calls it like the siblings above.
+ *
+ * @type {{ refresh: () => void } | null}
+ */
+let alarmTabsApi = null;
 
 /**
  * Handle to the alliance-share panel's refresh entrypoint, set by
@@ -668,6 +679,10 @@ const boot = async () => {
   routesApi = installRoutes({ getUniverseId: () => selectedUniverseId });
   scanColonyConfigApi = installScanColonyConfig({ getUniverseId: () => selectedUniverseId });
   alarmClockConfigApi = installAlarmClockConfig({ getUniverseId: () => selectedUniverseId });
+  // The AlarmClock section's own sub-tabs. Installed AFTER the config editor so
+  // the three per-kind panes already hold their forms when the strip restores
+  // the remembered tab.
+  alarmTabsApi = installAlarmTabs({ getUniverseId: () => selectedUniverseId });
   // Sync tab is cross-universe (ignores the selector) and self-subscribes to
   // chrome.storage changes, so it needs no universe getter and no post-load
   // repaint — one install wires it for good.
@@ -694,6 +709,7 @@ const boot = async () => {
   routesApi?.refresh();
   scanColonyConfigApi?.refresh();
   alarmClockConfigApi?.refresh();
+  alarmTabsApi?.refresh();
   allianceShareApi?.refresh();
   wireListeners();
 
@@ -3803,6 +3819,7 @@ const wireListeners = () => {
     routesApi?.refresh();
     scanColonyConfigApi?.refresh();
     alarmClockConfigApi?.refresh();
+    alarmTabsApi?.refresh();
     allianceShareApi?.refresh();
   });
 
@@ -3831,6 +3848,8 @@ export const _resetDashboardForTest = () => {
   routesApi = null;
   scanColonyConfigApi = null;
   alarmClockConfigApi = null;
+  alarmTabsApi = null;
+  _resetAlarmTabsForTest();
   allianceShareApi = null;
   history = [];
   scans = {};

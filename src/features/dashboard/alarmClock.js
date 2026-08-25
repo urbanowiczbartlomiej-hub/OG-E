@@ -43,6 +43,39 @@ import {
   NTFY_MAX_DELAY_SEC,
 } from '../../sync/ntfyReconciler.js';
 import { alarmClockBadge } from '../../domain/alarmClockBadge.js';
+import { alarmClockConfigKeyFor } from '../../state/alarmClockConfig.js';
+import { galaxyScanConfigKeyFor } from '../../state/galaxyScanConfig.js';
+import { normalizeAlarmClockConfig } from '../../domain/alarmClockConfig.js';
+import { normalizeGalaxyScanConfig } from '../../domain/galaxyScanConfig.js';
+
+/**
+ * Which kinds are switched ON for the selected server. The preview lists what
+ * was DETECTED in-game, which is independent of whether reminders are set for
+ * it — so a card for a switched-off kind needs to say "reminders off" rather
+ * than the bare "not set" that reads as a fault in OG-E.
+ *
+ * @typedef {{ waveOn: boolean, fsOn: boolean }} KindFlags
+ */
+
+/**
+ * Read the selected server's per-kind master switches. Defaults to ON when no
+ * server is selected: claiming "reminders off" without having read the config
+ * would be a lie in the one direction that matters.
+ *
+ * @returns {Promise<KindFlags>}
+ */
+const readKindFlags = async () => {
+  const uni = getActiveUniverseId();
+  if (!uni) return { waveOn: true, fsOn: true };
+  const [rc, gs] = await Promise.all([
+    chromeStore.get(alarmClockConfigKeyFor(uni)),
+    chromeStore.get(galaxyScanConfigKeyFor(uni)),
+  ]);
+  return {
+    waveOn: normalizeAlarmClockConfig(rc).alarmClockEnabled,
+    fsOn: normalizeGalaxyScanConfig(gs).fsEnabled,
+  };
+};
 
 /**
  * @typedef {import('../../sync/alarmClock.js').AlarmClockState} AlarmClockState
@@ -161,6 +194,14 @@ export const installAlarmClock = (opts = {}) => {
   unsubscribeStorage = chromeStore.onChanged((changes) => {
     if (ALARM_CLOCK_NTFY_TOKEN_KEY in changes) void updateTopic();
     if (ALARM_CLOCK_MIRROR_KEY in changes) void refreshPreview();
+    // The per-kind master switches decide between the "reminders off" and
+    // "not set" badges, so flipping one on the Expeditions / Fleet-save tab
+    // has to repaint this list too — otherwise the preview keeps blaming
+    // OG-E for a reminder the user just enabled (or vice versa).
+    const uni = getActiveUniverseId();
+    if (uni && (alarmClockConfigKeyFor(uni) in changes || galaxyScanConfigKeyFor(uni) in changes)) {
+      void refreshPreview();
+    }
   });
 
   return { refresh: () => { void refreshPreview(); } };
@@ -337,16 +378,17 @@ export const isFleetSaveTooFarOut = (fs, scheduledCount, nowSec) => {
  */
 const refreshPreview = async () => {
   setPreviewStatus('loading…', 'warn');
-  const [gistId, gistToken, ntfyToken, mirrorRaw] = await Promise.all([
+  const [gistId, gistToken, ntfyToken, mirrorRaw, flags] = await Promise.all([
     chromeStore.get(ALARM_CLOCK_GIST_ID_KEY),
     chromeStore.get(ALARM_CLOCK_TOKEN_KEY),
     chromeStore.get(ALARM_CLOCK_NTFY_TOKEN_KEY),
     chromeStore.get(ALARM_CLOCK_MIRROR_KEY),
+    readKindFlags(),
   ]);
   const mirror = coerceMirror(mirrorRaw);
 
   if (!gistId || !gistToken) {
-    renderPreviewMulti(mirror, new Map());
+    renderPreviewMulti(mirror, new Map(), flags);
     setPreviewStatus(
       Object.keys(mirror).length > 0 ? 'from last mirror (no token yet)' : 'no data yet',
       'warn',
@@ -424,7 +466,7 @@ const refreshPreview = async () => {
       }
     }
 
-    renderPreviewMulti(states, ntfyMap);
+    renderPreviewMulti(states, ntfyMap, flags);
     // Scope the count to the SELECTED server (which is all the preview shows).
     // The ntfy topic is shared across the account's universes, so the whole
     // queue size would over-report what THIS server actually has pending.
@@ -443,7 +485,7 @@ const refreshPreview = async () => {
       'ok',
     );
   } catch (err) {
-    renderPreviewMulti(mirror, new Map());
+    renderPreviewMulti(mirror, new Map(), flags);
     setPreviewStatus('couldn\'t refresh (' + /** @type {Error} */ (err).message + ') — showing last known', 'err');
   }
 };
@@ -484,9 +526,11 @@ const node = (tag, o = {}) => {
  *
  * @param {Record<string, AlarmClockState>} states
  * @param {Map<string, { id: string, time: number, message?: string }>} ntfyMap
+ * @param {KindFlags} [flags]  Per-kind master switches for the selected server
+ *   (defaults to all-on, so a caller that can't read them never claims "off").
  * @returns {void}
  */
-const renderPreviewMulti = (states, ntfyMap) => {
+const renderPreviewMulti = (states, ntfyMap, flags = { waveOn: true, fsOn: true }) => {
   if (!el.remPreview) return;
   const root = el.remPreview;
   root.textContent = '';
@@ -525,9 +569,9 @@ const renderPreviewMulti = (states, ntfyMap) => {
   const section = node('section', { class: 'rem-universe' });
   // Server name intentionally omitted — it's already shown (and chosen) in the
   // page-wide Server selector at the top of the page; repeating it is noise.
-  renderWavesInto(section, active, state, ntfyMap);
+  renderWavesInto(section, active, state, ntfyMap, flags.waveOn);
   renderAdhocInto(section, active, state, ntfyMap);
-  renderFleetSavesInto(section, state, ntfyMap);
+  renderFleetSavesInto(section, state, ntfyMap, flags.fsOn);
   renderGuardianInto(section, active, ntfyMap);
   root.appendChild(section);
 };
@@ -708,9 +752,12 @@ const appendFiresAtLine = (card, stillQueued) => {
  * @param {readonly unknown[]} items   Already-sorted entries for this list.
  * @param {string} title               Heading text.
  * @param {string} [emptyMessage]      Muted note shown when there are no items (omit for a silent skip).
+ * @param {string} [offNote]           Muted note under the heading, explaining
+ *   ONCE that this kind is switched off — the per-card "reminders off" badges
+ *   say WHAT, this says where to fix it, without repeating itself per card.
  * @returns {boolean}  `true` when the heading was appended and the caller should render `items`.
  */
-const beginAlarmClockSection = (section, items, title, emptyMessage) => {
+const beginAlarmClockSection = (section, items, title, emptyMessage, offNote) => {
   if (items.length === 0) {
     if (emptyMessage) {
       const p = node('p', { text: emptyMessage });
@@ -720,6 +767,10 @@ const beginAlarmClockSection = (section, items, title, emptyMessage) => {
     return false;
   }
   section.appendChild(node('h4', { class: 'rem-universe-head', text: title }));
+  if (offNote) {
+    const p = node('p', { class: 'rem-off-note', text: offNote });
+    section.appendChild(p);
+  }
   return true;
 };
 
@@ -733,14 +784,18 @@ const beginAlarmClockSection = (section, items, title, emptyMessage) => {
  *   needed so the per-card cancel button knows which gist file to PATCH.
  * @param {AlarmClockState} state
  * @param {Map<string, { id: string, time: number, message?: string }>} ntfyMap
+ * @param {boolean} [kindOn]  Whether expedition reminders are switched on for
+ *   this server — a detected wave with nothing set reads very differently
+ *   depending on the answer.
  * @returns {void}
  */
-const renderWavesInto = (section, universeId, state, ntfyMap) => {
+const renderWavesInto = (section, universeId, state, ntfyMap, kindOn = true) => {
   const sorted = (Array.isArray(state?.waves) ? state.waves : [])
     .slice()
     .sort((a, b) => a.nextWaveAt - b.nextWaveAt);
   if (!beginAlarmClockSection(section, sorted, 'Expedition waves',
-    'No reminders set. Send an expedition burst in-game to set reminders.')) return;
+    'No reminders set. Send an expedition burst in-game to set reminders.',
+    kindOn ? undefined : 'Expedition reminders are switched off (Expeditions tab). These waves were detected in-game — nothing will ring for them.')) return;
 
   const nowSec = Math.floor(Date.now() / 1000);
   const notify = state.notifyState || {};
@@ -766,6 +821,7 @@ const renderWavesInto = (section, universeId, state, ntfyMap) => {
       scheduledCount: totalScheduled,
       pendingCount: stillQueued.length,
       hasNtfyData: ntfyMap.size > 0,
+      kindOff: !kindOn,
     });
     head.appendChild(node('span', { class: 'rem-badge ' + badge.cls, text: badge.text }));
 
@@ -889,13 +945,16 @@ const renderAdhocInto = (section, universeId, state, ntfyMap) => {
  * @param {HTMLElement} section
  * @param {AlarmClockState} state
  * @param {Map<string, { id: string, time: number, message?: string }>} ntfyMap
+ * @param {boolean} [kindOn]  Whether fleet-save reminders are switched on for
+ *   this server (see {@link renderWavesInto}).
  * @returns {void}
  */
-const renderFleetSavesInto = (section, state, ntfyMap) => {
+const renderFleetSavesInto = (section, state, ntfyMap, kindOn = true) => {
   const sorted = (Array.isArray(state?.fleetSave) ? state.fleetSave : [])
     .slice()
     .sort((a, b) => a.arrivalAt - b.arrivalAt);
-  if (!beginAlarmClockSection(section, sorted, 'Fleet-save reminders')) return;
+  if (!beginAlarmClockSection(section, sorted, 'Fleet-save reminders', undefined,
+    kindOn ? undefined : 'Fleet-save reminders are switched off (Fleet-save tab). These were detected in-game — nothing will ring for them.')) return;
 
   const notify = state.fleetSaveNotify || {};
   const nowSec = Math.floor(Date.now() / 1000);
@@ -919,6 +978,7 @@ const renderFleetSavesInto = (section, state, ntfyMap) => {
       pendingCount: stillQueued.length,
       hasNtfyData: ntfyMap.size > 0,
       tooFar,
+      kindOff: !kindOn,
     });
     head.appendChild(node('span', { class: 'rem-badge ' + badge.cls, text: badge.text }));
     card.appendChild(head);

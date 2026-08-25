@@ -45,9 +45,13 @@ const ALARM_CLOCK_TS_KEY = `${UNI}:oge_alarmClockConfigTs`;
 const store = new Map();
 
 const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
-/** Trigger + run the alarmClock editor's autosave (bubbling change → 500 ms debounce). */
+/**
+ * Trigger + run the alarmClock editor's autosave (bubbling change → 500 ms
+ * debounce). The editor listens per PANE, so the event has to originate inside
+ * one of them — any pane will do, the save collects all three either way.
+ */
 const settle = async () => {
-  document.getElementById('alarmClockConfigBody')
+  document.getElementById('alarmPaneFs')
     ?.dispatchEvent(new Event('change', { bubbles: true }));
   vi.advanceTimersByTime(600);
   await flush();
@@ -113,7 +117,12 @@ beforeEach(() => {
     store.set(k, v);
     return Promise.resolve();
   });
-  document.body.innerHTML = '<div id="alarmClockConfigBody"></div><div id="colonizationConfigBody"></div>';
+  // The alarmClock editor mounts into the AlarmClock section's per-kind
+  // sub-tab panes plus their shared footer (see dashboard.html), not one
+  // container — so the harness has to provide all four.
+  document.body.innerHTML =
+    '<div id="alarmPaneAdhoc"></div><div id="alarmPaneFs"></div><div id="alarmPaneExpo"></div>'
+    + '<div id="alarmCfgFooter"></div><div id="colonizationConfigBody"></div>';
   vi.useFakeTimers();
 });
 

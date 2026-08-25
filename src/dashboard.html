@@ -349,6 +349,10 @@
   details.settings-panel > summary::before { content: '\25B8\00A0'; }
   details.settings-panel[open] > summary::before { content: '\25BE\00A0'; }
   .settings-panel .settings-body { margin-top: 10px; }
+  /* An always-open settings panel: same rule + spacing the <details> variant
+     drew, with a plain heading where the disclosure summary used to be. */
+  .settings-panel-open { margin-top: 24px; border-top: 1px solid #1a2a3a; padding-top: 12px; }
+  .settings-open-title { color: #4a9eff; font-size: 15px; font-weight: bold; margin: 0; }
   .settings-panel .settings-desc { color: #888; font-size: 13px; margin: 4px 0 12px; line-height: 1.5; }
 
   /* ── Settings-panel form controls — one shared look, matching the Daily
@@ -420,7 +424,6 @@
   .cfg-hint { color: #6b7785; font-size: 12px; }
   .cfg-group { color: #4a9eff; font-size: 14px; font-weight: bold; margin: 14px 0 8px; }
   .cfg-group:first-child { margin-top: 0; }
-  .cfg-sub { color: #9cf; font-size: 12px; font-weight: bold; margin: 10px 0 4px; }
   /* Compact label+input rows laid out in responsive columns (1 → 2 → 3). */
   .cfg-grid { display: grid; grid-template-columns: 1fr; column-gap: 20px; }
   @media (min-width: 700px)  { .cfg-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -467,9 +470,9 @@
   .oge-tpl-preview { color: #9fd0ff; font-size: 12px; margin-top: 4px; }
   .oge-tpl-warn { color: #ffb454; font-size: 12px; margin-top: 2px; }
 
-  /* Generic in-section sub-tabs — shared by the AlarmClock ⚙ Settings
-     sub-panes (Expedition waves / Ad-hoc / Fleet-save) and the Colonizations
-     sub-tabs (Big Colony Hunting / Galaxy Viewer). */
+  /* Generic in-section sub-tabs — shared by the AlarmClock section's strip
+     (General / Reminders set / Ad-hoc / Fleet-save / Expeditions) and the
+     Colonizations sub-tabs (Big Colony Hunting / Galaxy Viewer). */
   .subtabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 14px; border-bottom: 1px solid #2a4a5a; }
   .subtab { background: transparent; border: 1px solid transparent; border-bottom: none;
     color: #888; padding: 6px 14px; font-size: 13px; cursor: pointer; border-radius: 6px 6px 0 0; }
@@ -477,6 +480,19 @@
   .subtab.active { color: #fff; background: #16252f; border-color: #2a4a5a; font-weight: bold; }
   .subtabpane { display: none; }
   .subtabpane.active { display: block; }
+
+  /* A sub-tab can carry a STATE marker and can be LOCKED. Both exist so the
+     shape of the whole feature reads off the tab strip alone: the player sees
+     "expeditions is off" without opening the pane, and a tab whose
+     prerequisite is missing (alarm clock off / no token) greys out instead of
+     opening an inert form. Word + colour, never a glyph. */
+  .subtab-state { margin-left: 7px; font-size: 10px; letter-spacing: 0.04em;
+    text-transform: uppercase; padding: 1px 5px; border-radius: 4px;
+    background: #3a3320; color: #d8b45a; font-weight: normal; vertical-align: 1px; }
+  .subtab-state:empty { display: none; }
+  .subtab.locked { color: #4a545e; cursor: not-allowed; }
+  .subtab.locked:hover { color: #4a545e; background: transparent; }
+  .subtab.locked .subtab-state { background: #23292f; color: #5a646e; }
   /* ── Galaxy Viewer (scout pane) — redesigned layout: one config card, a
      map card, a results card, in the user's working order (configure → map
      → results). The cards share one look. ── */
@@ -1176,11 +1192,43 @@
   /* Mini gradient bar for the ramped legend buckets (farm richness, threat
      strength) — a flat swatch under a "→ brighter" label contradicts itself. */
   .smap-leg-ramp { width: 36px; height: 10px; border-radius: 2px; display: inline-block; }
-  /* Each pane splits into Settings | Message columns; stacks on narrow. */
-  .rem-pane-grid { display: grid; grid-template-columns: 1fr; gap: 0 32px; align-items: start; }
-  .rem-pane-grid .cfg-sub:first-child { margin-top: 0; }
   .cfg-block-label { color: #ccc; font-size: 13px; margin-bottom: 6px; }
-  @media (min-width: 860px) { .rem-pane-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+
+  /* AlarmClock panes lay their content out in responsive COLUMNS instead of
+     one full-width stack (which left most of a desktop pane empty).
+     Mobile-first: one column, then two, then three.
+
+     `.alarm-grid` flows CARDS (General: push channel | privacy).
+     `.alarm-sections` flows SECTIONS INSIDE one card — that's the shape the
+     per-kind config panes use, matching the Colonization & abandon settings
+     panel: one framed box, columns of labelled groups inside it. A frame per
+     group would draw three or four boxes for what is really one form. */
+  .alarm-grid,
+  .alarm-sections { display: grid; grid-template-columns: 1fr; gap: 14px 24px; align-items: start; }
+  @media (min-width: 900px) {
+    .alarm-grid.cols-2, .alarm-grid.cols-3,
+    .alarm-sections.cols-2, .alarm-sections.cols-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (min-width: 1280px) {
+    .alarm-grid.cols-3,
+    .alarm-sections.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    /* Only at three columns: the message editor is the widest thing in the
+       pane (textarea + token chips + preview), so it drops to its own
+       full-width row under the knobs rather than being squeezed into a third. */
+    .alarm-sections.cols-3 > .alarm-sec-wide { grid-column: 1 / -1; }
+  }
+  .alarm-sec-title { color: #9cf; font-size: 12px; font-weight: bold; margin: 0 0 6px; }
+  /* A pane's master switch sits OUTSIDE its card, on one line with its hint:
+     switching the pane off then hides the card entirely, leaving this row
+     alone instead of an empty framed box. */
+  .alarm-switch-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  /* Inside a column the 220px label gutter no longer fits, so every label
+     stacks above its field — the same shape the narrow-viewport rule below
+     gives on mobile. */
+  .alarm-grid .cfg-label,
+  .alarm-sections .cfg-label { flex-basis: 100%; max-width: 100%; padding-top: 0; }
+  .alarm-grid .cfg-field,
+  .alarm-sections .cfg-field { flex-basis: 100%; }
 
   @media (max-width: 620px) {
     .cfg-label { flex-basis: 100%; max-width: 100%; padding-top: 0; }
@@ -1195,18 +1243,30 @@
     padding: 14px 16px;
   }
   .rem-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .rem-card-title { color: #4a9eff; font-size: 14px; font-weight: bold; margin: 0 0 10px; }
+  /* Stacked form field (label over its controls) — the card columns are too
+     narrow for the .rem-row label gutter, and stacking also drops the empty
+     spacer labels the old alignment needed. */
+  .rem-field { margin-top: 14px; }
+  .rem-field > label { display: block; color: #aaa; font-size: 13px; margin-bottom: 5px; }
+  .rem-field-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .rem-field-row button:not(.rem-eye) { min-width: 92px; }
+  .rem-field-row input.rem-mono { flex: 1 1 180px; min-width: 0; }
   .rem-row label { color: #aaa; font-size: 13px; min-width: 220px; }
   /* Action buttons wear the chip-pill vocabulary (phase D) — one control
      language with the top-bar tools and the chip groups. */
-  .rem-row button {
+  .rem-row button,
+  .rem-field-row button {
     background: #18222e; border: 1px solid #2b3a4d; color: #9fb4c4;
     padding: 5px 14px; border-radius: 999px; font-size: 12px; cursor: pointer;
     min-height: 36px; -webkit-tap-highlight-color: transparent;
   }
   @media (hover: hover) {
-    .rem-row button:hover { border-color: #4a9eff; color: #cfe4ff; }
+    .rem-row button:hover,
+    .rem-field-row button:hover { border-color: #4a9eff; color: #cfe4ff; }
   }
-  .rem-row button:disabled { opacity: 0.4; cursor: default; }
+  .rem-row button:disabled,
+  .rem-field-row button:disabled { opacity: 0.4; cursor: default; }
   /* Eye reveal/hide toggle. When the topic is shown, a diagonal slash is
      drawn over the eye glyph (an "eye-off" look) so the button face shows the
      action's current state without swapping glyphs across platforms. */
@@ -1238,6 +1298,9 @@
   .rem-status.warn { color: #ffb454; }
   .rem-status.err { color: #ff8888; }
   .rem-universe { margin-bottom: 18px; }
+  /* One-line "this kind is switched off, fix it here" note under a section
+     heading — says WHERE once, so the per-card badges only have to say WHAT. */
+  .rem-off-note { color: #9aa7b1; font-size: 12px; margin: -2px 0 8px; line-height: 1.45; }
   .rem-universe-head {
     color: #9fd0ff; font-size: 13px; margin: 0 0 6px 0;
     border-bottom: 1px solid #2a4a5a; padding-bottom: 4px;
@@ -1269,6 +1332,9 @@
   .rem-badge.fired { background: #26323a; color: #8aa3ad; }
   .rem-badge.scheduled { background: #2a3b4a; color: #bcd6e6; }
   .rem-badge.none { background: #5a4a2a; color: #ffe2a8; }
+  /* "reminders off" is a deliberate setting, not a warning — muted grey, so it
+     doesn't compete with the amber states that DO want a fix. */
+  .rem-badge.off { background: #2f353b; color: #9aa7b1; }
   .rem-badge.far { background: #3a3a5a; color: #cfcfff; }
   .rem-badge.cancelled { background: #3a3a3a; color: #aaa; }
   .rem-cancel {
@@ -1460,7 +1526,7 @@
     <p style="color:#888;font-size:13px;margin-bottom:16px;">
       The field size of each of your new colonies. The in-game <strong>Colonization</strong> button sends
       several colonize missions back-to-back with a minimum gap, so when a new colony turns out too small
-      there's time to abandon it just before the next one lands. Enter your account password in Settings
+      there's time to abandon it just before the next one lands. Enter your account password in the settings
       below and the in-game <strong>Abandon</strong> button removes an undersized colony in a couple of taps.
     </p>
     <div class="controls">
@@ -1471,12 +1537,12 @@
     </div>
     <div class="stats" id="statsContainer"></div>
     <div class="chart-container"><div class="chart" id="chart"></div></div>
-    <details class="settings-panel">
-      <summary>⚙ Colonization &amp; abandon settings</summary>
+    <div class="settings-panel settings-panel-open">
+      <h2 class="settings-open-title">⚙ Colonization &amp; abandon settings</h2>
       <div class="settings-body">
         <div id="colonizationConfigBody"></div>
       </div>
-    </details>
+    </div>
   </div>
 
   <div class="subtabpane" data-subtab="scout">
@@ -1866,91 +1932,111 @@
     set the clock, close the game, and the alarm rings on your phone.
   </p>
 
-  <div class="rem-card" style="margin-top:14px">
-    <div class="rem-master-row">
+  <!-- One sub-tab strip for the whole feature: the channel setup (General),
+       what is currently queued (Reminders set), and one pane per reminder kind
+       — instead of the old "everything stacked, settings buried in a ⚙ details
+       at the very bottom" shape. features/dashboard/alarmTabs.js locks
+       everything past General until the clock is on AND has a usable token,
+       and stamps each kind's on/off state onto its own tab. -->
+  <div class="subtabs" id="alarmSubtabs" role="tablist">
+    <button type="button" class="subtab active" data-subtab="general" role="tab">General</button>
+    <button type="button" class="subtab" data-subtab="reminders" role="tab">Reminders set</button>
+    <button type="button" class="subtab" data-subtab="adhoc" role="tab">Ad-hoc</button>
+    <button type="button" class="subtab" data-subtab="fs" role="tab">Fleet-save</button>
+    <button type="button" class="subtab" data-subtab="expo" role="tab">Expeditions</button>
+  </div>
+
+  <div class="subtabpane active" data-subtab="general">
+    <div class="alarm-switch-row">
       <button type="button" class="toggle-chip" id="remMasterToggle">Enable alarm clock</button>
+      <span class="cfg-hint">reminders ring on your phone via ntfy.sh</span>
     </div>
-    <p class="rem-hint" style="margin-top:8px">
-      Log in to <a href="https://ntfy.sh/" target="_blank" rel="noopener"
-        style="color:#f2c877;text-decoration:underline;">ntfy.sh</a> → Account →
-      Access tokens → Create access token (Token never expires) → copy the token
-      (like <code>tk_…</code>) and paste it below.
-    </p>
-    <div id="remBody">
-    <div class="rem-row" style="margin-top:12px">
-      <label>ntfy.sh access token</label>
-      <input id="remNtfyToken" class="rem-mono" type="password" autocomplete="off" spellcheck="false" placeholder="tk_…">
-      <button id="remRevealNtfy" class="rem-eye" type="button"
-        title="Show token" aria-label="Show token" aria-pressed="false">👁</button>
-      <button id="remValidateBtn" type="button">Validate</button>
-    </div>
-    <div class="rem-row" style="margin-top:6px; align-items:flex-start">
-      <label></label>
-      <div id="remTokenStatus" class="rem-status">—</div>
-    </div>
-    <div class="rem-row" style="margin-top:12px">
-      <label>Your ntfy topic</label>
-      <span id="remTopic" class="rem-mono">—</span>
-      <button id="remRevealTopic" class="rem-eye" type="button"
-        title="Show topic" aria-label="Show topic" aria-pressed="false">👁</button>
-      <button id="remCopyTopic" type="button">Copy</button>
-    </div>
-    <div class="rem-row" style="margin-top:6px">
-      <label></label>
-      <span class="rem-substatus">Subscribe to this on your phone.</span>
-    </div>
-    <details class="rem-privacy">
-      <summary>Is this private? How your topic is protected</summary>
-      <p class="rem-hint">
-        OG-E derives this topic from your ntfy <strong>access token</strong> (SHA-256, 88
-        random bits). Nobody can guess it — that's roughly 3×10²⁶ possibilities — and ntfy.sh
-        does not let anyone list or browse topics, so it can only be found if you reveal it.
-        Treat it like a password: it is a <strong>secret URL</strong>, and anyone who learns it
-        can read your fleet reminders and inject fake ones. Never share or post it.
-      </p>
-      <p class="rem-hint">
-        <strong>Worried someone got hold of it?</strong> Change your ntfy access token above.
-        That instantly derives a brand-new topic — the old one goes silent on its own, no
-        other cleanup needed.
-      </p>
-      <p class="rem-hint">
-        <strong>Want absolute certainty that only you can read it?</strong> Lock the topic to
-        your account so even someone who knows its name is shut out:
-      </p>
-      <ol>
-        <li>On ntfy.sh (web), reserve this exact topic and set its access to
-          <em>“deny everyone else”</em> (only you).</li>
-        <li>On your phone, <strong>delete the current subscription</strong> to this topic, then
-          add it again.</li>
-        <li>This time, sign in to the ntfy app with your ntfy username and password.</li>
-      </ol>
-      <p class="rem-hint">
-        After that the topic is access-controlled: only your logged-in account can read or
-        publish to it. (Reserving a topic is a paid ntfy.sh feature, or free on your own
-        self-hosted ntfy server.)
-      </p>
-    </details>
+    <!-- #remBody IS the card grid: settingsControls.js hides it wholesale when
+         the master switch is off, so nothing but the switch row survives. -->
+    <div id="remBody" class="alarm-grid cols-2">
+      <div class="rem-card">
+        <p class="rem-hint" style="margin-top:0">
+          Log in to <a href="https://ntfy.sh/" target="_blank" rel="noopener"
+            style="color:#f2c877;text-decoration:underline;">ntfy.sh</a> → Account →
+          Access tokens → Create access token (Token never expires) → copy the token
+          (like <code>tk_…</code>) and paste it below.
+        </p>
+        <div class="rem-field">
+          <label for="remNtfyToken">ntfy.sh access token</label>
+          <div class="rem-field-row">
+            <input id="remNtfyToken" class="rem-mono" type="password" autocomplete="off" spellcheck="false" placeholder="tk_…">
+            <button id="remRevealNtfy" class="rem-eye" type="button"
+              title="Show token" aria-label="Show token" aria-pressed="false">👁</button>
+            <button id="remValidateBtn" type="button">Validate</button>
+          </div>
+          <div id="remTokenStatus" class="rem-status">—</div>
+        </div>
+        <div class="rem-field">
+          <label>Your ntfy topic</label>
+          <div class="rem-field-row">
+            <span id="remTopic" class="rem-mono">—</span>
+            <button id="remRevealTopic" class="rem-eye" type="button"
+              title="Show topic" aria-label="Show topic" aria-pressed="false">👁</button>
+            <button id="remCopyTopic" type="button">Copy</button>
+          </div>
+          <span class="rem-substatus">Subscribe to this on your phone.</span>
+        </div>
+      </div>
+
+      <div class="rem-card">
+        <h2 class="rem-card-title">Privacy</h2>
+        <p class="rem-hint" style="margin-top:0">
+          OG-E derives this topic from your ntfy <strong>access token</strong> (SHA-256, 88
+          random bits). Nobody can guess it — that's roughly 3×10²⁶ possibilities — and ntfy.sh
+          does not let anyone list or browse topics, so it can only be found if you reveal it.
+          Treat it like a password: it is a <strong>secret URL</strong>, and anyone who learns it
+          can read your fleet reminders and inject fake ones. Never share or post it.
+        </p>
+        <p class="rem-hint">
+          <strong>Worried someone got hold of it?</strong> Change your ntfy access token.
+          That instantly derives a brand-new topic — the old one goes silent on its own, no
+          other cleanup needed.
+        </p>
+        <details class="rem-privacy">
+          <summary>Lock the topic to your account</summary>
+          <p class="rem-hint">
+            Want absolute certainty that only you can read it? Lock the topic to your account
+            so even someone who knows its name is shut out:
+          </p>
+          <ol>
+            <li>On ntfy.sh (web), reserve this exact topic and set its access to
+              <em>“deny everyone else”</em> (only you).</li>
+            <li>On your phone, <strong>delete the current subscription</strong> to this topic, then
+              add it again.</li>
+            <li>This time, sign in to the ntfy app with your ntfy username and password.</li>
+          </ol>
+          <p class="rem-hint">
+            After that the topic is access-controlled: only your logged-in account can read or
+            publish to it. (Reserving a topic is a paid ntfy.sh feature, or free on your own
+            self-hosted ntfy server.)
+          </p>
+        </details>
+      </div>
     </div>
   </div>
 
-  <div class="rem-card" style="margin-top:14px">
-    <div class="rem-row" style="margin-bottom:8px">
-      <h2 style="margin:0;color:#4a9eff;font-size:16px;flex:1">Reminders set</h2>
-      <span id="remPreviewStatus" class="rem-status"></span>
-      <button id="remRefresh">Refresh</button>
+  <div class="subtabpane" data-subtab="reminders">
+    <div class="rem-card">
+      <div class="rem-row" style="margin-bottom:10px">
+        <span id="remPreviewStatus" class="rem-status" style="flex:1"></span>
+        <button id="remRefresh">Refresh</button>
+      </div>
+      <div id="remPreview"></div>
     </div>
-    <div id="remPreview"></div>
   </div>
 
-  <details class="settings-panel">
-    <summary>⚙ Settings</summary>
-    <div class="settings-body">
-      <p class="settings-desc">
-        Expedition-wave cadence, ad-hoc lead time, and fleet-save.
-      </p>
-      <div id="alarmClockConfigBody"></div>
-    </div>
-  </details>
+  <!-- The three config panes are filled by features/dashboard/alarmClockConfig.js.
+       `settings-panel` is carried for its INPUT/BUTTON styling only (the class
+       used to come from the ⚙ <details> wrapper these panes replaced). -->
+  <div class="subtabpane settings-panel" data-subtab="adhoc" id="alarmPaneAdhoc"></div>
+  <div class="subtabpane settings-panel" data-subtab="fs" id="alarmPaneFs"></div>
+  <div class="subtabpane settings-panel" data-subtab="expo" id="alarmPaneExpo"></div>
+  <div class="settings-panel" id="alarmCfgFooter" style="display:none"></div>
 </section>
 
 <section id="routesSection" class="tab-section">
