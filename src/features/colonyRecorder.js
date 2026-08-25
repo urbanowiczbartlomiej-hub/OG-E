@@ -2,44 +2,66 @@
 //
 // # What it does
 //
-// When the user loads the OGame overview page for a planet that has never
-// had anything built on it (`usedFields === 0`), this feature captures the
-// planet's `cp`, max `fields`, `coords` and `position` and appends a
-// {@link ColonyEntry}-shaped row to {@link historyStore}. Deduplication is
-// by `cp` — if we have already recorded the planet, the second overview
-// visit is a no-op.
+// On every ingame page-load the recorder scans `#planetList` and appends a
+// {@link ColonyEntry}-shaped row to {@link historyStore} for every planet
+// that has nothing built on it yet (`used === 0`) and is not already in
+// history. Deduplication is by `cp` — a planet we have recorded once is
+// never recorded again.
 //
-// # Why only `usedFields === 0`
+// # Why the planet LIST and not the overview panel
 //
-// Max `fields` is fixed per planet for its lifetime, so in principle we
-// could record any overview visit. But overview visits to developed
-// planets happen constantly (every login, every tab switch, every menu
-// action) and each one would force a write-through to chrome.storage.
-// Gating on `usedFields === 0` narrows the trigger to the one moment that
-// actually produces a new row: the first overview-load of a fresh colony.
-// After that, the dedup-by-cp check makes repeat attempts cheap.
+// The recorder used to read `#diameterContentField` on
+// `component=overview`, which exposes `(used/max)` for the ACTIVE planet
+// only. That made an observation conditional on the user personally
+// visiting each fresh colony's overview while it was still empty — and
+// silently lost the datum otherwise, because the `used === 0` gate below
+// closes the moment the first building is queued. Colonizing two or three
+// slots in one go made that likely rather than rare: each colony needed
+// its own overview visit, and whichever one got built on first was gone.
+//
+// OGame renders the sidebar server-side on every ingame page, and each
+// planet's `data-tooltip-title` carries the same `(used/max)` pair as the
+// overview panel. So one read of any page sees the whole account. The
+// window in which an observation can be lost shrinks from "visit this
+// colony's overview before building on it" to "load any OGame page before
+// building on it".
+//
+// # Why the `used === 0` gate STAYS
+//
+// A planet's `max` is NOT fixed for its lifetime: the Terraformer raises
+// it, and a sufficiently developed lifeform tree raises it too. Reading
+// `max` off a developed planet therefore yields a Terraformer-inflated
+// number, not the planet's natural field count — feeding those into the
+// histogram would bias the whole distribution toward the large end and
+// make the estimate useless. `used === 0` is the proxy for "nothing has
+// been built, so nothing can have raised `max` yet", which is exactly the
+// pristine value we want.
+//
+// The gate is not perfect: a player can buy extra fields with antimatter
+// (instant, two clicks) or reach an LF field bonus with a very deliberate
+// build order that lays down no field-occupying building at all. Both are
+// rare and deliberately out of scope — the first is a shop purchase, the
+// second costs an hour of intentionally suboptimal play on one planet.
 //
 // # Why we do NOT prune abandoned colonies
 //
-// This is documented at length in `src/state/history.js`: the
-// histogram is meant to estimate
-// the real shape of OGame's `fields` distribution, which means every
-// observation counts, including planets the player later abandoned. If
-// we only kept "current" colonies the small-fields bucket would look
-// artificially empty — small planets get abandoned fast — biasing every
-// downstream statistic toward the large end. The recorder therefore
-// only ever appends; removal lives in a separate user-driven tombstone
-// path and is not this module's concern.
+// This is documented at length in `src/state/history.js`: the histogram is
+// meant to estimate the real shape of OGame's `fields` distribution, which
+// means every observation counts, including planets the player later
+// abandoned. If we only kept "current" colonies the small-fields bucket
+// would look artificially empty — small planets get abandoned fast —
+// biasing every downstream statistic toward the large end. The recorder
+// therefore only ever appends; removal lives in a separate user-driven
+// tombstone path and is not this module's concern.
 //
 // # Why a single attempt (with retry) per install
 //
-// The content script runs the install once on boot. OGame reloads the
-// whole page on every navigation, so a new process runs for each
-// overview visit. We do not listen for SPA nav or mutations — one install
-// per page-load is both simpler and exactly right for the trigger we
-// want. The `waitFor` retry exists only because the overview DOM can
-// still be hydrating when `content.js` fires; once the relevant nodes
-// are present (or 5s has elapsed), the recorder is done.
+// The content script runs the install once on boot. OGame reloads the whole
+// page on every navigation, so a new process runs for each visit. We do not
+// listen for SPA nav or mutations — one install per page-load is both
+// simpler and exactly right for the trigger we want. The `waitFor` retry
+// exists only because the sidebar can still be hydrating when `content.js`
+// fires; once the rows are present (or 5s has elapsed), the recorder is done.
 //
 // # Why the first attempt is gated on `whenHistoryHydrated`
 //
@@ -62,6 +84,7 @@
 //
 // @see ../state/history.js — the store this feature writes into, and the
 //   canonical explanation of the "keep every observation" invariant.
+// @see ./shared/planetRows.js — the sidebar projection this feature reads.
 
 /** @ts-check */
 
@@ -72,125 +95,60 @@ import {
   whenColonizeDecisionsHydrated,
 } from '../state/colonizeDecisions.js';
 import { withDecision, DEC_MINE } from '../domain/colonizeDecisions.js';
+import { readPlanetRows } from './shared/planetRows.js';
 import { waitFor } from '../lib/dom.js';
 import { GAME } from '../lib/gameDom.js';
 
 /**
- * Parse the bracketed coord string OGame renders inside
- * `#positionContentField a`, e.g. `"[4:30:8]"`.
+ * Single collection attempt. Returns the number of entries appended to
+ * {@link historyStore} — `0` when the sidebar is absent or not yet
+ * hydrated, when no planet is fresh, or when every fresh planet is already
+ * recorded.
  *
- * Returns the trimmed coord string (to preserve the game-DOM format
- * downstream consumers expect), the integer `galaxy`/`system`, and the integer
- * `position` (slot number 1..15). Anything that does not match the exact
- * bracketed form is treated as unparseable — we never record partial coords.
+ * Every fresh planet found is appended in ONE `historyStore.update` call.
+ * That matters for the multi-colony case this function exists to fix: three
+ * separate `update`s would mean three write-throughs, and (worse) three
+ * chances for a concurrent tab's write to land in between and clobber the
+ * partial result.
  *
- * @param {string | null | undefined} text
- * @returns {{ coords: string, galaxy: number, system: number, position: number } | null}
- */
-const parseCoords = (text) => {
-  if (typeof text !== 'string') return null;
-  const trimmed = text.trim();
-  const match = trimmed.match(/^\[(\d+):(\d+):(\d+)\]$/);
-  if (!match) return null;
-  return {
-    coords: trimmed,
-    galaxy: parseInt(match[1], 10),
-    system: parseInt(match[2], 10),
-    position: parseInt(match[3], 10),
-  };
-};
-
-/**
- * Parse the `#diameterContentField` text, which mixes a diameter number
- * with a `(usedFields/maxFields)` pair, e.g. `"12345km (0/163)"`.
+ * All branches that append nothing return without any side effect, which is
+ * what lets `installColonyRecorder` call this twice (sync + post-waitFor)
+ * without double-recording.
  *
- * We only care about the parenthesised pair; the diameter number itself
- * is irrelevant for histogram collection. Returns `null` when the pair
- * is missing or malformed — the feature then skips the write.
- *
- * @param {string | null | undefined} text
- * @returns {{ usedFields: number, maxFields: number } | null}
- */
-const parseDiameter = (text) => {
-  if (typeof text !== 'string') return null;
-  const match = text.match(/\((\d+)\/(\d+)\)/);
-  if (!match) return null;
-  return {
-    usedFields: parseInt(match[1], 10),
-    maxFields: parseInt(match[2], 10),
-  };
-};
-
-/**
- * Read the currently-selected planet's `cp` from `#planetList
- * .hightlightPlanet` (note the OGame-native spelling, not "highlight").
- * The node's id is `"planet-<cpId>"`.
- *
- * Returns `null` when the highlighted planet is missing, the id is not
- * the expected form, or the numeric tail is zero / NaN. We never accept
- * `cp === 0`: OGame's planet ids are strictly positive, and 0 would
- * silently collide with an "unset" sentinel elsewhere.
- *
- * @returns {number | null}
- */
-const readActiveCp = () => {
-  const active = document.querySelector(GAME.ACTIVE_PLANET);
-  if (!active) return null;
-  const id = active.id;
-  if (typeof id !== 'string' || !id.startsWith('planet-')) return null;
-  const cp = parseInt(id.slice('planet-'.length), 10);
-  return Number.isFinite(cp) && cp > 0 ? cp : null;
-};
-
-/**
- * Single collection attempt. Returns `true` if a new entry was appended
- * to {@link historyStore}, `false` in every other case (wrong page, DOM
- * not ready, already-recorded `cp`, non-fresh colony, malformed parse).
- *
- * The function is pure-ish: it reads `location.search` and the document,
- * and writes to `historyStore`. All branches that do NOT append return
- * early without any side effect, which is what lets `installColonyRecorder`
- * call this twice (sync + post-waitFor) without double-recording.
- *
- * @returns {Promise<boolean>}
+ * @returns {Promise<number>}
  */
 const tryCollect = async () => {
-  if (!location.search.includes('component=overview')) return false;
+  const rows = readPlanetRows();
+  if (rows.length === 0) return 0;
 
-  const cp = readActiveCp();
-  if (cp === null) return false;
-
-  const diameterEl = document.querySelector(GAME.DIAMETER_FIELD);
-  const diameter = parseDiameter(diameterEl?.textContent);
-  if (!diameter) return false;
-  // Fresh colonies only — see module header on why this gate matters.
-  if (diameter.usedFields !== 0) return false;
-
-  const coordsEl = document.querySelector(GAME.POSITION_FIELD_LINK);
-  const parsed = parseCoords(coordsEl?.textContent);
-  if (!parsed) return false;
+  // Fresh planets only — see the module header on why this gate must stay.
+  const fresh = rows.filter((r) => r.used === 0);
+  if (fresh.length === 0) return 0;
 
   // Dedup by cp: OGame's cp-ids are globally unique and monotonically
   // increasing, so a matching cp means we already have this observation.
-  const current = historyStore.get();
-  if (current.some((h) => h.cp === cp)) return false;
+  const known = new Set(historyStore.get().map((h) => h.cp));
+  const novel = fresh.filter((r) => !known.has(r.cp));
+  if (novel.length === 0) return 0;
 
+  const timestamp = Date.now();
   historyStore.update((prev) => [
     ...prev,
-    {
-      cp,
-      fields: diameter.maxFields,
-      coords: parsed.coords,
-      position: parsed.position,
-      timestamp: Date.now(),
-    },
+    ...novel.map((r) => ({
+      cp: r.cp,
+      fields: r.max,
+      coords: r.coords,
+      position: r.position,
+      timestamp,
+    })),
   ]);
 
-  // This fresh colony is OURS — record a `mine` decision carrying its field
-  // count (`f`), the one datum the public API can never provide. It blocks the
-  // picker from re-proposing the slot in the lag window before universe.xml
-  // lists it, tells a second device "ours", and (Stage 4) carries the histogram
-  // value into the synced log. flush so it survives any immediate reload.
+  // These fresh colonies are OURS — record a `mine` decision carrying each
+  // field count (`f`), the one datum the public API can never provide. It
+  // blocks the picker from re-proposing the slot in the lag window before
+  // universe.xml lists it, tells a second device "ours", and carries the
+  // histogram value into the synced log. flush so it survives any immediate
+  // reload.
   //
   // colonizeDecisionsStore hydrates independently of historyStore, with no
   // ordering guarantee between the two — writing here before THIS store's own
@@ -198,14 +156,16 @@ const tryCollect = async () => {
   // overwrites it moments later. Same race class documented at the top of this
   // file for historyStore; see state/targets.js for the sibling fix.
   await whenColonizeDecisionsHydrated();
-  const ck = /** @type {`${number}:${number}:${number}`} */ (
-    `${parsed.galaxy}:${parsed.system}:${parsed.position}`
-  );
   colonizeDecisionsStore.update((prev) =>
-    withDecision(prev, ck, { s: DEC_MINE, ts: Date.now(), f: diameter.maxFields }),
+    novel.reduce((acc, r) => {
+      const ck = /** @type {`${number}:${number}:${number}`} */ (
+        `${r.galaxy}:${r.system}:${r.position}`
+      );
+      return withDecision(acc, ck, { s: DEC_MINE, ts: timestamp, f: r.max });
+    }, prev),
   );
   void flushColonizeDecisionsStore();
-  return true;
+  return novel.length;
 };
 
 /**
@@ -228,15 +188,14 @@ let installed = null;
  *      hydrate — see module header for the full failure mode. In tests
  *      that bypass `initHistoryStore` the promise is pre-resolved, so
  *      the deferred work fires on the next microtask.
- *   2. After hydration: first attempt — if the overview DOM is already
- *      populated and the planet is fresh, the write happens immediately
+ *   2. After hydration: first attempt — if the sidebar is already
+ *      populated and some planet is fresh, the write happens immediately
  *      and the returned dispose is effectively a no-op.
- *   3. If that attempt did not record anything, schedule a
- *      {@link waitFor} poll for `#diameterContentField` (the last DOM
- *      node the overview page paints). When it appears we retry exactly
- *      once; on timeout we silently give up. We never retry on "present
- *      but malformed" — that indicates the page is not the overview we
- *      expected and polling will not fix it.
+ *   3. If that attempt recorded nothing, schedule a {@link waitFor} poll
+ *      for the first planet row, then retry exactly once; on timeout we
+ *      silently give up. Note the retry fires on "no rows yet", NOT on
+ *      "rows present, none fresh" — the latter is the steady state on
+ *      almost every page-load and polling would not change it.
  *   4. Idempotent per page-load: calling `installColonyRecorder()` a
  *      second time returns the dispose handle from the first call
  *      without scheduling a second attempt. The OGame content script
@@ -247,8 +206,7 @@ let installed = null;
  * The returned dispose flips `installed` back to `null`, re-enabling a
  * future install. It does NOT cancel a still-pending hydrate-await or
  * `waitFor` poll — every eventual `tryCollect` is a no-op once the
- * entry exists in history (dedup by cp) or once the page has navigated
- * away (location.search check). No cleanup is necessary for
+ * entries exist in history (dedup by cp). No cleanup is necessary for
  * correctness; the dispose is there for API symmetry with other
  * features (antiFlickerBackground, expeditionRedirect, ...).
  *
@@ -267,23 +225,18 @@ export const installColonyRecorder = () => {
   // unit-test path), so the .then callback simply fires on the next
   // microtask in that case.
   void whenHistoryHydrated().then(async () => {
-    // First try — avoids a pointless waitFor roundtrip when the
-    // overview DOM is already hydrated (the common case once OGame's
-    // own scripts have finished running before us).
+    // First try — avoids a pointless waitFor roundtrip when the sidebar
+    // is already hydrated (the common case once OGame's own scripts have
+    // finished running before us).
     if (await tryCollect()) return;
 
-    // Retry path: poll for the diameter element, then attempt once
-    // more. The poll itself aborts (returns truthy) when
-    // location.search stops saying `component=overview`, so a user
-    // navigating away mid-wait does not leave us stuck until the 5s
-    // timeout.
-    waitFor(
-      () => {
-        if (!location.search.includes('component=overview')) return true;
-        return document.querySelector(GAME.DIAMETER_FIELD) !== null;
-      },
-      { timeoutMs: 5000, intervalMs: 200 },
-    ).then(() => {
+    // Retry path: poll for a planet row, then attempt once more. The poll
+    // resolves immediately when rows already exist, so the cost in the
+    // steady state is one extra microtask, not a 5s wait.
+    waitFor(() => document.querySelector(GAME.SMALL_PLANET_ONLY) !== null, {
+      timeoutMs: 5000,
+      intervalMs: 200,
+    }).then(() => {
       void tryCollect();
     });
   });

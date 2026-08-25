@@ -2,15 +2,22 @@
 //
 // Unit tests for the colony-recorder feature.
 //
-// The module reads three things from the page:
-//   - `location.search` must contain `component=overview`,
-//   - `#planetList .hightlightPlanet` gives us the current `cp`,
-//   - `#diameterContentField` + `#positionContentField a` give size/coords.
-// ... and writes a {@link ColonyEntry} to `historyStore` when the planet
-// is fresh (`usedFields === 0`) and not already recorded.
+// The module reads ONE thing from the page: `#planetList`'s planet rows, via
+// the shared `features/shared/planetRows.js` projection (each row's
+// `data-tooltip-title` carries its `(used/max)` field pair). It writes a
+// {@link ColonyEntry} to `historyStore` for EVERY row that is fresh
+// (`used === 0`) and not already recorded.
+//
+// That is the behaviour these tests exist to pin. The recorder used to read
+// `#diameterContentField` on `component=overview`, which exposes the pair for
+// the ACTIVE planet only — so an observation was lost unless the player
+// personally opened each fresh colony's overview before building on it.
+// Colonising three slots in one go made that likely rather than rare. Hence
+// the cases below about recording planets you are NOT standing on, recording
+// several in one pass, and recording off the overview page entirely.
 //
 // Tests use happy-dom (DOM + localStorage available), a shared
-// `setupOverviewScene` helper to paint a canonical overview page, and
+// `setupSidebarScene` helper to paint a canonical planet sidebar, and
 // reset both `historyStore` and the module-scope `installed` sentinel
 // between cases via `_resetColonyRecorderForTest`. The hydration-race
 // regression case mocks `chromeStore` to keep `initHistoryStore`'s load
@@ -42,36 +49,56 @@ import {
 
 /** @typedef {import('../../src/state/history.js').ColonyEntry} ColonyEntry */
 
+/** @typedef {{ cp?: number, usedFields?: number, maxFields?: number, coords?: string, name?: string, active?: boolean, moon?: boolean, tooltip?: string | null }} PlanetSpec */
+
 /**
- * Paint the document to look like an OGame overview page. All knobs are
- * optional — the defaults describe a fresh colony at cp=12345, [4:30:8],
- * 163 max fields, 0 used. Individual tests override just the field they
- * care about.
+ * Render one `#planetList` row the way OGame does: the field pair lives in
+ * the link's `data-tooltip-title`, entity-decoded (which is what
+ * `getAttribute` hands back in the browser too).
  *
- * Writes `location.search` directly (happy-dom 14's `replaceState` does
- * NOT update `location.search` — this is the same workaround used by
- * `test/bridges/sendFleetHook.test.js`).
- *
- * @param {{ cp?: number, usedFields?: number, maxFields?: number, coords?: string, isOverview?: boolean }} [opts]
- * @returns {void}
+ * @param {PlanetSpec} spec
+ * @returns {string}
  */
-const setupOverviewScene = ({
+const planetRow = ({
   cp = 12345,
   usedFields = 0,
   maxFields = 163,
   coords = '[4:30:8]',
-  isOverview = true,
+  name = 'Kolonia',
+  active = false,
+  moon = false,
+  tooltip,
 } = {}) => {
-  location.search = isOverview
-    ? `?page=ingame&component=overview&cp=${cp}`
-    : `?page=ingame&component=galaxy`;
-  document.body.innerHTML = `
-    <div id="planetList">
-      <div class="smallplanet hightlightPlanet" id="planet-${cp}"></div>
-    </div>
-    <div id="diameterContentField">12345km (${usedFields}/${maxFields})</div>
-    <div id="positionContentField"><a>${coords}</a></div>
-  `;
+  const tip = tooltip === undefined
+    ? `<b>Kolonia ${coords}</b><br/>Forma życia: Mechy<br/>16.494km (${usedFields}/${maxFields})<br/>od -165 °C do -125 °C`
+    : tooltip;
+  const tipAttr = tip === null ? '' : ` data-tooltip-title="${tip.replace(/"/g, '&quot;')}"`;
+  // Moons carry a `moon-` id, which is exactly how the shared projection
+  // excludes them — a moon's field count is lunar-base capacity, a different
+  // quantity that must never enter a planet-field statistic.
+  const id = moon ? `moon-${cp}` : `planet-${cp}`;
+  return `<div class="smallplanet${active ? ' hightlightPlanet' : ''}" id="${id}">
+      <a class="planetlink"${tipAttr}><span class="planet-name">${name}</span></a>
+    </div>`;
+};
+
+/**
+ * Paint the document to look like any ingame page's planet sidebar. All knobs
+ * are optional — the defaults describe ONE fresh colony at cp=12345, [4:30:8],
+ * 163 max fields, 0 used. Pass `planets` for the multi-planet cases.
+ *
+ * `page` writes `location.search` directly (happy-dom 14's `replaceState`
+ * does NOT update `location.search` — same workaround as
+ * `test/bridges/sendFleetHook.test.js`). The recorder no longer gates on the
+ * page, and one of the tests below proves it.
+ *
+ * @param {PlanetSpec & { planets?: PlanetSpec[], page?: string }} [opts]
+ * @returns {void}
+ */
+const setupSidebarScene = ({ planets, page = 'overview', ...one } = {}) => {
+  location.search = `?page=ingame&component=${page}`;
+  const rows = (planets ?? [{ active: true, ...one }]).map(planetRow).join('');
+  document.body.innerHTML = `<div id="planetList">${rows}</div>`;
 };
 
 beforeEach(() => {
@@ -90,9 +117,9 @@ afterEach(() => {
 // ──────────────────────────────────────────────────────────────────
 
 describe('installColonyRecorder — synchronous path', () => {
-  it('records a fresh colony when the overview DOM is populated', async () => {
+  it('records a fresh colony when the sidebar is populated', async () => {
     const before = Date.now();
-    setupOverviewScene();
+    setupSidebarScene();
     installColonyRecorder();
     await Promise.resolve();
 
@@ -110,58 +137,97 @@ describe('installColonyRecorder — synchronous path', () => {
     expect(entry.timestamp).toBeLessThanOrEqual(Date.now());
   });
 
-  it('does nothing when the page is not the overview', async () => {
-    setupOverviewScene({ isOverview: false });
+  it('records off the overview page too — any ingame page renders the sidebar', async () => {
+    // The whole point of reading the sidebar: the observation no longer
+    // depends on the player opening this colony's overview.
+    setupSidebarScene({ page: 'galaxy' });
+    installColonyRecorder();
+    await Promise.resolve();
+    expect(historyStore.get().map((e) => e.cp)).toEqual([12345]);
+  });
+
+  it('records a fresh colony the player is NOT standing on', async () => {
+    // No `.hightlightPlanet` anywhere: the active planet is irrelevant now.
+    setupSidebarScene({ planets: [{ cp: 777, coords: '[7:7:7]', maxFields: 190 }] });
+    installColonyRecorder();
+    await Promise.resolve();
+
+    const entry = /** @type {ColonyEntry} */ (historyStore.get()[0]);
+    expect(entry.cp).toBe(777);
+    expect(entry.fields).toBe(190);
+  });
+
+  it('records EVERY fresh colony in one pass', async () => {
+    // The multi-colony case the sidebar read exists for: colonise three slots
+    // in one go and all three land, rather than whichever one got an overview
+    // visit before its first building.
+    setupSidebarScene({
+      planets: [
+        { cp: 1, coords: '[1:1:1]', maxFields: 100 },
+        { cp: 2, coords: '[1:1:2]', maxFields: 150 },
+        { cp: 3, coords: '[1:1:3]', maxFields: 200 },
+      ],
+    });
+    installColonyRecorder();
+    await Promise.resolve();
+
+    expect(historyStore.get().map((e) => [e.cp, e.fields]))
+      .toEqual([[1, 100], [2, 150], [3, 200]]);
+  });
+
+  it('skips planets that are already built (used > 0) but keeps fresh siblings', async () => {
+    // `max` is NOT fixed for a planet's lifetime (Terraformer and lifeform
+    // bonuses raise it), so a developed planet's number would bias the
+    // histogram upward. `used === 0` is the proxy for "still pristine".
+    setupSidebarScene({
+      planets: [
+        { cp: 10, coords: '[1:1:1]', usedFields: 42 },
+        { cp: 11, coords: '[1:1:2]', usedFields: 0, maxFields: 188 },
+      ],
+    });
+    installColonyRecorder();
+    await Promise.resolve();
+
+    expect(historyStore.get().map((e) => e.cp)).toEqual([11]);
+  });
+
+  it('records nothing when every planet is already built', async () => {
+    setupSidebarScene({ usedFields: 42 });
     installColonyRecorder();
     await Promise.resolve();
     expect(historyStore.get()).toEqual([]);
   });
 
-  it('skips planets that are already built (usedFields > 0)', async () => {
-    // Any non-zero usedFields means the planet is not "fresh" — see the
-    // module header on why we only record on the first overview visit.
-    setupOverviewScene({ usedFields: 42 });
+  it('never records a moon — its field count is a different quantity', async () => {
+    setupSidebarScene({
+      planets: [
+        { cp: 50, coords: '[5:5:5]', moon: true, maxFields: 20 },
+        { cp: 51, coords: '[5:5:6]', maxFields: 170 },
+      ],
+    });
     installColonyRecorder();
     await Promise.resolve();
-    expect(historyStore.get()).toEqual([]);
+
+    expect(historyStore.get().map((e) => e.cp)).toEqual([51]);
   });
 
-  it('does nothing when no planet is highlighted', async () => {
-    setupOverviewScene();
-    // Strip the `.hightlightPlanet` marker — there is no "current"
-    // planet to attribute the observation to.
-    const active = document.querySelector('#planetList .hightlightPlanet');
-    active?.classList.remove('hightlightPlanet');
-
+  it('skips a row whose tooltip is missing or malformed, keeping the good ones', async () => {
+    setupSidebarScene({
+      planets: [
+        { cp: 60, coords: '[6:1:1]', tooltip: null },
+        { cp: 61, coords: '[6:1:2]', tooltip: '<b>Kolonia</b><br/>no numbers here' },
+        { cp: 62, coords: '[6:1:3]', maxFields: 175 },
+      ],
+    });
     installColonyRecorder();
     await Promise.resolve();
-    expect(historyStore.get()).toEqual([]);
+
+    expect(historyStore.get().map((e) => e.cp)).toEqual([62]);
   });
 
-  it('does nothing when #positionContentField is missing', async () => {
-    setupOverviewScene();
-    document.getElementById('positionContentField')?.remove();
-
-    installColonyRecorder();
-    await Promise.resolve();
-    expect(historyStore.get()).toEqual([]);
-  });
-
-  it('does nothing when #diameterContentField text is malformed', async () => {
-    setupOverviewScene();
-    const diameter = document.getElementById('diameterContentField');
-    if (diameter) diameter.textContent = 'no numbers here';
-
-    installColonyRecorder();
-    await Promise.resolve();
-    expect(historyStore.get()).toEqual([]);
-  });
-
-  it('does nothing when the coords anchor text is not a bracketed triple', async () => {
-    setupOverviewScene();
-    const anchor = document.querySelector('#positionContentField a');
-    if (anchor) anchor.textContent = 'not coords';
-
+  it('does nothing when the sidebar is absent (not an ingame page)', async () => {
+    location.search = '?page=somethingElse';
+    document.body.innerHTML = '<div>no sidebar here</div>';
     installColonyRecorder();
     await Promise.resolve();
     expect(historyStore.get()).toEqual([]);
@@ -170,7 +236,7 @@ describe('installColonyRecorder — synchronous path', () => {
   it('parses position from arbitrary galaxy/system/position triples', async () => {
     // Slot 15 is the largest legal value; make sure multi-digit
     // positions parse correctly (the regex uses \d+, not [1-9]).
-    setupOverviewScene({ coords: '[6:100:15]' });
+    setupSidebarScene({ coords: '[6:100:15]' });
     installColonyRecorder();
     await Promise.resolve();
 
@@ -198,7 +264,7 @@ describe('installColonyRecorder — dedup', () => {
     });
     historyStore.set([existing]);
 
-    setupOverviewScene({ cp: 12345 });
+    setupSidebarScene({ cp: 12345 });
     installColonyRecorder();
     await Promise.resolve();
 
@@ -217,7 +283,7 @@ describe('installColonyRecorder — dedup', () => {
     });
     historyStore.set([prior]);
 
-    setupOverviewScene({ cp: 22222 });
+    setupSidebarScene({ cp: 22222 });
     installColonyRecorder();
     await Promise.resolve();
 
@@ -235,7 +301,7 @@ describe('installColonyRecorder — dedup', () => {
 
 describe('installColonyRecorder — idempotency', () => {
   it('a second install on the same page-load does not record again', async () => {
-    setupOverviewScene();
+    setupSidebarScene();
 
     // First install schedules a deferred tryCollect through the
     // historyHydrated gate; the store is still empty at this point.
@@ -287,7 +353,7 @@ describe('installColonyRecorder — deferred DOM (waitFor retry)', () => {
     expect(historyStore.get()).toEqual([]);
   });
 
-  it('records once the overview DOM appears mid-poll', async () => {
+  it('records once the sidebar appears mid-poll', async () => {
     // Start on the overview URL but with NO overview nodes yet. The
     // hydrate-gate fires first (tryCollect returns false because DOM
     // is empty), then waitFor starts polling. We then paint the scene
@@ -305,7 +371,7 @@ describe('installColonyRecorder — deferred DOM (waitFor retry)', () => {
     // Now the overview nodes land in the document. The default
     // intervalMs is 200; advancing by 250ms guarantees one more poll
     // tick after the mutation.
-    setupOverviewScene();
+    setupSidebarScene();
     await vi.advanceTimersByTimeAsync(250);
 
     const history = historyStore.get();
@@ -379,7 +445,7 @@ describe('installColonyRecorder — hydration race regression', () => {
     ];
 
     initHistoryStore();
-    setupOverviewScene({ cp: 33333, maxFields: 200, coords: '[3:3:3]' });
+    setupSidebarScene({ cp: 33333, maxFields: 200, coords: '[3:3:3]' });
     installColonyRecorder();
 
     // Hydrate is still pending — no write must have escaped yet.
@@ -432,7 +498,7 @@ describe('installColonyRecorder — hydration race regression', () => {
     ];
 
     initHistoryStore();
-    setupOverviewScene({ cp: 12345 });
+    setupSidebarScene({ cp: 12345 });
     installColonyRecorder();
 
     await Promise.resolve();
