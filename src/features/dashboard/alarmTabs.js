@@ -2,7 +2,7 @@
 
 // AlarmClock section sub-tabs — the strip that turned the tab from one long
 // stacked form (with the real settings buried in a ⚙ <details> at the very
-// bottom) into General / Reminders set / Expeditions / Ad-hoc / Fleet-save.
+// bottom) into General / Reminders set / Ad-hoc / Fleet-save / Expeditions.
 //
 // The strip itself is trivial (flip `.active` classes, remember the choice).
 // What justifies a module is the two things a plain tab bar can't do:
