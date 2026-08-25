@@ -4,6 +4,56 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.64.0] — 2026-08-25
+
+### Added
+
+- **The Alarm clock tab is organised in tabs now** — General, Reminders set,
+  Ad-hoc, Fleet-save, Expeditions. The settings used to sit in a collapsed
+  drawer at the very bottom of one long page, which made the knobs that decide
+  whether anything rings the hardest thing on the tab to find. Each kind of
+  reminder now has its own pane, with its schedule and its message side by
+  side, and the panes lay themselves out in columns instead of one
+  full-page-wide stack.
+
+- **The tab strip tells you the shape of your own setup.** Until the alarm
+  clock is switched on and has a working ntfy token, every pane past General
+  is greyed out and unclickable — with no way to reach your phone there is
+  nothing for a schedule to ring on, and General says which half is missing
+  ("Off" = flip the switch, "Set up" = paste a token). A kind you have
+  switched off says so on its own tab, so "why did nothing ring for my
+  expeditions" is answerable at a glance instead of by opening every pane.
+
+- **Switching a kind off collapses its settings.** The switch sits above its
+  panel and takes the whole panel with it, so a fleet-save you are not
+  tracking is one line, not a screen of controls that do nothing.
+
+### Fixed
+
+- **A fresh colony no longer has to be visited to be counted.** The histogram
+  only ever learned a planet's size from the overview page of the planet you
+  were standing on, and only while nothing had been built on it yet. Colonise
+  three slots in one go and whichever one you developed first was gone from
+  the dataset for good — silently. OG-E now reads the planet sidebar, which
+  OGame renders on every ingame page and which carries the same field counts
+  for every planet at once. Loading any page is enough, and all your fresh
+  colonies land in one pass. Nothing new is requested or sent; this is the
+  page you already loaded.
+
+- **"not set" on a reminder you deliberately switched off.** The Reminders set
+  list flags detected expeditions and fleet-saves, and a detected one with
+  nothing scheduled read as "not set" whether the reminder had failed to
+  arrive or you had simply turned that kind off — two states that need
+  opposite fixes. A switched-off kind now says "reminders off" and the section
+  says where to change it. A reminder that is already set stays "set" even if
+  you switch its kind off afterwards, because it will still ring.
+
+### Changed
+
+- **The Colonization & abandon settings no longer hide.** They are the knobs
+  that decide what the chart above them proposes, so they are simply on the
+  page now instead of behind a click.
+
 ## [1.63.0] — 2026-08-24
 
 ### Fixed
