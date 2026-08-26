@@ -34,8 +34,12 @@ describe('nearestBodyDistance — donut-aware proximity', () => {
   });
 
   it('galaxy axis wraps too — galaxy 9 to galaxy 1 on a 9-galaxy donut is 1 hop', () => {
+    // The wrap (9→1 = ONE hop, not eight) is what this case is about. The class
+    // is deliberately `''`: a galaxy hop costs 20000 flight distance, which is
+    // farther than 182 systems inside one galaxy, so "1 gal" is FAR. It used to
+    // report 'near' off a per-axis threshold — see `nearestBodyDistance`.
     expect(nearestBodyDistance('9:100:5', [at(1, 100)], donut499))
-      .toEqual({ label: '1 gal', cls: 'near' });
+      .toEqual({ label: '1 gal', cls: '' });
   });
 
   it('picks the nearest of several bodies AFTER wrapping', () => {
@@ -49,6 +53,38 @@ describe('nearestBodyDistance — donut-aware proximity', () => {
     expect(nearestBodyDistance('4:30:8', [at(4, 20)], donut499)).toEqual({ label: '10 sys', cls: 'near' });
     // No bounds at all → assume the classic donut (wrap still applies).
     expect(nearestBodyDistance('4:450:8', [at(4, 20)])).toEqual({ label: '69 sys', cls: '' });
+  });
+
+  // ── the "1 gal is NOT near" regression ─────────────────────────────────
+  //
+  // OGame's own arithmetic: a galaxy hop costs 20000, while N systems inside one
+  // galaxy cost 2700 + 95·N. So one galaxy away (20000) is FARTHER than 182
+  // systems away, and almost exactly as far as 200 systems (21700). The colour
+  // must therefore treat "1 gal" and "200 sys" the same — both ignorable.
+  //
+  // This used to be wrong: the class was thresholded per AXIS, so `1 gal` was
+  // hardcoded to 'near' while `200 sys` read as far, telling the player the
+  // opposite of the truth on the one panel that ranks who can reach them.
+  it('a galaxy hop is FAR — same class as ~200 systems, never near', () => {
+    const oneGal = nearestBodyDistance('5:100:5', [at(4, 100)], donut499);
+    const twoHundredSys = nearestBodyDistance('4:300:5', [at(4, 100)], donut499);
+    expect(oneGal).toEqual({ label: '1 gal', cls: '' });
+    expect(twoHundredSys?.cls).toBe('');
+    expect(oneGal?.cls).toBe(twoHundredSys?.cls);
+  });
+
+  it('a galaxy hop stays far even when the systems line up exactly', () => {
+    // Δsystem 0 must not sneak a cross-galaxy prober into 'hot' or 'near' —
+    // only the galaxy term counts once it is non-zero.
+    expect(nearestBodyDistance('5:100:5', [at(4, 100)], donut499))
+      .toEqual({ label: '1 gal', cls: '' });
+    expect(nearestBodyDistance('7:100:5', [at(4, 100)], donut499))
+      .toEqual({ label: '3 gal', cls: '' });
+  });
+
+  it('pins the near/far boundary at 15 systems inside our own galaxy', () => {
+    expect(nearestBodyDistance('4:115:5', [at(4, 100)], donut499)?.cls).toBe('near');
+    expect(nearestBodyDistance('4:116:5', [at(4, 100)], donut499)?.cls).toBe('');
   });
 
   it('returns null for unparseable coords or an empty inventory', () => {

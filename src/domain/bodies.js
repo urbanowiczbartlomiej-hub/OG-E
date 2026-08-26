@@ -22,7 +22,13 @@
 // @see ./dailyRunRoutes.js — `coordTypeKey` (the shared identity) + reconcile.
 
 import { TARGET_PLANET } from './rules.js';
-import { axisDelta } from './geometry.js';
+import {
+  axisDelta,
+  flightDistance,
+  SAME_SYSTEM_D,
+  SYSTEM_BASE,
+  SYSTEM_STEP,
+} from './geometry.js';
 
 /**
  * One owned body (planet or moon) as captured from the planet bar.
@@ -103,14 +109,41 @@ export const bodyNameFor = (index, coords, moon) => {
 };
 
 /**
+ * Flight distance at which a neighbour stops reading as `'near'`: fifteen
+ * systems inside our own galaxy, i.e. `2700 + 95·15`.
+ *
+ * Expressed in DISTANCE rather than as a system count on purpose — see
+ * {@link nearestBodyDistance} for the bug that a per-axis threshold caused.
+ */
+export const NEAR_FLIGHT_D = SYSTEM_BASE + SYSTEM_STEP * 15;
+
+/**
  * Coarse distance from an origin coord to our NEAREST owned body, as a short
- * label + severity class (`'hot'` = same system, `'near'` = ≤1 galaxy / ≤15
- * systems, `''` = far). Donut-aware: the game always flies the WRAPPED
- * shortest path, so 4:20 → 4:450 on a 499-system donut is 69 systems, not
- * 430 — an aggressor at the seam is NEAR, and showing the naive delta hid
- * exactly the most dangerous neighbours. Bounds come from the apiContext
- * server snapshot; without one we assume the classic 9/499 donut (strictly
- * better than no wrap).
+ * label + severity class (`'hot'` = same system, `'near'` = within
+ * {@link NEAR_FLIGHT_D}, `''` = far).
+ *
+ * # Why the class comes from flight DISTANCE, not from the axis deltas
+ *
+ * This used to threshold each axis on its own: `≤15 systems` OR `exactly 1
+ * galaxy` counted as near. The galaxy half of that was simply wrong, and
+ * OGame's own numbers say so. A galaxy hop costs `GALAXY_STEP` = 20000, while
+ * 200 systems inside one galaxy cost `2700 + 95·200` = 21700 — so "1 gal" is
+ * very nearly as far as "200 sys" (the break-even is
+ * {@link GALAXY_IN_SYSTEMS} = 183 systems). Painting "1 gal" amber while "200
+ * sys" stayed grey told the player the opposite of the truth about which of
+ * the two they could ignore, on the one panel whose entire job is ranking who
+ * can reach them.
+ *
+ * Reducing both axes through {@link flightDistance} first makes that class of
+ * disagreement impossible: there is one number, and the thresholds are points
+ * on it. `domain/geometry.js` exists precisely so distance models don't get
+ * re-derived per feature — this function was still carrying a private one.
+ *
+ * Donut-aware: the game always flies the WRAPPED shortest path, so 4:20 →
+ * 4:450 on a 499-system donut is 69 systems, not 430 — an aggressor at the
+ * seam is NEAR, and showing the naive delta hid exactly the most dangerous
+ * neighbours. Bounds come from the apiContext server snapshot; without one we
+ * assume the classic 9/499 donut (strictly better than no wrap).
  *
  * @param {string | null} fromCoords
  * @param {ReadonlyArray<Body>} bodies
@@ -129,9 +162,16 @@ export const nearestBodyDistance = (fromCoords, bodies, bounds = {}) => {
     const ds = axisDelta(b.system, from.system, sTot, bounds.donutSystem !== false);
     if (dg < bg || (dg === bg && ds < bs)) { bg = dg; bs = ds; }
   }
-  if (bg > 0) return { label: `${bg} gal`, cls: bg === 1 ? 'near' : '' };
-  if (bs === 0) return { label: '0 sys', cls: 'hot' };
-  return { label: `${bs} sys`, cls: bs <= 15 ? 'near' : '' };
+  // ONE number, then two thresholds on it. `flightDistance(0, 0)` is
+  // SAME_SYSTEM_D, so the same-system case falls out of the general rule
+  // instead of needing its own branch.
+  const d = flightDistance(bg, bs);
+  const cls = d <= SAME_SYSTEM_D ? 'hot' : d <= NEAR_FLIGHT_D ? 'near' : '';
+  // The LABEL still names the axis the player thinks in ("3 sys", "1 gal") —
+  // only the colour is derived from distance. A galaxy hop is always at least
+  // GALAXY_STEP, well past NEAR_FLIGHT_D, so a cross-galaxy prober now always
+  // reads grey, which is the point of the change.
+  return { label: bg > 0 ? `${bg} gal` : `${bs} sys`, cls };
 };
 
 /**
