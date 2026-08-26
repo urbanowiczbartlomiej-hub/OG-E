@@ -56,7 +56,6 @@ import { installReadabilityBoost } from './features/readabilityBoost.js';
 installAntiFlickerBackground();
 installReadabilityBoost();
 
-import { initHistoryStore } from './state/history.js';
 import { initScansStore } from './state/scans.js';
 import { initPlayersStore } from './state/players.js';
 import { initRegistryStore } from './state/registry.js';
@@ -127,7 +126,14 @@ initSettingsStore();
 // keeps reading settingsStore, which this keeps current. See state/sharedSettings.js.
 void initSharedSettings();
 initRegistryStore();
-initHistoryStore();
+// NOT `initHistoryStore()` — deliberately. The colony history is the one store
+// that grows without bound (~870 KB uncompressed at 10k observations), and
+// hydrating it here meant paying that read plus a full JSON parse on every
+// OGame navigation, in every frame, for two consumers that rarely need it:
+// `features/colonyRecorder.js` now answers its dedup question from the tiny cp
+// index (`state/historyCpIndex.js`) and inits the store itself only when it
+// finds a genuinely new colony, and `sync/scheduler.js` inits it behind its own
+// cloudSync gate. Both calls are idempotent, so whichever runs first wins.
 initScansStore();
 // Player-metadata cache (per-universe, chrome.storage). Subscribes to the
 // same `oge:galaxyScanned` event as the scans store and de-duplicates the

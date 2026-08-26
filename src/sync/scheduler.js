@@ -113,7 +113,7 @@
 
 /* global document */
 
-import { historyStore } from '../state/history.js';
+import { historyStore, initHistoryStore } from '../state/history.js';
 import { readLfDiscoverySlot, writeLfDiscoverySlot, scansStore } from '../state/scans.js';
 import { colonizeDecisionsStore } from '../state/colonizeDecisions.js';
 import { settingsStore } from '../state/settings.js';
@@ -1433,6 +1433,18 @@ export const installSync = () => {
     installed = { dispose: noop };
     return noop;
   }
+
+  // Colony history is the one synced store the content-script bootstrap no
+  // longer hydrates for us (it is unbounded — see the note at that removed
+  // call in `content.js`), so wire it here, behind the cloudSync gate above.
+  // We need the REAL array, not a subset: `readLocal` feeds the upload, and
+  // uploading a store that is still `[]` would push an empty slot over a
+  // populated gist. `initHistoryStore` is idempotent, and this runs at install
+  // time — same moment as the old boot-time call — so the hydrate has exactly
+  // as long to settle before the first upload as it always did. Top frame
+  // only, which is where `installSync` is called from, so iframes stay clear
+  // of the big read entirely.
+  initHistoryStore();
 
   // Per-universe tombstone keys — captured at install time so the
   // onStorageChange listener doesn't recompute them on every event.

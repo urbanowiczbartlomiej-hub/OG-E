@@ -23,16 +23,17 @@
 // regression case mocks `chromeStore` to keep `initHistoryStore`'s load
 // pending until the test resolves it manually.
 //
-// # Why every test awaits a microtask after install
+// # Why every test drains microtasks after install
 //
-// `installColonyRecorder` gates the first `tryCollect` on
-// `whenHistoryHydrated()`. In tests that bypass `initHistoryStore` the
-// gate is pre-resolved, so the deferred `tryCollect` fires on the
-// next microtask rather than synchronously. A single
-// `await Promise.resolve()` (or any awaited timer flush) is enough to
-// drain that microtask before asserting on the store. See
-// `state/history.js` and `features/colonyRecorder.js` for the
-// underlying race rationale.
+// `installColonyRecorder` fires `tryCollect` immediately, but the collect is
+// async and clears several gates before it can write: the fresh-planet DOM
+// filter, an async read of the cp index (`state/historyCpIndex` — the small key
+// that spares the content script from hydrating the whole history on every
+// page-load), and only then `whenHistoryHydrated`; the append also awaits
+// `whenColonizeDecisionsHydrated`. Each is a separate promise hop, so a single
+// `await Promise.resolve()` lands mid-chain and the store still reads empty —
+// hence `flushMicrotasks()`. See `state/history.js` and
+// `features/colonyRecorder.js` for the underlying race rationale.
 //
 // @ts-check
 
@@ -46,8 +47,29 @@ import {
   initHistoryStore,
   disposeHistoryStore,
 } from '../../src/state/history.js';
+import { HISTORY_CP_INDEX_KEY_BASE } from '../../src/state/historyCpIndex.js';
+import { encodeCpRanges, cpRangesHas } from '../../src/domain/cpRanges.js';
 
 /** @typedef {import('../../src/state/history.js').ColonyEntry} ColonyEntry */
+
+/**
+ * Drain the microtask queue.
+ *
+ * Do NOT shave this back to a single `await Promise.resolve()`. `tryCollect`
+ * clears three staged gates before it can write — the fresh-planet DOM filter,
+ * an async read of the cp index (`state/historyCpIndex`), then
+ * `whenHistoryHydrated` — and the append additionally awaits
+ * `whenColonizeDecisionsHydrated`. Each is its own promise hop, so one tick
+ * lands mid-chain and the store still looks empty. The count is deliberately
+ * generous: these are microtasks, so over-draining costs nothing, while
+ * under-draining produces a passing-looking assertion on an unfinished write.
+ *
+ * @param {number} [ticks]
+ * @returns {Promise<void>}
+ */
+const flushMicrotasks = async (ticks = 16) => {
+  for (let i = 0; i < ticks; i++) await Promise.resolve();
+};
 
 /** @typedef {{ cp?: number, usedFields?: number, maxFields?: number, coords?: string, name?: string, active?: boolean, moon?: boolean, tooltip?: string | null }} PlanetSpec */
 
@@ -108,6 +130,17 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // Unwire persistence between EVERY case, not just in the hydration-race
+  // block. `tryCollect` calls `initHistoryStore()` itself now (it hydrates the
+  // history lazily, only when the cp index reports a genuinely new colony), so
+  // any case that records a colony leaves the store wired. `initHistoryStore`
+  // is idempotent and returns EARLY when it is already wired — which means it
+  // would not install a fresh pending hydrate promise for the next case, and
+  // `whenHistoryHydrated()` would hand that case an already-resolved gate. The
+  // race regression below then silently stops testing the race: its dedup read
+  // sees the empty initial store instead of waiting for the stored history.
+  // Disposing here keeps each case starting from "no persistence wired".
+  disposeHistoryStore();
   historyStore.set([]);
   _resetColonyRecorderForTest();
 });
@@ -121,7 +154,7 @@ describe('installColonyRecorder — synchronous path', () => {
     const before = Date.now();
     setupSidebarScene();
     installColonyRecorder();
-    await Promise.resolve();
+    await flushMicrotasks();
 
     const history = historyStore.get();
     expect(history).toHaveLength(1);
@@ -142,7 +175,7 @@ describe('installColonyRecorder — synchronous path', () => {
     // depends on the player opening this colony's overview.
     setupSidebarScene({ page: 'galaxy' });
     installColonyRecorder();
-    await Promise.resolve();
+    await flushMicrotasks();
     expect(historyStore.get().map((e) => e.cp)).toEqual([12345]);
   });
 
@@ -150,7 +183,7 @@ describe('installColonyRecorder — synchronous path', () => {
     // No `.hightlightPlanet` anywhere: the active planet is irrelevant now.
     setupSidebarScene({ planets: [{ cp: 777, coords: '[7:7:7]', maxFields: 190 }] });
     installColonyRecorder();
-    await Promise.resolve();
+    await flushMicrotasks();
 
     const entry = /** @type {ColonyEntry} */ (historyStore.get()[0]);
     expect(entry.cp).toBe(777);
@@ -169,7 +202,7 @@ describe('installColonyRecorder — synchronous path', () => {
       ],
     });
     installColonyRecorder();
-    await Promise.resolve();
+    await flushMicrotasks();
 
     expect(historyStore.get().map((e) => [e.cp, e.fields]))
       .toEqual([[1, 100], [2, 150], [3, 200]]);
@@ -186,7 +219,7 @@ describe('installColonyRecorder — synchronous path', () => {
       ],
     });
     installColonyRecorder();
-    await Promise.resolve();
+    await flushMicrotasks();
 
     expect(historyStore.get().map((e) => e.cp)).toEqual([11]);
   });
@@ -194,7 +227,7 @@ describe('installColonyRecorder — synchronous path', () => {
   it('records nothing when every planet is already built', async () => {
     setupSidebarScene({ usedFields: 42 });
     installColonyRecorder();
-    await Promise.resolve();
+    await flushMicrotasks();
     expect(historyStore.get()).toEqual([]);
   });
 
@@ -206,7 +239,7 @@ describe('installColonyRecorder — synchronous path', () => {
       ],
     });
     installColonyRecorder();
-    await Promise.resolve();
+    await flushMicrotasks();
 
     expect(historyStore.get().map((e) => e.cp)).toEqual([51]);
   });
@@ -220,7 +253,7 @@ describe('installColonyRecorder — synchronous path', () => {
       ],
     });
     installColonyRecorder();
-    await Promise.resolve();
+    await flushMicrotasks();
 
     expect(historyStore.get().map((e) => e.cp)).toEqual([62]);
   });
@@ -229,7 +262,7 @@ describe('installColonyRecorder — synchronous path', () => {
     location.search = '?page=somethingElse';
     document.body.innerHTML = '<div>no sidebar here</div>';
     installColonyRecorder();
-    await Promise.resolve();
+    await flushMicrotasks();
     expect(historyStore.get()).toEqual([]);
   });
 
@@ -238,7 +271,7 @@ describe('installColonyRecorder — synchronous path', () => {
     // positions parse correctly (the regex uses \d+, not [1-9]).
     setupSidebarScene({ coords: '[6:100:15]' });
     installColonyRecorder();
-    await Promise.resolve();
+    await flushMicrotasks();
 
     const entry = /** @type {ColonyEntry} */ (historyStore.get()[0]);
     expect(entry.position).toBe(15);
@@ -266,7 +299,7 @@ describe('installColonyRecorder — dedup', () => {
 
     setupSidebarScene({ cp: 12345 });
     installColonyRecorder();
-    await Promise.resolve();
+    await flushMicrotasks();
 
     const history = historyStore.get();
     expect(history).toHaveLength(1);
@@ -285,7 +318,7 @@ describe('installColonyRecorder — dedup', () => {
 
     setupSidebarScene({ cp: 22222 });
     installColonyRecorder();
-    await Promise.resolve();
+    await flushMicrotasks();
 
     const history = historyStore.get();
     expect(history).toHaveLength(2);
@@ -318,7 +351,7 @@ describe('installColonyRecorder — idempotency', () => {
 
     // Flush the first install's deferred work; the dedup-by-cp gate in
     // tryCollect would also catch a second write if one had slipped in.
-    await Promise.resolve();
+    await flushMicrotasks();
     expect(historyStore.get()).toHaveLength(1);
   });
 });
@@ -365,7 +398,7 @@ describe('installColonyRecorder — deferred DOM (waitFor retry)', () => {
 
     // Drain the hydrate-gate microtask so the first tryCollect runs
     // and (because the DOM is empty) schedules the waitFor poll.
-    await Promise.resolve();
+    await flushMicrotasks();
     expect(historyStore.get()).toEqual([]);
 
     // Now the overview nodes land in the document. The default
@@ -451,8 +484,7 @@ describe('installColonyRecorder — hydration race regression', () => {
     // Hydrate is still pending — no write must have escaped yet.
     // Letting microtasks drain proves the gate holds even when the
     // event loop is quiet.
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushMicrotasks();
     expect(setSpy).not.toHaveBeenCalled();
     expect(historyStore.get()).toEqual([]);
 
@@ -461,10 +493,7 @@ describe('installColonyRecorder — hydration race regression', () => {
     // entries, the new cp passes, and the append produces a 3-row
     // history — NOT a 1-row history that wiped the prior data.
     resolveGet(stored);
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushMicrotasks();
 
     const finalHistory = historyStore.get();
     expect(finalHistory.map((e) => e.cp)).toEqual([11111, 22222, 33333]);
@@ -479,9 +508,12 @@ describe('installColonyRecorder — hydration race regression', () => {
     // sidesteps pinning the per-universe storage KEY (`localhost:oge_colonyHistory`
     // under happy-dom vs `s163-pl:oge_colonyHistory` on a real Gameforge tab).
     expect(setSpy).toHaveBeenCalled();
+    // Both the history and the cp index persist as ARRAYS, so Array.isArray
+    // alone would also match the index (a number[]). History rows are objects
+    // carrying `cp`, which is the discriminator.
     const historyWrites = setSpy.mock.calls
       .map((c) => Object.values(c[0])[0])
-      .filter((v) => Array.isArray(v));
+      .filter((v) => Array.isArray(v) && v.every((e) => e && typeof e === 'object' && 'cp' in e));
     expect(historyWrites.length).toBeGreaterThan(0);
     const lastHistory = historyWrites[historyWrites.length - 1];
     expect(lastHistory.map((/** @type {ColonyEntry} */ e) => e.cp))
@@ -501,19 +533,150 @@ describe('installColonyRecorder — hydration race regression', () => {
     setupSidebarScene({ cp: 12345 });
     installColonyRecorder();
 
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushMicrotasks();
 
     resolveGet(stored);
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushMicrotasks();
 
     // Length stays at 1 — the prior observation wins, original
     // timestamp preserved.
     const finalHistory = historyStore.get();
     expect(finalHistory).toHaveLength(1);
     expect(finalHistory[0]?.timestamp).toBe(1);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// The cp-index fast path
+// ──────────────────────────────────────────────────────────────────
+//
+// This is the behaviour the whole lazy-history change rests on: on a page-load
+// where the small index already knows every fresh planet, the big
+// `oge_colonyHistory` key must NEVER be read. Without a test here the
+// optimisation can silently degrade back into a no-op — it fails SAFE (the
+// index under-reporting just means a slow path), so nothing else would notice.
+
+describe('installColonyRecorder — cp-index fast path', () => {
+  /** Keys passed to chrome.storage.local.get, in order. @type {string[]} */
+  let getKeys;
+  /** @type {Record<string, unknown>} */
+  let disk;
+  /** @type {import('vitest').Mock} */
+  let setSpy;
+
+  /** @param {string} base @returns {boolean} */
+  const readAnyKeyEndingIn = (base) => getKeys.some((k) => k.endsWith(base));
+
+  beforeEach(() => {
+    getKeys = [];
+    disk = {};
+    setSpy = vi.fn();
+    vi.stubGlobal('chrome', {
+      storage: {
+        local: {
+          get: (/** @type {string} */ key, /** @type {(items: Record<string, unknown>) => void} */ cb) => {
+            getKeys.push(key);
+            cb(key in disk ? { [key]: disk[key] } : {});
+          },
+          set: (/** @type {Record<string, unknown>} */ items, /** @type {(() => void) | undefined} */ cb) => {
+            setSpy(items);
+            Object.assign(disk, items);
+            cb?.();
+          },
+          remove: () => {},
+        },
+        onChanged: { addListener: () => {}, removeListener: () => {} },
+      },
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('does NOT read the colony history when the index already knows the cp', async () => {
+    // Seed the index (only) with the sidebar's cp.
+    disk[`${location.host}:${HISTORY_CP_INDEX_KEY_BASE}`] = encodeCpRanges([12345]);
+
+    setupSidebarScene({ cp: 12345 });
+    installColonyRecorder();
+    await flushMicrotasks();
+
+    expect(readAnyKeyEndingIn(HISTORY_CP_INDEX_KEY_BASE)).toBe(true);
+    // The point of the change: the unbounded key is untouched.
+    expect(readAnyKeyEndingIn('oge_colonyHistory')).toBe(false);
+    expect(setSpy).not.toHaveBeenCalled();
+    expect(historyStore.get()).toEqual([]);
+  });
+
+  it('reads nothing at all when no planet is fresh — not even the index', async () => {
+    // Gate 1 is a DOM-only test, so the quiet steady state costs zero storage.
+    setupSidebarScene({ cp: 12345, usedFields: 3 });
+    installColonyRecorder();
+    await flushMicrotasks();
+
+    expect(getKeys).toEqual([]);
+    expect(setSpy).not.toHaveBeenCalled();
+  });
+
+  it('DOES read the history when the index does not know the cp', async () => {
+    // Index knows a different colony, so this one is a candidate and the slow
+    // path must run — the index is never allowed to authorise a write on its own.
+    disk[`${location.host}:${HISTORY_CP_INDEX_KEY_BASE}`] = encodeCpRanges([999]);
+
+    setupSidebarScene({ cp: 12345, maxFields: 163 });
+    installColonyRecorder();
+    await flushMicrotasks();
+
+    expect(readAnyKeyEndingIn('oge_colonyHistory')).toBe(true);
+    expect(historyStore.get().map((e) => e.cp)).toEqual([12345]);
+  });
+
+  it('self-heals an index that under-reports, without re-recording', async () => {
+    // The history already holds the cp but the index does not (a dashboard
+    // import or a gist merge unioned it in behind the index's back). The
+    // recorder must NOT append a duplicate, and must rewrite the index so the
+    // next page-load stops at the fast path.
+    const historyKey = `${location.host}:oge_colonyHistory`;
+    disk[historyKey] = [
+      { cp: 12345, fields: 163, coords: '[4:30:8]', position: 8, timestamp: 1 },
+    ];
+    disk[`${location.host}:${HISTORY_CP_INDEX_KEY_BASE}`] = [];
+
+    setupSidebarScene({ cp: 12345 });
+    installColonyRecorder();
+    await flushMicrotasks();
+
+    // No duplicate, original timestamp intact.
+    expect(historyStore.get()).toHaveLength(1);
+    expect(historyStore.get()[0]?.timestamp).toBe(1);
+
+    // The index now covers the cp — derived from the authority, so it also
+    // absorbed what the index had never seen.
+    const idxWrites = setSpy.mock.calls
+      .map((c) => Object.entries(c[0])[0])
+      .filter(([k]) => k.endsWith(HISTORY_CP_INDEX_KEY_BASE));
+    expect(idxWrites.length).toBeGreaterThan(0);
+    const written = /** @type {number[]} */ (idxWrites[idxWrites.length - 1][1]);
+    expect(cpRangesHas(written, 12345)).toBe(true);
+  });
+
+  it('does not write the index on the append path — only from a stored history', async () => {
+    // Deliberate: the append and an index write are two independent storage
+    // writes with no ordering guarantee. If the index landed and the history did
+    // not, the index would claim a cp that is not in the history and that
+    // observation would be skipped forever. So the index is only ever derived
+    // from a history array read back OUT of storage.
+    disk[`${location.host}:${HISTORY_CP_INDEX_KEY_BASE}`] = [];
+
+    setupSidebarScene({ cp: 777, maxFields: 200 });
+    installColonyRecorder();
+    await flushMicrotasks();
+
+    expect(historyStore.get().map((e) => e.cp)).toEqual([777]);
+    const idxWrites = setSpy.mock.calls
+      .map((c) => Object.keys(c[0])[0])
+      .filter((k) => k.endsWith(HISTORY_CP_INDEX_KEY_BASE));
+    expect(idxWrites).toEqual([]);
   });
 });
