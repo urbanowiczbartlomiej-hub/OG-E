@@ -4,6 +4,66 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.65.0] — 2026-08-26
+
+### Added
+
+- **You can mute a player on "Who's spying on you".** A neighbour you asked to
+  shoot your own satellites scans you first — and then sits at the top of the
+  list as a first-degree threat for weeks. Every row now has a **Mute** button,
+  in the in-game panel and on the Spyglass strip, and it mutes the *player*, so
+  they stay muted the next time they scan rather than coming back with the next
+  alert.
+
+- **Muting silences the whole alert, not just the row.** The prober also leaves
+  the headline counts, the "in your system" tally and the pill badge — hiding a
+  row while the number above it kept counting would leave the panel nagging
+  about the very scan you just acknowledged.
+
+- **Muted players are listed by name under the table, one click to unmute.**
+  Not a bare "2 muted" count: the point of muting one neighbour is that the
+  others stay muted, so each name is its own button. A window that holds
+  nothing but muted probers says exactly that instead of reading as "no scans".
+
+  Muting is deliberately **not** a "this player is friendly" mark: it does not
+  touch their danger rating, their patrol classification or their badge. An
+  unofficial ally parked next door is still a real fleet, and a cosmetic click
+  must not blind the defensive tooling.
+
+### Fixed
+
+- **"1 gal" no longer reads as a near neighbour.** The distance line under a
+  prober's name coloured "1 gal" the same amber as "10 sys", while "200 sys"
+  stayed grey — but by OGame's own arithmetic a galaxy hop costs 20000 and 200
+  systems cost 21700, so one galaxy away is *farther* than 182 systems away and
+  very nearly as far as 200. The colour was telling you the opposite of the
+  truth about which of the two you could ignore, on the one panel whose job is
+  ranking who can reach you. Both axes now reduce to real flight distance
+  before the colour is chosen, so they cannot disagree again.
+
+### Changed
+
+- **Loading an OGame page no longer reads the whole colony histogram.** The
+  recorder needed one thing from that dataset — "have I already recorded this
+  planet?" — and was deserialising every row to answer it, on every navigation,
+  in every frame. It now answers from a small index of planet ids (1.4 KB
+  against 128 KB on a real 1474-colony universe, and the gap widens as the
+  histogram grows), and touches the full history only when it finds a colony
+  that is genuinely new. A page-load where nothing was just colonised — almost
+  all of them — now reads nothing at all.
+
+  Nothing about the histogram itself changes: the same observations are kept,
+  in the same format, and the index is derived from them, never the other way
+  round.
+
+- **The in-game spy panel's "Spyglass" button is gone; the nickname does the
+  same job.** It always did — clicking a prober's name opens their dossier —
+  and the duplicate cost permanent width in a panel OGame gives a fixed size,
+  which pushed the "Near you" body list into wrapping onto extra lines. The
+  actions column is now roughly half as wide, that space goes to the data, and
+  rows that listed many bodies got shorter. On touch the nickname itself is now
+  a full-size tap target.
+
 ## [1.64.0] — 2026-08-25
 
 ### Added
