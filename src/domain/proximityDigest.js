@@ -10,7 +10,7 @@
 // (the slowest ship in the game), so those rows sort first and read hottest.
 //
 // Same passive provenance as the raw strip (alerts the player opened —
-// fair-play GREEN, docs/fair-play.md §"Spyglass intelligence workbench");
+// fair-play GREEN, docs/fair-play.md §1.5.1);
 // aggregation is presentation only, no new data is captured.
 
 /** @typedef {import('./espionageReport.js').ProximityReport} ProximityReport */

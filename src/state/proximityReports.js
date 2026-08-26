@@ -10,8 +10,8 @@
 // sync/merge.mergeProximityReports): an alert is a ONE-SHOT observation — once
 // dismissed in-game a second device can never re-derive it, which left each
 // device with a different "who's spying" view. GREEN per docs/fair-play.md
-// §"🟢/🟡 Spyglass intelligence workbench (v3)" — a passive read of the
-// player's OWN opened reports (no extra requests, no automation).
+// §1.5.1 (display-only spy surfaces) — a passive read of the player's OWN
+// opened reports (no extra requests, no automation).
 //
 // Reactive `createStore` + `persist` (not a plain key-owner) because two parties
 // touch it across a burst: the in-game ingest consumer (`features/targetsIngest`)

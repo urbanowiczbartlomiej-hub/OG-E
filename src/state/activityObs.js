@@ -8,7 +8,7 @@
 // tracker (SPYGLASS-REDESIGN.md §6.6bis): the user scrolls the galaxy
 // constantly while playing, so markers accrue far faster than spy reports —
 // for zero probes and zero extra requests (fair-play GREEN, classified in
-// docs/fair-play.md under "Galaxy-view activity capture").
+// docs/fair-play.md §1.5.1 — galaxy-view intel).
 //
 // Shape: `playerId → bodyKey("g:s:p:type") → ActivityObs[]` (bounded ring,
 // oldest→newest). The append rules — self-induced-probe discount, same-
