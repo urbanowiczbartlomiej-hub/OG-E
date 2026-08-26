@@ -129,14 +129,46 @@ The procedure:
    work happens: add/fix tests for everything that changed and get
    `npm run test` green. (CI re-runs `npm run test` + `npm run typecheck` as a
    hard gate inside `scripts/release.mjs`, so a red suite blocks the publish.)
-2. **Add the dated `## [X.Y.Z] — YYYY-MM-DD` section to `CHANGELOG.md`** (the
-   one manual content step). It is sent verbatim as the public AMO release
+2. **Harvest the session's GAME knowledge into
+   [`docs/ogame-fleet-mechanics.md`](docs/ogame-fleet-mechanics.md)** — do this
+   in the same pass as the tests, while the session is still in context.
+
+   OG-E has no access to OGame's source or docs, so every rule we know was
+   reverse-engineered once, at some cost, and is unrecoverable if it stays only
+   in a commit message or a chat log. Writing tests is the natural moment to
+   notice it: you are re-reading everything that changed anyway.
+
+   Scan the session for facts about **how OGame itself behaves** and check each
+   against that doc. Concretely, something is worth recording if it is:
+   - a rule or constant of the game (timings, formulas, caps, ordering,
+     id/counter semantics, what the server does on a sweep);
+   - a *measurement* over real data that quantifies a rule already recorded
+     (distribution shapes, how often a case actually occurs) — the rule and its
+     magnitude are different facts, and the magnitude is what tells the next
+     reader whether a case matters;
+   - a fact we got WRONG and corrected — record the correction *and* the wrong
+     intuition, because a plausible-but-false belief will be re-derived by
+     whoever comes next (a section that only states the truth does not stop the
+     mistake from recurring).
+
+   NOT for this doc: how OG-E is built, why a module is laid out a certain way,
+   or anything about our own code — those belong in code comments or the
+   architecture section above. The test is "would this still be true if OG-E
+   did not exist?"
+
+   Keep it DRY: if a rule already has a section, extend it rather than adding a
+   second one, and have in-code comments *point* here instead of restating it.
+3. **Add the dated `## [X.Y.Z] — YYYY-MM-DD` section to `CHANGELOG.md`** (the
+   user-facing content step). It is sent verbatim as the public AMO release
    notes *and* it is the trigger — CI publishes only a version whose CHANGELOG
    section exists.
-3. **Bump `"version"` in `package.json` AND `manifest.json`** to `X.Y.Z`.
-4. **Commit all three together** as `chore(release): X.Y.Z` and **push to
-   `main`**. Because that push = a **public** release that auto-updates existing
-   users, confirm with the user before pushing.
+4. **Bump `"version"` in `package.json` AND `manifest.json`** to `X.Y.Z`.
+5. **Commit the three version-bearing files together** (`CHANGELOG.md`,
+   `package.json`, `manifest.json`) as `chore(release): X.Y.Z` and **push to
+   `main`**. Steps 1 and 2 land first, in their own `test:` / `docs:` commits —
+   the release commit stays exactly the version bump. Because that push =
+   a **public** release that auto-updates existing users, confirm with the user
+   before pushing.
 
 On that push, `release.yml` sees the new, documented version, mints + pushes the
 `vX.Y.Z` tag, checks it out (detached HEAD) and runs `scripts/release.mjs` —

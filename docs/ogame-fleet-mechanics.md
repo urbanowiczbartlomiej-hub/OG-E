@@ -233,6 +233,13 @@ The weekly `universe.xml` lags this by up to 7 days and may still list a freed
 slot as ours, so the picker overrides that stale occupancy with the local
 "freed" fact.
 
+**Measured on a real universe** (s163-pl, 1474 recorded colonizations over 106
+days): **375 distinct slots**, one of them re-colonized **9 times**, and **319
+slots produced more than one distinct field count** across their re-rolls. Field
+counts ranged **182–387**. That is the re-roll rule above, quantified — and the
+reason the histogram keeps every observation including abandoned ones (small
+rolls are abandoned fast, so pruning them would empty the left tail).
+
 **A dispatched colonizer does not always become a colony.** The fleet may be
 recalled, the account may be at its colony cap, or some other event may stop the
 colony forming — in which case no size is ever recorded and the position was
@@ -240,3 +247,62 @@ never actually taken. OG-E therefore treats a colonize send as a **hold, not a
 commitment**: if no colony is recorded within ~4h of dispatch (and after the
 fleet would have arrived), the slot returns to the candidate pool
 (`domain/colonizeDecisions.sentExpiresAt`).
+
+## Planet identity — the `cp` counter
+
+Every body OGame creates gets a **`cp` id from one server-wide, monotonically
+increasing counter**. It is not per-player and not derived from coordinates.
+Three consequences OG-E depends on:
+
+- **`cp` is the only stable identity for a planet *instance*.** Coordinates are
+  not, because the same `g:s:p` gets re-colonized repeatedly (see the re-roll
+  section above) and each re-colonization is a *different planet* with its own
+  field count. In the measured universe, 1474 colonizations occupied only 375
+  distinct coordinate slots, and 319 of those slots carried conflicting field
+  counts across re-uses. Any dedup or cross-device merge keyed on coords instead
+  of `cp` would therefore collapse ~75% of the histogram dataset and silently
+  bias it.
+- **A re-colonization mints a NEW, higher `cp`.** So "same slot, new planet" is
+  detectable without any timestamp.
+- **Consecutive colonizations usually get consecutive `cp`.** Because the
+  counter is global, other players' colonizations interleave — but on a quiet
+  server a player colonizing several slots in a row lands on an unbroken run.
+  Measured: **1178 of 1473 gaps between sorted `cp` values were exactly 1**,
+  collapsing the whole set into **296 contiguous runs** (longest 24). This is
+  what makes a run-length index over `cp` dramatically smaller than the ids
+  themselves (13.3 KB → 1.4 KB in that dataset); see
+  [`src/domain/cpRanges.js`](../src/domain/cpRanges.js).
+
+Timestamps are **not** a substitute for `cp` as an identity: OG-E stamps its own
+observation time, so two devices observing the same fresh planet produce two
+different values, and a batch of planets recorded in one page-load shares a
+single value.
+
+## Flight distance — the arithmetic that ranks "who can reach me"
+
+OGame's flight distance between two coordinates (the value that drives flight
+time, and therefore every "is this neighbour a threat" judgement):
+
+| relation | distance |
+| --- | --- |
+| different galaxy | `20000 × Δgalaxy` |
+| same galaxy, different system | `2700 + 95 × Δsystem` |
+| same system, different position | `1000 + 5 × Δposition` |
+| same position | `5` |
+
+Both axes wrap on a **donut** server (galaxy 9 → 1 is ONE hop; system 499 → 1 is
+one step), and the game always flies the wrapped shortest path — so a naive
+`Math.abs` delta hides exactly the closest aggressors. The server's own donut
+flags say whether each axis wraps.
+
+**The comparison that is easy to get wrong:** one galaxy hop costs 20000, which
+equals `2700 + 95 × 183` — so **"1 galaxy away" is FARTHER than 182 systems away
+inside your own galaxy**, and almost exactly as far as "200 systems" (21700).
+A neighbour one galaxy over is not a near neighbour. OG-E got this wrong once,
+colouring "1 gal" as near while "200 sys" read as far, by thresholding each axis
+separately instead of reducing both to a distance first.
+
+Constants and the reduction live in
+[`src/domain/geometry.js`](../src/domain/geometry.js) (`GALAXY_STEP`,
+`SYSTEM_BASE`, `SYSTEM_STEP`, `GALAXY_IN_SYSTEMS`, `flightDistance`) — that is
+the ONE place coordinates become distance; never re-derive it per feature.
