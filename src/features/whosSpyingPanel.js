@@ -52,6 +52,7 @@
 
 import { proximityReportsStore } from '../state/proximityReports.js';
 import { digestProximityReports } from '../domain/proximityDigest.js';
+import { readSpyIgnored, writeSpyIgnored } from '../state/spyIgnored.js';
 import { settingsStore } from '../state/settings.js';
 import { bodiesStore } from '../state/bodies.js';
 import { bodyNameIndex, bodyNameFor, nearestBodyDistance } from '../domain/bodies.js';
@@ -200,6 +201,16 @@ const CSS = [
   // the row's left rule is the same value, so a list scans in one pass.
   `#${PANEL_ID} .oge-sb-name{font-weight:700;color:var(--d,#d8e6f4);`,
   'cursor:pointer;text-decoration:underline dotted;}',
+  // The nick is the dossier target now that the duplicate Spyglass button is
+  // gone, so on a COARSE pointer it has to be a real target and not a line of
+  // text. Vertical padding + a negative margin grow the hit-box to ~36px without
+  // moving the baseline or adding a row of height (the dashboard's `.hit-pad`
+  // does the same thing the same way). `inline-block` is what makes the vertical
+  // padding count towards the hit-box at all — on an inline span it paints but
+  // does not take space.
+  '@media (pointer:coarse){',
+  `#${PANEL_ID} .oge-sb-name{display:inline-block;padding:9px 2px;margin:-9px 0;}`,
+  '}',
   `#${PANEL_ID} tbody tr{box-shadow:inset 3px 0 0 var(--d,#26323f);}`,
   // Same-system stays RED on both counts: the rule says how dangerous they are,
   // the tint says they are already inside one of your systems.
@@ -233,12 +244,31 @@ const CSS = [
   // proximity strip.
   `#${PANEL_ID} .coord.moon{color:#c9a9e8;cursor:help;}`,
   `#${PANEL_ID} .muted{color:#4c5763;}`,
+  // Actions stay on ONE line. Stacking them was tried and reverted: it bought
+  // column width and paid for it with a second line of height on EVERY row,
+  // which cost more than the width was worth.
+  //
+  // The reason width and height trade against each other at all is that OGame
+  // gives this panel a FIXED width — the game is not responsive, so there is no
+  // "let it scroll sideways" escape hatch. Column space is strictly zero-sum:
+  // every pixel the actions cell does not use goes to the body list in "Near
+  // you", which is the column that actually wraps, and every line of wrapping it
+  // avoids is a line of panel height. So the way to shrink this column is to
+  // remove a CONTROL, never to fold the line — which is what happened (the
+  // duplicate Spyglass button is gone; see `buildRow`).
   `#${PANEL_ID} .oge-sb-acts{display:flex;gap:6px;justify-content:flex-end;}`,
   `#${PANEL_ID} .oge-sb-btn{font:11px Verdana,sans-serif;color:#93a3b3;cursor:pointer;`,
   'background:#16212c;border:1px solid #26323f;border-radius:5px;padding:3px 9px;white-space:nowrap;}',
   `#${PANEL_ID} .oge-sb-btn:hover{border-color:var(--sp-accent);color:#d8e6f4;background:#1a2534;}`,
   `#${PANEL_ID} .oge-sb-foot{padding:5px 12px;border-top:1px solid #1b2732;font-size:10px;color:#5f6b76;}`,
   `#${PANEL_ID} .oge-sb-foot .k{color:var(--sp-danger);}`,
+  // Unmute line. Wraps rather than scrolls — it sits in a footnote strip, and a
+  // handful of nicknames on a 360px screen needs the second row more than it
+  // needs a scrollbar. `align-items:center` keeps the label on the same
+  // baseline as the buttons once they do wrap.
+  `#${PANEL_ID} .oge-sb-muted{display:flex;flex-wrap:wrap;gap:6px;align-items:center;`,
+  'margin-bottom:5px;}',
+  `#${PANEL_ID} .oge-sb-muted .lbl{color:#7d8b99;text-transform:uppercase;letter-spacing:.5px;}`,
   // Header coords/names toggle + per-prober distance line (under the name).
   `#${PANEL_ID} .oge-sb-namebtn{margin-left:8px;font:10px Verdana,sans-serif;color:#93a3b3;`,
   'cursor:pointer;background:#16212c;border:1px solid #26323f;border-radius:5px;padding:2px 8px;white-space:nowrap;}',
@@ -439,6 +469,16 @@ const bodyEl = (b) => {
  * @property {(pid: string) => { tag: string, lit: boolean } | null} allyFor
  *   Alliance label for the row, and whether this alliance fielded MORE THAN ONE
  *   prober in the current window.
+ * @property {(pid: number, on: boolean) => void} setMuted
+ *   Mute (`true`) or unmute (`false`) a prober and repaint. Muting only stops
+ *   this panel and the Spyglass strip from listing them — it does NOT touch
+ *   their danger score, so a muted neighbour still reads as dangerous
+ *   everywhere the threat model is what matters.
+ * @property {Array<{ id: number, name: string }>} mutedShown
+ *   Currently-muted probers that DO appear in the window's log, newest name
+ *   we know, for the unmute affordance under the table. Built from the log
+ *   before muting is applied — the digest has already dropped them by then, so
+ *   this is the only place their nickname is still available.
  */
 
 /**
@@ -481,11 +521,17 @@ const buildRow = (p, ctx) => {
     skull.title = 'In your system — can strike at moon/RIP speed';
     nameTd.appendChild(skull);
   }
-  // The nick is the action here too — it opens the dossier, same as every
-  // clickable nick on the dashboard's Spyglass tab. The Spyglass BUTTON in the
-  // actions cell stays: on touch a dotted underline is not an obvious target.
+  // The nick IS the dossier action — same as every clickable nick on the
+  // dashboard's Spyglass tab, and it carries the same dotted underline. It used
+  // to be backed by a duplicate "Spyglass" button in the actions cell, on the
+  // grounds that a dotted underline is not an obvious touch target; that button
+  // is gone (see the actions cell below) and the affordance it was standing in
+  // for is now solved where the problem actually was — `.oge-sb-name` gets a
+  // ≥36px hit-box on coarse pointers, so the nick is a real target rather than
+  // a line of text with a second control apologising for it.
   const who = el('span', 'oge-sb-name', p.name || `#${pid}`);
-  who.title = dangerHoverTitle(prof);
+  // Danger read first (that is what the hover is FOR), then what the click does.
+  who.title = `${dangerHoverTitle(prof)}\nOpens this player's Spyglass dossier`;
   who.addEventListener('click', () => openSpyglass(p.byPlayerId));
   nameTd.appendChild(who);
   const ally = ctx.allyFor(pid);
@@ -521,20 +567,37 @@ const buildRow = (p, ctx) => {
   }
   tr.appendChild(nearTd);
 
-  // One action: jump to this prober's full dossier in the dashboard's Spyglass
-  // tab (which owns the watch/scan tooling — no point duplicating a
-  // thinner copy of it here).
+  // ONE action pill: Mute. Two things are deliberately absent.
+  //
+  // No WATCH toggle. Starring somebody changes what the Spyglass FAB proposes
+  // and what the dashboard's tables hold — none of which is on screen on the
+  // messages page, so the button's effect would be invisible at the moment of
+  // pressing it. Watching belongs in the dossier, which the nick opens.
+  //
+  // No SPYGLASS button any more either. It did exactly what clicking the nick
+  // does, and paying permanent column width for a duplicate is what forced the
+  // false choice between a wide actions cell and a two-line one.
+  //
+  // Measured on the real stylesheet at the panel's fixed in-game width (648px),
+  // with the duplicate removed: the actions cell drops 142px → 67px and those
+  // 75px land almost exactly on the "Near you" body list, 142px → 214px. That
+  // column is the one that wraps, so the saving comes back as HEIGHT — a row
+  // listing eleven bodies went 58px → 43px, one wrapped line shorter. Removing
+  // the button therefore makes the panel both narrower per row and shorter
+  // overall, which stacking could not do. The dossier is still one tap away, on
+  // the nick, which is where every other OG-E surface already puts it.
   const actTd = el('td');
   const acts = el('div', 'oge-sb-acts');
-  // Deliberately NO watch toggle here. Starring somebody changes what the
-  // Spyglass FAB proposes and what the dashboard's tables hold — none of which
-  // is on screen on the messages page, so the button's effect would be
-  // invisible at the moment of pressing it. The one action this panel offers is
-  // the jump to the dossier, which is also where watching belongs.
-  const dossierBtn = el('button', 'oge-sb-btn', 'Spyglass');
-  dossierBtn.title = "Open this player's profile in the OG-E dashboard (Spyglass tab)";
-  dossierBtn.addEventListener('click', () => openSpyglass(p.byPlayerId));
-  acts.appendChild(dossierBtn);
+  // Mute IS visible where it is pressed: the row leaves the
+  // table under the user's finger and the count above it drops. This is for the
+  // scan you already know about — a neighbour you asked to shoot your sats, a
+  // scout you have already answered — where the row has stopped being news and
+  // is only costing you attention on every visit to the messages page.
+  const muteBtn = el('button', 'oge-sb-btn', 'Mute');
+  muteBtn.title = 'Stop listing this player here and on the Spyglass strip. '
+    + 'Their danger rating is unchanged — unmute from the line under the table.';
+  muteBtn.addEventListener('click', () => ctx.setMuted(p.byPlayerId, true));
+  acts.appendChild(muteBtn);
   actTd.appendChild(acts);
   tr.appendChild(actTd);
 
@@ -692,12 +755,30 @@ const renderInto = (panel, digest, ctx, reports) => {
   const foot = /** @type {HTMLElement | null} */ (panel.querySelector('.oge-sb-foot'));
   if (foot) {
     foot.textContent = '';
+    // Muted probers, each name its own unmute button. Listed by NAME rather
+    // than behind a single "Unmute all", because the whole point of muting one
+    // neighbour is that the others stay muted — and because a count alone
+    // ("2 muted") would leave the user unable to tell WHO they had silenced
+    // without clearing the lot. Rendered above the skull legend: it is state
+    // the user created and can undo, which outranks a glyph key.
+    if (ctx.mutedShown.length > 0) {
+      const line = el('div', 'oge-sb-muted');
+      line.appendChild(el('span', 'lbl', 'Muted:'));
+      for (const m of ctx.mutedShown) {
+        const b = el('button', 'oge-sb-btn', m.name);
+        b.title = `Show ${m.name} again in this table and on the Spyglass strip`;
+        b.addEventListener('click', () => ctx.setMuted(m.id, false));
+        line.appendChild(b);
+      }
+      foot.appendChild(line);
+      foot.style.display = '';
+    }
     if (digest.sameSystemCount > 0) {
       foot.appendChild(el('span', 'k', '💀'));
       foot.appendChild(document.createTextNode(
         ' = a scout with a body in your system — can strike at moon/RIP speed. From alerts you opened.'));
       foot.style.display = '';
-    } else {
+    } else if (ctx.mutedShown.length === 0) {
       foot.style.display = 'none';
     }
   }
@@ -768,6 +849,41 @@ export const installWhosSpyingPanel = () => {
   });
 
   /**
+   * Probers the user has muted — read once at mount for the same reason
+   * `alliancesById` is (keeps the render path synchronous), then kept current
+   * in memory because THIS panel is the only thing that mutates it in this
+   * tab. Empty until the read lands, which fails towards showing a row rather
+   * than hiding one.
+   * @type {Set<number>}
+   */
+  let muted = new Set();
+  void readSpyIgnored().then((ids) => {
+    if (!installed) return;
+    muted = ids;
+    refresh({ force: true });
+  });
+
+  /**
+   * Mute or unmute one prober, persist, repaint.
+   *
+   * The in-memory set is updated first and the write is fire-and-forget: the
+   * button must feel instant, and a failed write costs the user one more click
+   * later rather than any data. `force` because muting REMOVES a row, which
+   * changes the digest the signature is derived from — without it the repaint
+   * would be skipped on the very change that needs it.
+   *
+   * @param {number} pid
+   * @param {boolean} on  `true` = mute, `false` = unmute.
+   * @returns {void}
+   */
+  const setMuted = (pid, on) => {
+    if (on) muted.add(pid);
+    else muted.delete(pid);
+    void writeSpyIgnored(muted).catch(() => {});
+    refresh({ force: true });
+  };
+
+  /**
    * Mount/remove + repaint the table to match the current tab + digest. Cheap
    * on the common "nothing to do / unchanged" paths so it's safe on every
    * <body> mutation: bails immediately off the spy tab, and a render signature
@@ -804,10 +920,29 @@ export const installWhosSpyingPanel = () => {
     const range = currentRange();
     const nowSec = Math.floor(Date.now() / 1000);
     const windowSec = RANGES.find(([v]) => v === range)?.[2] ?? 0;
-    const filtered = windowSec
+    const inWindow = windowSec
       ? reports.filter((r) => !r.ts || r.ts >= nowSec - windowSec)
       : reports;
-    const digest = digestProximityReports(filtered);
+    const digest = digestProximityReports(inWindow, { ignoredPlayerIds: muted });
+    // The raw log has to drop the muted probers too. `renderInto` labels it with
+    // `digest.totalReports` while iterating this list, so leaving them in would
+    // both contradict the count and undo the mute one <details> away.
+    const filtered = muted.size
+      ? inWindow.filter((r) => !muted.has(r.byPlayerId))
+      : inWindow;
+    // Names for the unmute buttons, resolved from the PRE-mute log because the
+    // digest no longer carries these players. Newest-first log order means the
+    // first name we see for an id is the freshest one.
+    /** @type {Array<{ id: number, name: string }>} */
+    const mutedShown = [];
+    if (digest.hiddenPlayerIds.length) {
+      const wanted = new Set(digest.hiddenPlayerIds);
+      for (const r of inWindow) {
+        if (!wanted.has(r.byPlayerId)) continue;
+        wanted.delete(r.byPlayerId);
+        mutedShown.push({ id: r.byPlayerId, name: r.byPlayerName || `#${r.byPlayerId}` });
+      }
+    }
     if (!panel) {
       panel = buildShell(onToggleNames, onRange);
       lastSig = '';
@@ -854,10 +989,15 @@ export const installWhosSpyingPanel = () => {
         const tag = (a && (a.tag || a.name)) || '';
         return tag ? { tag, lit: (allyCounts.get(aid) ?? 0) > 1 } : null;
       },
+      setMuted,
+      mutedShown,
     };
     const shown = digest.players.slice(0, MAX_ROWS);
+    // Muted ids ride the signature so an unmute repaints even when it restores
+    // a prober whose row data is byte-identical to what was last painted.
     const sig = `${digest.playerCount}|${digest.totalReports}|${digest.sameSystemCount}`
-      + `|${showNames ? 'n' : 'c'}|${range}|${inv.capturedAt}|`
+      + `|${showNames ? 'n' : 'c'}|${range}|${inv.capturedAt}`
+      + `|${digest.hiddenPlayerIds.join('.')}|`
       + shown.map((p) => `${p.byPlayerId}:${p.count}:${p.lastTs}`).join(',');
     if (force || sig !== lastSig) {
       renderInto(panel, digest, ctx, filtered);

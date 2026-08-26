@@ -41,6 +41,12 @@
  * @property {number} playerCount
  * @property {number} sameSystemCount  Probers (not alerts) with a same-system origin.
  * @property {number|null} lastTs      Newest alert overall, epoch seconds.
+ * @property {number[]} hiddenPlayerIds
+ *   Probers present in the log but suppressed by `ignoredPlayerIds`, so the
+ *   panels can say HOW MANY rows they are not showing and offer to unhide
+ *   them. Never empty-but-unreported: a hidden prober the log has since aged
+ *   out simply stops appearing here, which is what lets the "Hidden: N"
+ *   affordance disappear on its own instead of pointing at nothing.
  */
 
 /**
@@ -59,18 +65,48 @@ const systemOf = (coords) => {
  * Order-tolerant: entries are re-ranked by their own timestamps, so a caller
  * passing an unordered log still gets newest-first fields.
  *
+ * # Hiding a prober
+ *
+ * `ignoredPlayerIds` drops a prober from the digest entirely — not just from
+ * `players`, but from `totalReports`, `sameSystemCount` and `lastTs` too. That
+ * is the point: a scan you have explicitly acknowledged should stop driving
+ * the headline counts and the panel's unseen-badge, otherwise hiding the row
+ * would leave the number above it still nagging.
+ *
+ * This suppresses only the VIEW. The reports stay in the log (the dossier and
+ * the Spyglass estimates keep reading them), and nothing here touches the
+ * player's danger score — an unofficial ally parked next door is still a real
+ * fleet, and zeroing their threat is a different decision than muting an
+ * alert you have already dealt with.
+ *
  * @param {ProximityReport[]} reports
+ * @param {object} [opts]
+ * @param {Iterable<number>} [opts.ignoredPlayerIds]
+ *   Prober ids to suppress. Any iterable of numbers; a `Set` avoids the
+ *   rebuild. Unknown ids are harmless — they just never match.
  * @returns {ProximityDigest}
  */
-export const digestProximityReports = (reports) => {
+export const digestProximityReports = (reports, opts = {}) => {
+  const ignored = opts.ignoredPlayerIds instanceof Set
+    ? opts.ignoredPlayerIds
+    : new Set(opts.ignoredPlayerIds ?? []);
   /** @type {Map<number, ProximityDigestEntry>} */
   const byId = new Map();
+  /** @type {Set<number>} */
+  const hidden = new Set();
   let totalReports = 0;
   /** @type {number | null} */
   let lastTs = null;
 
   for (const r of Array.isArray(reports) ? reports : []) {
     if (!r || typeof r.byPlayerId !== 'number') continue;
+    // Suppressed prober: counted as hidden, then skipped before it can touch
+    // any accumulator. `hidden` is a Set because one prober usually owns
+    // several alerts and we report PROBERS, not alerts.
+    if (ignored.has(r.byPlayerId)) {
+      hidden.add(r.byPlayerId);
+      continue;
+    }
     totalReports++;
     const ts = typeof r.ts === 'number' && r.ts > 0 ? r.ts : null;
     if (ts != null && (lastTs == null || ts > lastTs)) lastTs = ts;
@@ -143,5 +179,6 @@ export const digestProximityReports = (reports) => {
     playerCount: players.length,
     sameSystemCount: players.reduce((n, p) => n + (p.sameSystem ? 1 : 0), 0),
     lastTs,
+    hiddenPlayerIds: [...hidden],
   };
 };

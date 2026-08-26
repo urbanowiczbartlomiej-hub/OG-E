@@ -94,3 +94,81 @@ describe('digestProximityReports', () => {
     expect(d.totalReports).toBe(1);
   });
 });
+
+// ──────────────────────────────────────────────────────────────────
+// Muting a prober (`ignoredPlayerIds`)
+// ──────────────────────────────────────────────────────────────────
+//
+// The rule: a muted prober leaves the digest ENTIRELY — not just `players`, but
+// the headline counts and `lastTs` too. Hiding the row while the number above it
+// kept counting would leave the panel still nagging about the alert the user
+// just acknowledged, which is the whole thing they were trying to stop.
+
+describe('digestProximityReports — ignoredPlayerIds', () => {
+  const log = [
+    rep({ byPlayerId: 7, byPlayerName: 'Friend', fromCoords: '1:1:9', atCoords: '1:1:1', ts: 300 }),
+    rep({ byPlayerId: 7, byPlayerName: 'Friend', fromCoords: '1:1:9', atCoords: '1:1:2', ts: 250 }),
+    rep({ byPlayerId: 8, byPlayerName: 'Hostile', fromCoords: '4:9:9', atCoords: '1:1:1', ts: 100 }),
+  ];
+
+  it('is a no-op when the option is absent, empty, or names nobody in the log', () => {
+    const base = digestProximityReports(log);
+    for (const opt of [undefined, {}, { ignoredPlayerIds: [] }, { ignoredPlayerIds: [-999] }]) {
+      const d = digestProximityReports(log, /** @type {any} */ (opt));
+      expect(d.playerCount).toBe(base.playerCount);
+      expect(d.totalReports).toBe(base.totalReports);
+      expect(d.hiddenPlayerIds).toEqual([]);
+    }
+  });
+
+  it('drops the muted prober from players AND from every headline count', () => {
+    // Player 7 is the same-system one and owns the newest alerts, so muting them
+    // must move all four numbers, not just the row list.
+    const d = digestProximityReports(log, { ignoredPlayerIds: [7] });
+    expect(d.players.map((p) => p.byPlayerId)).toEqual([8]);
+    expect(d.playerCount).toBe(1);
+    expect(d.totalReports).toBe(1); // both of player 7's alerts are gone
+    expect(d.sameSystemCount).toBe(0);
+    expect(d.lastTs).toBe(100); // recomputed — NOT the muted prober's 300
+    expect(d.hiddenPlayerIds).toEqual([7]);
+  });
+
+  it('reports each hidden prober ONCE, however many alerts they own', () => {
+    // `hiddenPlayerIds` drives a "Muted: <name>" affordance, which is per
+    // player — two alerts from one muted prober is still one name.
+    const d = digestProximityReports(log, { ignoredPlayerIds: [7] });
+    expect(d.hiddenPlayerIds).toHaveLength(1);
+  });
+
+  it('accepts a Set or any iterable, not just an array', () => {
+    const viaSet = digestProximityReports(log, { ignoredPlayerIds: new Set([7]) });
+    const viaArray = digestProximityReports(log, { ignoredPlayerIds: [7] });
+    expect(viaSet.players.map((p) => p.byPlayerId)).toEqual(viaArray.players.map((p) => p.byPlayerId));
+    expect(viaSet.hiddenPlayerIds).toEqual(viaArray.hiddenPlayerIds);
+  });
+
+  it('muting everyone yields a genuinely empty digest, with all ids reported hidden', () => {
+    // The caller distinguishes this from "no scans at all" — a window holding
+    // nothing but muted probers must not read as quiet.
+    const d = digestProximityReports(log, { ignoredPlayerIds: [7, 8] });
+    expect(d.players).toEqual([]);
+    expect(d.playerCount).toBe(0);
+    expect(d.totalReports).toBe(0);
+    expect(d.lastTs).toBeNull();
+    expect([...d.hiddenPlayerIds].sort((a, b) => a - b)).toEqual([7, 8]);
+  });
+
+  it('leaves the surviving prober untouched — muting is a filter, not a rewrite', () => {
+    const kept = digestProximityReports(log, { ignoredPlayerIds: [7] }).players[0];
+    const alone = digestProximityReports([log[2]]).players[0];
+    expect(kept).toEqual(alone);
+  });
+
+  it('does not report a muted prober as hidden once their alerts age out of the log', () => {
+    // The affordance must disappear on its own rather than offering to unmute
+    // somebody who is no longer in the window at all.
+    const d = digestProximityReports([log[2]], { ignoredPlayerIds: [7] });
+    expect(d.hiddenPlayerIds).toEqual([]);
+    expect(d.playerCount).toBe(1);
+  });
+});

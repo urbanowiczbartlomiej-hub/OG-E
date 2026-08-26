@@ -161,6 +161,29 @@ written:
   `universe.xml` and marks the lowest one. An inference over a published feed,
   rendered as a label; nothing is collected that the feed does not publish.
 
+## Muting a prober on "Who's spying on you" — classification (GREEN)
+
+**Allowed** (§1.2 display). `state/spyIgnored.js` holds a per-universe list of
+player ids, and `domain/proximityDigest.js` drops them from the digest the two
+spy surfaces render. Nothing is collected, no request is made, no game action is
+taken — it is a filter over alerts the player had already opened, of exactly the
+same kind as the huddled filter above.
+
+Two properties are deliberate and worth keeping:
+
+- **It suppresses the alert, not the assessment.** Muting does NOT touch the
+  player's danger score, patrol classification or badge. The case it exists for
+  is a strong neighbour whose scan the player already knows about and has
+  accounted for — someone who remains exactly as capable of killing their fleet
+  afterwards. Zeroing a threat is what `dangerScore`'s `friendly` short-circuit
+  does for your alliance and your in-game buddy list, and that is a different
+  decision with different consequences; conflating the two would let a cosmetic
+  click blind the defensive tooling.
+- **It is reversible and visible.** Every muted prober is listed by name under
+  the table with a one-click unmute, and a window holding nothing but muted
+  probers says so rather than reading as "no scans". A filter the player cannot
+  see the effect of is a filter that lies to them.
+
 ## What OG-E never does (all grep-verified)
 
 - No origination of a game **request**, and no modification of one beyond the

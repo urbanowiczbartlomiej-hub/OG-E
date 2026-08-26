@@ -87,6 +87,11 @@ import { readApiCacheFor, apiCacheKeyFor } from '../../state/apiCache.js';
 import { targetReportsKeyFor } from '../../state/targets.js';
 import { allianceClassKeyFor } from '../../state/allianceClass.js';
 import { proximityReportsKeyFor } from '../../state/proximityReports.js';
+import {
+  spyIgnoredKeyFor,
+  readSpyIgnoredFor,
+  writeSpyIgnoredFor,
+} from '../../state/spyIgnored.js';
 import { bodiesKeyFor } from '../../state/bodies.js';
 import { activityObsKeyFor } from '../../state/activityObs.js';
 import { presenceLedgerKeyFor } from '../../state/presenceLedger.js';
@@ -366,6 +371,14 @@ let allianceClasses = {};
  * @type {import('../../domain/espionageReport.js').ProximityReport[]}
  */
 let proximityReports = [];
+/**
+ * Probers the user muted on the "Who's spying on you" surfaces
+ * (`state/spyIgnored.js`), for the selected universe. Their alerts stay in
+ * `proximityReports` — this only stops them being LISTED, and never touches
+ * their danger rating.
+ * @type {Set<number>}
+ */
+let spyMuted = new Set();
 /** Our owned bodies (planets + moons) for the selected universe — powers the
  *  proximity strip's coords/names toggle + distance lines.
  *  @type {import('../../domain/bodies.js').Body[]} */
@@ -785,6 +798,7 @@ const boot = async () => {
       apiCacheKeyFor(selectedUniverseId),
       targetReportsKeyFor(selectedUniverseId),
       proximityReportsKeyFor(selectedUniverseId),
+      spyIgnoredKeyFor(selectedUniverseId),
       allianceClassKeyFor(selectedUniverseId),
     ];
     if (keysToWatch.some((k) => k in changes)) {
@@ -1767,6 +1781,7 @@ const loadAll = async () => {
     targetReports = {};
     allianceClasses = {};
     proximityReports = [];
+    spyMuted = new Set();
     ownBodies = [];
     homeWatchState = emptyHomeWatch();
     lastHomeArrivalKey = '';
@@ -1779,7 +1794,7 @@ const loadAll = async () => {
     routines = {};
     return;
   }
-  const [h, s, p, op, api, tr, pr, ao, ac, bd, pl, ai, hw] = await Promise.all([
+  const [h, s, p, op, api, tr, pr, ao, ac, bd, pl, ai, hw, sm] = await Promise.all([
     chromeStore.get(historyKeyFor(selectedUniverseId)),
     chromeStore.get(scansKeyFor(selectedUniverseId)),
     chromeStore.get(playersKeyFor(selectedUniverseId)),
@@ -1793,6 +1808,7 @@ const loadAll = async () => {
     chromeStore.get(presenceLedgerKeyFor(selectedUniverseId)),
     chromeStore.get(allianceIntelKeyFor(selectedUniverseId)),
     readHomeWatch(selectedUniverseId),
+    readSpyIgnoredFor(selectedUniverseId),
   ]);
   history = Array.isArray(h) ? /** @type {ColonyEntry[]} */ (h) : [];
   scans = s && typeof s === 'object' ? /** @type {GalaxyScans} */ (s) : {};
@@ -1851,6 +1867,9 @@ const loadAll = async () => {
   proximityReports = Array.isArray(pr)
     ? /** @type {import('../../domain/espionageReport.js').ProximityReport[]} */ (pr)
     : [];
+  // Muted probers for this universe. Read alongside the reports they filter so
+  // the strip can never paint a row the in-game panel has already silenced.
+  spyMuted = sm instanceof Set ? sm : new Set();
   // Our owned bodies for this universe (planet-bar snapshot) — feeds the
   // proximity strip's coords/names toggle + distance-to-prober lines.
   const bdBodies = bd && typeof bd === 'object' ? /** @type {any} */ (bd).bodies : null;
@@ -2446,7 +2465,41 @@ const renderProximityStrip = () => {
   const recentReports = proximityReports.filter(
     (r) => !(typeof r.ts === 'number' && r.ts > 0) || r.ts >= cutoffSec,
   );
-  const digest = digestProximityReports(recentReports);
+  const digest = digestProximityReports(recentReports, { ignoredPlayerIds: spyMuted });
+  // Names for the unmute buttons, taken from the PRE-mute log: the digest has
+  // already dropped these players, so this is the only place their nickname
+  // still exists. Newest-first order means the first hit is the freshest name.
+  /** @type {Array<{ id: number, name: string }>} */
+  const mutedShown = [];
+  if (digest.hiddenPlayerIds.length) {
+    const wanted = new Set(digest.hiddenPlayerIds);
+    for (const r of recentReports) {
+      if (!wanted.has(r.byPlayerId)) continue;
+      wanted.delete(r.byPlayerId);
+      mutedShown.push({ id: r.byPlayerId, name: r.byPlayerName || `#${r.byPlayerId}` });
+    }
+  }
+  // The raw log drops them too — it is labelled with digest.totalReports, so
+  // leaving them in would contradict the count and undo the mute one
+  // <details> away.
+  const shownReports = spyMuted.size
+    ? recentReports.filter((r) => !spyMuted.has(r.byPlayerId))
+    : recentReports;
+
+  /**
+   * Mute or unmute one prober and repaint. Persisted per universe; the write is
+   * fire-and-forget so the click feels instant, and a failed write costs one
+   * more click rather than any data. The in-game panel picks the change up
+   * through the same key.
+   * @param {number} pid
+   * @param {boolean} on
+   */
+  const setSpyMuted = (pid, on) => {
+    if (on) spyMuted.add(pid);
+    else spyMuted.delete(pid);
+    void writeSpyIgnoredFor(selectedUniverseId, spyMuted).catch(() => {});
+    renderProximityStrip();
+  };
   // Game origin for the "from" click-through to the in-game galaxy view.
   const linkBase = gameLinkBase();
   // The head carries the VERDICT and nothing else. The old count line
@@ -2523,7 +2576,12 @@ const renderProximityStrip = () => {
     // Distinguish "no data at all" from "nothing in this window" — the latter is
     // fixable by widening the range chip above.
     note.textContent = proximityReports.length
-      ? 'No scans in this window.'
+      ? (mutedShown.length
+        // Otherwise a window holding nothing BUT muted probers reads as "no
+        // scans", which is the one reading that is actively wrong: there were
+        // scans, the user silenced them.
+        ? 'No scans in this window except muted ones.'
+        : 'No scans in this window.')
       : 'No scans on you yet.';
     proximityStripEl.appendChild(note);
     restoreScroll();
@@ -2635,9 +2693,34 @@ const renderProximityStrip = () => {
     // The shared watch pill (chips.js) — the same element the Players table, "Your
     // neighbours" and Patrol use. `toggleWatched` already repaints this strip, so
     // the callback is bare. `margin-left:auto` keeps it at the row's right edge.
+    // Both action pills ride ONE non-wrapping group pinned to the row's right
+    // edge. They used to be two independent flex children after a
+    // `margin-left:auto` chip, which let the row break BETWEEN them — "+ watch"
+    // ending line one and "Mute" alone on line two, which reads as a stray
+    // control belonging to nothing. Grouped, they either both fit or both move,
+    // and `flex-shrink:0` stops them being squeezed narrower than their labels.
+    const acts = document.createElement('div');
+    acts.style.cssText = 'display:flex;gap:6px;align-items:center;margin-left:auto;flex-shrink:0;';
+
     const wp = watchChip(pid, watchedPlayers.has(pid), toggleWatched);
-    wp.style.marginLeft = 'auto';
-    row.appendChild(wp);
+    acts.appendChild(wp);
+
+    // Mute — drops this prober from both spy surfaces. For the scan you already
+    // know about (a neighbour you asked to shoot your sats, a scout you have
+    // answered): the row has stopped being news and is only costing attention.
+    // It does NOT touch their Danger rating, so the left rule they would have
+    // painted still tells the truth everywhere the threat model is what counts.
+    const mb = document.createElement('button');
+    mb.type = 'button';
+    mb.className = 'hit-pad';
+    mb.textContent = 'Mute';
+    mb.style.cssText = 'font-size:11px;border-radius:11px;padding:2px 9px;cursor:pointer;'
+      + 'white-space:nowrap;background:transparent;border:1px solid #2a3a45;color:#8b95a0;';
+    mb.title = 'Stop listing this player here and in the in-game panel. '
+      + 'Their danger rating is unchanged — unmute under the list.';
+    mb.addEventListener('click', () => setSpyMuted(e.byPlayerId, true));
+    acts.appendChild(mb);
+    row.appendChild(acts);
 
     // Sub-line — the geometry: `from <origin> · at <our bodies>`. Its own full-
     // width flex item (basis 100%) so it always starts a fresh line under the
@@ -2669,6 +2752,33 @@ const renderProximityStrip = () => {
   }
   proximityStripEl.appendChild(list);
 
+  // Muted probers, each nickname its own unmute button. Named rather than
+  // counted: the point of muting one neighbour is that the others stay muted,
+  // and "2 muted" would leave the user unable to see WHO without clearing the
+  // lot. Above the legend — state the user created and can undo outranks a
+  // glyph key.
+  if (mutedShown.length) {
+    const mrow = document.createElement('div');
+    mrow.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;align-items:center;'
+      + 'margin-top:8px;font-size:11px;color:#6b7782;';
+    const lbl = document.createElement('span');
+    lbl.textContent = 'Muted:';
+    lbl.style.cssText = 'text-transform:uppercase;letter-spacing:.5px;color:#7d8b99;';
+    mrow.appendChild(lbl);
+    for (const m of mutedShown) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'hit-pad';
+      b.textContent = m.name;
+      b.style.cssText = 'font-size:11px;border-radius:11px;padding:2px 9px;cursor:pointer;'
+        + 'white-space:nowrap;background:#1b2430;border:1px solid #33465c;color:#a9bccf;';
+      b.title = `Show ${m.name} again in this list and in the in-game panel`;
+      b.addEventListener('click', () => setSpyMuted(m.id, false));
+      mrow.appendChild(b);
+    }
+    proximityStripEl.appendChild(mrow);
+  }
+
   // 💀 legend — only when a same-system prober is actually on screen (a legend
   // for a glyph that isn't shown is clutter). Mirrors the in-game panel's foot.
   if (digest.sameSystemCount > 0) {
@@ -2695,7 +2805,7 @@ const renderProximityStrip = () => {
   // pushing the whole page down when expanded.
   const rawBody = document.createElement('div');
   rawBody.style.cssText = 'max-height:320px;overflow-y:auto;';
-  for (const r of recentReports) {
+  for (const r of shownReports) {
     const line = document.createElement('div');
     line.style.cssText = 'font-size:11px;color:#788;margin-top:3px;line-height:1.4;';
     const age = proximityAge(r.ts, nowMs);
@@ -3854,6 +3964,7 @@ export const _resetDashboardForTest = () => {
   history = [];
   scans = {};
   proximityReports = [];
+  spyMuted = new Set();
   ownBodies = [];
   homeWatchState = emptyHomeWatch();
   lastHomeArrivalKey = '';
