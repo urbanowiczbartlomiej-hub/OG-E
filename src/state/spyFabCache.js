@@ -1,10 +1,13 @@
-// Spyglass-FAB optimistic mount cache — the last reconciled "watch-list has
-// players" verdict, persisted so the Spyglass button can mount INSTANTLY on
-// the next page load, before the async chrome.storage watch-list hydrate
-// lands. Without it the button blinks on every navigation: absent for the
-// first few hundred ms, then popping in when the hydrate resolves. The real
-// watch-list reconcile then confirms (or removes) the optimistic mount as
-// soon as the hydrated value arrives.
+// Spyglass-FAB optimistic mount cache — what the button looked like when it was
+// last reconciled, persisted so it can appear INSTANTLY on the next page load
+// instead of after the async chrome.storage hydrates and the apiContext handoff
+// land. Without it the button blinks on every navigation: absent for the first
+// seconds, then popping in. The real reconcile then confirms (or corrects) the
+// optimistic paint as soon as the live values arrive.
+//
+// Two verdicts, two keys: whether a button was shown at all
+// ({@link SPY_FAB_SHOWN_KEY}) and how many unread home-watch arrivals it was
+// nudging about ({@link SPY_FAB_HOME_KEY}).
 //
 // This is the sendSpy feature's OWN mount verdict, not shared state — but it
 // still lives here (not written from the feature via raw `safeLS`) so all
@@ -38,4 +41,42 @@ export const readSpyFabShown = () => safeLS.get(SPY_FAB_SHOWN_KEY) === '1';
 export const writeSpyFabShown = (shown) => {
   if (shown) safeLS.set(SPY_FAB_SHOWN_KEY, '1');
   else safeLS.remove(SPY_FAB_SHOWN_KEY);
+};
+
+/**
+ * localStorage key holding the last reconciled count of UNREAD home-watch
+ * arrivals — the "somebody new moved in next to you" nudge.
+ */
+export const SPY_FAB_HOME_KEY = 'oge-spy-fab-home';
+
+/**
+ * How many unread home-watch arrivals did the last real derive see? `0` when
+ * absent/unreadable.
+ *
+ * Why this is cached at all: the arrivals themselves live in `chrome.storage`
+ * (`state/homeWatch.js`), and the Spyglass button additionally holds a dim
+ * "loading…" paint until the apiContext handoff lands — together worth 1-3 s on
+ * every page load, during which the nudge is invisible and then pops in. The
+ * nudge needs NONE of that machinery: it is a count and a "tap → dashboard"
+ * navigation. Mirroring the count into synchronous localStorage lets the button
+ * paint it on the very first frame and reconcile a beat later.
+ *
+ * @returns {number}
+ */
+export const readSpyHomeUnread = () => {
+  const n = safeLS.int(SPY_FAB_HOME_KEY, 0);
+  return n > 0 ? n : 0;
+};
+
+/**
+ * Record the reconciled unread-arrival count for the next load's optimistic
+ * paint. Removed rather than stored as `0`, so the key exists only while there
+ * is actually something unread.
+ *
+ * @param {number} n
+ * @returns {void}
+ */
+export const writeSpyHomeUnread = (n) => {
+  if (n > 0) safeLS.set(SPY_FAB_HOME_KEY, String(n));
+  else safeLS.remove(SPY_FAB_HOME_KEY);
 };

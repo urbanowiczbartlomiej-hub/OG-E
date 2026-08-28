@@ -378,6 +378,37 @@ export function hasWorkSources(env) {
 }
 
 /**
+ * The home-watch nudge's paint — "N strangers moved in next to you and you have
+ * not read about it". Pulses, because it is the one Spyglass state that is news
+ * rather than work.
+ *
+ * Its own function (not inlined in {@link renderSpy}) because the orchestrator
+ * paints it a second time, straight off the localStorage mirror, before any
+ * async data has landed — see `state/spyFabCache.js`. Two call sites, one copy:
+ * the optimistic first frame and the reconciled one must be pixel-identical or
+ * the button visibly rewrites itself a second after it appears.
+ *
+ * @param {number} n  Unread arrivals.
+ * @returns {Paint}
+ */
+export const homeReportPaint = (n) => ({
+  text: 'Home',
+  subtext: `${n} new`,
+  hint: 'tap → dashboard',
+  bg: BG_SPY_LOOK,
+  pulse: true,
+});
+
+/**
+ * Hold duration (ms) for the long-press "I have seen who moved in" gesture on
+ * the Spyglass satellite — the shortcut that retires the home nudge without a
+ * trip through the dashboard. Matches the skip hold on the expedition and
+ * colony buttons (a deliberate 2 s press, with the shared button's radial
+ * charge arc as feedback) so the FAB has ONE hold cadence, not three.
+ */
+export const HOLD_SEEN_MS = 2000;
+
+/**
  * Pure `(SpyContext, preflight?) → Paint | null` for the idle / candidate /
  * done states. The armed "Send!" state is painted by the orchestrator (it owns
  * the courier step), the same split sendColony uses.
@@ -406,14 +437,7 @@ export function renderSpy(ctx, preflight) {
   // moment the button points at the dashboard (see deriveSpy). Pulses: somebody
   // moved in next to you and you have not read it yet.
   if (ctx.proposal === 'homeReport') {
-    const n = ctx.homeUnread ?? 0;
-    return {
-      text: 'Home',
-      subtext: `${n} new`,
-      hint: 'tap → dashboard',
-      bg: BG_SPY_LOOK,
-      pulse: true,
-    };
+    return homeReportPaint(ctx.homeUnread ?? 0);
   }
   // Fresh reports await ingest — the loop's closing step (tap → messages).
   // Calm paint (no pulse): the intel is already yours.

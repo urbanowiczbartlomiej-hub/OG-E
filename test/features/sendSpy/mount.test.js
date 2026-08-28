@@ -36,13 +36,15 @@
 // @ts-check
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { installSendSpy, _resetSendSpyForTest } from '../../../src/features/sendSpy/index.js';
+import {
+  installSendSpy, _resetSendSpyForTest, _onSeenForTest,
+} from '../../../src/features/sendSpy/index.js';
 import {
   watchListStore,
   initWatchListStore,
   disposeWatchListStore,
 } from '../../../src/state/watchList.js';
-import { SPY_FAB_SHOWN_KEY } from '../../../src/state/spyFabCache.js';
+import { SPY_FAB_SHOWN_KEY, SPY_FAB_HOME_KEY } from '../../../src/state/spyFabCache.js';
 import { scansStore } from '../../../src/state/scans.js';
 
 const BUTTON_ID = 'oge-send-spy';
@@ -227,5 +229,64 @@ describe('sendSpy — repaints on a galaxy ingest (state/scans)', () => {
     // No button left to repaint — a late ingest must not resurrect one.
     scansStore.set({ '4:481': { scannedAt: 2, positions: {} } });
     expect(mounted()).toBe(false);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// home-watch nudge — optimistic paint + the "seen it" long-press
+// ──────────────────────────────────────────────────────────────────
+
+describe('sendSpy — home-watch nudge (spyFabCache mirror)', () => {
+  it('paints the nudge on the FIRST frame from the mirror, not a dim "loading…"', async () => {
+    // What the user reported: the "somebody new moved in" button was invisible
+    // for 1-3 s after every page load and then popped in. The alert needs
+    // neither the apiContext handoff nor the watch-list hydrate — just a count —
+    // so it is mirrored into synchronous localStorage and painted immediately.
+    localStorage.setItem(SPY_FAB_HOME_KEY, '2');
+    initWatchListStore();
+    installSendSpy();
+    expect(mounted()).toBe(true);
+    const label = document.getElementById(BUTTON_ID)?.textContent ?? '';
+    expect(label).toContain('Home');
+    expect(label).toContain('2 new');
+    expect(label).not.toContain('loading');
+  });
+
+  it('mounts on the mirror alone, with no "was shown" flag from the last load', async () => {
+    localStorage.setItem(SPY_FAB_HOME_KEY, '1');
+    expect(localStorage.getItem(SPY_FAB_SHOWN_KEY)).toBeNull();
+    initWatchListStore();
+    installSendSpy();
+    expect(mounted()).toBe(true);
+  });
+
+  it('holds the dim "loading…" paint when there is no news to show', async () => {
+    localStorage.setItem(SPY_FAB_SHOWN_KEY, '1');
+    initWatchListStore();
+    installSendSpy();
+    expect(document.getElementById(BUTTON_ID)?.textContent).toContain('loading');
+  });
+
+  it('the long-press clears the mirror, so the nudge cannot flash back next load', async () => {
+    localStorage.setItem(SPY_FAB_HOME_KEY, '3');
+    initWatchListStore();
+    installSendSpy();
+    expect(document.getElementById(BUTTON_ID)?.textContent).toContain('3 new');
+
+    _onSeenForTest();
+
+    // The arrival log itself is stamped through chrome.storage (covered in
+    // test/state/homeWatch.test.js); what matters HERE is that the next page
+    // load has nothing left to paint optimistically.
+    expect(localStorage.getItem(SPY_FAB_HOME_KEY)).toBeNull();
+  });
+
+  it('the long-press is a no-op when there is no news (cannot silence a working button)', async () => {
+    localStorage.setItem(SPY_FAB_SHOWN_KEY, '1');
+    initWatchListStore();
+    installSendSpy();
+    _onSeenForTest();
+    expect(localStorage.getItem(SPY_FAB_SHOWN_KEY)).toBe('1');
+    expect(document.getElementById(BUTTON_ID)?.textContent).toContain('loading');
   });
 });

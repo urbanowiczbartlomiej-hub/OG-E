@@ -33,7 +33,9 @@
 
 import { settingsStore } from '../../state/settings.js';
 import { watchListStore, whenWatchListHydrated } from '../../state/watchList.js';
-import { readSpyFabShown, writeSpyFabShown } from '../../state/spyFabCache.js';
+import {
+  readSpyFabShown, writeSpyFabShown, readSpyHomeUnread, writeSpyHomeUnread,
+} from '../../state/spyFabCache.js';
 import { targetReportsStore } from '../../state/targets.js';
 import { activityObsStore } from '../../state/activityObs.js';
 import { bodiesStore } from '../../state/bodies.js';
@@ -51,7 +53,10 @@ import {
   buildPatrolPlan,
 } from '../../domain/patrol.js';
 import { homeSystemKeys, buildHomeLookPlan } from '../../domain/homeWatch.js';
-import { readHomeWatch, openHomeArrivals, emptyHomeWatch } from '../../state/homeWatch.js';
+import {
+  readHomeWatch, openHomeArrivals, unreadHomeArrivals, markHomeArrivalsSeen,
+  emptyHomeWatch,
+} from '../../state/homeWatch.js';
 import { galaxyStaleMs } from '../../domain/galaxyWatch.js';
 import { createButton as makeButton, labelLines } from '../shared/button.js';
 import { EYE_GLYPH } from '../shared/buttonGlyphs.js';
@@ -82,6 +87,8 @@ import {
   renderSpy,
   nearestLaunchPlanet,
   hasWorkSources,
+  homeReportPaint,
+  HOLD_SEEN_MS,
   BG_SPY_IDLE,
   BG_SPY_READY,
   BG_SPY_ERROR,
@@ -259,9 +266,22 @@ const activityByPlayer = (nowMs) => {
  */
 let homeSnapshot = emptyHomeWatch();
 
+/**
+ * Has {@link homeSnapshot} ever been filled from storage? Until it has, its
+ * emptiness is ignorance, not news — and writing that "0 unread" into the
+ * localStorage mirror would erase a perfectly good nudge on every page load,
+ * which is the very flash the mirror exists to remove.
+ */
+let homeSnapshotReady = false;
+
 /** Kick a background re-read of the home-watch key. @returns {void} */
 const refreshHomeSnapshot = () => {
-  void readHomeWatch().then((s) => { homeSnapshot = s; }).catch(() => {});
+  void readHomeWatch()
+    .then((s) => {
+      homeSnapshot = s;
+      homeSnapshotReady = true;
+    })
+    .catch(() => {});
 };
 
 /**
@@ -314,6 +334,49 @@ const openDashboardSpyglass = () => {
     '_blank',
   );
   return true;
+};
+
+/**
+ * Long-press on the Spyglass satellite — "I have already seen who moved in".
+ * Stamps the open arrivals as seen (the same `shownAt` the dashboard writes when
+ * it paints them), clears the localStorage mirror so the next load does not
+ * flash the nudge back, and repaints.
+ *
+ * Why a mute-like gesture at all: the nudge pulses until the news is read, and
+ * for a player who checked the newcomer in the galaxy view — never opening the
+ * dashboard — "read" never happens. A pulse that cannot be satisfied is the
+ * thing that trains people to ignore the FAB. This is the same escape hatch the
+ * "Who's spying on you" prober mute gives, one level lighter: it retires THIS
+ * news rather than muting a player, so the next stranger still lights up.
+ *
+ * No-op when nothing is unread, so a stray hold on a working button (Look,
+ * Reports, a candidate) cannot silence anything.
+ *
+ * @returns {void}
+ */
+const handleSeen = () => {
+  // In the optimistic window the snapshot is still empty, so the mirror is the
+  // only thing that knows there is news — trust it there. `markHomeArrivalsSeen`
+  // re-reads storage itself, so it is authoritative either way.
+  const unread = homeSnapshotReady
+    ? homeUnreadNow(Date.now())
+    : readSpyHomeUnread();
+  if (unread === 0) return;
+  writeSpyHomeUnread(0);
+  void (async () => {
+    try {
+      await markHomeArrivalsSeen(Date.now());
+      // Re-read BEFORE repainting: refresh() derives from `homeSnapshot`, and a
+      // repaint off the pre-stamp copy would paint the nudge straight back (and
+      // re-arm the mirror with it).
+      homeSnapshot = await readHomeWatch();
+      homeSnapshotReady = true;
+      refresh();
+    } catch {
+      // Storage refused the write — leave the nudge alone rather than lying
+      // about having cleared it; the next derive restores the honest count.
+    }
+  })();
 };
 
 /**
@@ -449,10 +512,47 @@ const captureEnv = () => {
     playerNames: ctx?.players ?? {},
     // Unread home-watch arrivals — drives the end-of-sweep "tap → dashboard"
     // nudge (see deriveSpy's homeReport proposal).
-    homeUnread: (cfg.homeHours ?? 0) > 0
-      ? openHomeArrivals(homeSnapshot, nowMs).length
-      : 0,
+    //
+    // UNREAD, not merely open: an arrival the user has already looked at keeps
+    // its dashboard NEW mark for a day, but must stop pulsing the FAB the moment
+    // it is read (see state/homeWatch.unreadHomeArrivals). Reading it — or the
+    // long-press below — is what ends the nudge.
+    homeUnread: homeUnreadNow(nowMs),
   };
+};
+
+/**
+ * Unread home arrivals right now — the count that drives the nudge. Lives here
+ * because this is the one place holding both halves of the answer: the storage
+ * snapshot and the `homeHours` config that decides whether home watch runs at
+ * all.
+ *
+ * @param {number} nowMs
+ * @returns {number}
+ */
+const homeUnreadNow = (nowMs) => {
+  if ((watchListStore.get().homeHours ?? 0) <= 0) return 0;
+  return unreadHomeArrivals(homeSnapshot, nowMs).length;
+};
+
+/**
+ * Mirror the nudge into localStorage for the next load's first frame.
+ *
+ * Keyed on the WINNING proposal, not on the raw count: the nudge is the loop's
+ * last step, so it yields to any real work (a candidate, a look, pending
+ * reports). Mirroring the bare count would make a load that has work to do paint
+ * "Home / 2 new" for a second and then rewrite itself into "Look" — trading a
+ * late-appearing button for a lying one.
+ *
+ * Skipped entirely until the arrival log has been read once, so ignorance is
+ * never persisted as "nothing new" (see {@link homeSnapshotReady}).
+ *
+ * @param {import('./pure.js').SpyContext} ctx
+ * @returns {void}
+ */
+const cacheHomeNudge = (ctx) => {
+  if (!homeSnapshotReady) return;
+  writeSpyHomeUnread(ctx.proposal === 'homeReport' ? (ctx.homeUnread ?? 0) : 0);
 };
 
 /**
@@ -544,6 +644,18 @@ const refresh = () => {
   // trustworthy yet.
   if (!apiContextReady() || !watchReady()) {
     if (!controller) return;
+    // …EXCEPT for the home-watch nudge, which needs none of that machinery: it
+    // is a count plus a "tap → dashboard" navigation, and the count survived the
+    // reload in synchronous localStorage. Paint it on the first frame from the
+    // mirror instead of hiding real news behind a dim "loading…" for 1-3 s. The
+    // reconciled derive below repaints the identical face (homeReportPaint is
+    // shared) or replaces it with whatever the live data says.
+    const cachedHome = readSpyHomeUnread();
+    if (cachedHome > 0) {
+      showingLoading = false;
+      paintZone(homeReportPaint(cachedHome));
+      return;
+    }
     showingLoading = true;
     paintZone({ text: 'Spy', subtext: 'loading…', bg: BG_SPY_IDLE, dim: true });
     return;
@@ -552,9 +664,11 @@ const refresh = () => {
   // so the button leaves the FAB stack instead of sitting there advertising
   // that it has no work. It comes back by itself — this runs on the repaint
   // ticker, so the next stale system / fresh report re-mounts it.
-  const paint = renderSpy(deriveSpy(captureEnv()), probePreflight());
+  const ctx = deriveSpy(captureEnv());
+  const paint = renderSpy(ctx, probePreflight());
   showingLoading = false;
   cacheShown(!!paint);
+  cacheHomeNudge(ctx);
   if (!paint) {
     unmountHook?.();
     return;
@@ -656,6 +770,15 @@ const onSpyClick = async () => {
   // fleetdispatch and then fail with a generic courier error. Repaint to the
   // real state and let the next, deliberate tap act.
   if (!apiContextReady() || !watchReady() || showingLoading) {
+    // One exception, and it is the paint the user is actually looking at in this
+    // window: the optimistic home nudge. Its action needs no game state at all
+    // (open the dashboard), so honouring the tap is safe — and swallowing it
+    // would be worse than the stale-tap problem this gate was written for, since
+    // the button is showing real, actionable news.
+    if (!showingLoading && readSpyHomeUnread() > 0) {
+      if (!openDashboardSpyglass()) location.reload();
+      return;
+    }
     refresh();
     return;
   }
@@ -786,6 +909,11 @@ export const installSendSpy = () => {
   if (installed) return installed.dispose;
 
   installFleetCourier();
+  // Start the arrival-log read NOW, not on the first derive: the derive is
+  // gated behind the apiContext handoff, so kicking it there meant the home
+  // nudge could not be RIGHT until a whole readiness cycle after the storage
+  // read would have finished. Fire-and-forget; the mirror covers this window.
+  refreshHomeSnapshot();
 
   /** Build + mount the button DOM. Idempotent. @returns {void} */
   const mount = () => {
@@ -793,12 +921,13 @@ export const installSendSpy = () => {
     const size = settingsStore.get().fabBtnSize;
     controller = makeButton({
       id: BUTTON_ID,
-      title: 'Spyglass',
+      title: 'Spyglass — hold to mark a new-neighbour alert as seen',
       ringId: 'oge-ring-spy',
       size,
       fontScale: 0.18,
       module: { id: 'spy', name: 'Spy', color: BG_SPY_IDLE, glyph: EYE_GLYPH },
       gateUntilEventBox: true,
+      holdMs: HOLD_SEEN_MS,
       zones: [
         {
           key: 'send',
@@ -807,6 +936,9 @@ export const installSendSpy = () => {
           bg: BG_SPY_IDLE,
           glyph: EYE_GLYPH,
           onTap: () => void onSpyClick(),
+          // Long-press = "seen it" for the home-watch nudge; a no-op in every
+          // other state (see handleSeen).
+          onHold: handleSeen,
         },
       ],
     });
@@ -853,7 +985,7 @@ export const installSendSpy = () => {
    * @returns {void}
    */
   const gatedMount = () => {
-    if (readSpyFabShown()) mount();
+    if (readSpyFabShown() || readSpyHomeUnread() > 0) mount();
   };
 
   /**
@@ -941,6 +1073,16 @@ export const installSendSpy = () => {
 };
 
 /**
+ * Test-only: invoke the long-press "I have seen it" action directly. Mirrors
+ * sendExpedition's `_onSkipForTest` — drives the OUTCOME without synthesising
+ * the pointer-hold gesture (the shared button owns the gesture mechanics and
+ * the charge arc, and has its own coverage).
+ *
+ * @returns {void}
+ */
+export const _onSeenForTest = () => handleSeen();
+
+/**
  * Test-only reset.
  * @returns {void}
  */
@@ -959,6 +1101,11 @@ export const _resetSendSpyForTest = () => {
   // Not a cached VALUE but a write-suppressor — leaving it set would make the
   // next case's first cacheShown() a silent no-op.
   lastShownCache = null;
+  // The arrival log + its "have we read it yet" flag. A real page load starts
+  // with both empty; leaving one case's snapshot standing would let the next
+  // case believe it already knows the news (and skip the mirror write).
+  homeSnapshot = emptyHomeWatch();
+  homeSnapshotReady = false;
   if (sentLockTimer) {
     clearTimeout(sentLockTimer);
     sentLockTimer = null;

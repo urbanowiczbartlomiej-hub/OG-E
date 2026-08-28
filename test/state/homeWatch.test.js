@@ -28,7 +28,9 @@ import {
   readHomeWatch,
   writeHomeWatch,
   markHomeArrivalsShown,
+  markHomeArrivalsSeen,
   openHomeArrivals,
+  unreadHomeArrivals,
 } from '../../src/state/homeWatch.js';
 import { NEW_ARRIVAL_TTL_MS, NEW_ARRIVAL_MAX_MS } from '../../src/domain/homeWatch.js';
 
@@ -184,5 +186,63 @@ describe('markHomeArrivalsShown', () => {
     const wrote = await markHomeArrivalsShown('s163-pl', NOW + 1);
     expect(wrote).toBe(false);
     expect(mock.set).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// unreadHomeArrivals — the FAB nudge's stricter predicate
+// ──────────────────────────────────────────────────────────────────
+
+describe('unreadHomeArrivals', () => {
+  /** @param {Partial<{ shownAt: number, atMs: number }>} over */
+  const arrival = (over = {}) => ({
+    system: '4:151', coord: '4:151:8', playerId: 100, atMs: NOW - 1_000, ...over,
+  });
+
+  it('lists an arrival nobody has looked at yet', () => {
+    const state = { baseline: {}, arrivals: [arrival()] };
+    expect(unreadHomeArrivals(state, NOW)).toHaveLength(1);
+  });
+
+  // The whole point of the split: the dashboard keeps its NEW mark for a day
+  // after you read the row, but the pulsing FAB has to stop the moment the news
+  // is read — an alert that outlives its own answer becomes furniture.
+  it('drops an arrival the moment it has been shown, while openHomeArrivals keeps it', () => {
+    const state = { baseline: {}, arrivals: [arrival({ shownAt: NOW - 1 })] };
+    expect(openHomeArrivals(state, NOW)).toHaveLength(1);
+    expect(unreadHomeArrivals(state, NOW)).toHaveLength(0);
+  });
+
+  it('still honours the expiry gates it inherits (too old to be NEW at all)', () => {
+    const state = { baseline: {}, arrivals: [arrival({ atMs: NOW - NEW_ARRIVAL_MAX_MS })] };
+    expect(unreadHomeArrivals(state, NOW)).toHaveLength(0);
+  });
+
+  it('is empty for a state with no arrivals', () => {
+    expect(unreadHomeArrivals(emptyHomeWatch(), NOW)).toEqual([]);
+  });
+});
+
+describe('markHomeArrivalsSeen', () => {
+  // The FAB long-press: same stamp the dashboard writes when it paints the row,
+  // so "seen by holding the button" and "seen by reading the card" cannot mean
+  // two different things.
+  it('stamps the current universe\'s open arrivals as shown', async () => {
+    mock.get.mockResolvedValueOnce({
+      baseline: {},
+      arrivals: [{ system: '4:151', coord: '4:151:8', playerId: 100, atMs: NOW - 1_000 }],
+    });
+    const wrote = await markHomeArrivalsSeen(NOW);
+    expect(wrote).toBe(true);
+    const [key, written] = mock.set.mock.calls[0];
+    expect(key).toBe('s163-pl:oge_homeWatch');
+    expect(written.arrivals[0].shownAt).toBe(NOW);
+    expect(unreadHomeArrivals(written, NOW)).toHaveLength(0);
+  });
+
+  it('writes nothing when there is no unread news to retire', async () => {
+    mock.get.mockResolvedValueOnce(emptyHomeWatch());
+    await expect(markHomeArrivalsSeen(NOW)).resolves.toBe(false);
+    expect(mock.set).not.toHaveBeenCalled();
   });
 });

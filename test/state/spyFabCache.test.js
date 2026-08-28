@@ -14,6 +14,9 @@ import {
   SPY_FAB_SHOWN_KEY,
   readSpyFabShown,
   writeSpyFabShown,
+  SPY_FAB_HOME_KEY,
+  readSpyHomeUnread,
+  writeSpyHomeUnread,
 } from '../../src/state/spyFabCache.js';
 
 beforeEach(() => {
@@ -47,5 +50,47 @@ describe('spyFabCache', () => {
     expect(readSpyFabShown()).toBe(false);
     localStorage.setItem(SPY_FAB_SHOWN_KEY, '0');
     expect(readSpyFabShown()).toBe(false);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// home-watch nudge mirror
+// ──────────────────────────────────────────────────────────────────
+
+describe('spyFabCache — home-watch nudge mirror', () => {
+  it('exposes the canonical key', () => {
+    expect(SPY_FAB_HOME_KEY).toBe('oge-spy-fab-home');
+  });
+
+  it('defaults to 0 when the key is absent', () => {
+    expect(readSpyHomeUnread()).toBe(0);
+  });
+
+  it('round-trips a positive count', () => {
+    writeSpyHomeUnread(3);
+    expect(localStorage.getItem(SPY_FAB_HOME_KEY)).toBe('3');
+    expect(readSpyHomeUnread()).toBe(3);
+  });
+
+  it('removes the key on 0 rather than storing a falsy marker', () => {
+    writeSpyHomeUnread(3);
+    writeSpyHomeUnread(0);
+    expect(localStorage.getItem(SPY_FAB_HOME_KEY)).toBeNull();
+    expect(readSpyHomeUnread()).toBe(0);
+  });
+
+  it('reads a garbage or negative value as nothing unread', () => {
+    localStorage.setItem(SPY_FAB_HOME_KEY, 'lots');
+    expect(readSpyHomeUnread()).toBe(0);
+    localStorage.setItem(SPY_FAB_HOME_KEY, '-2');
+    expect(readSpyHomeUnread()).toBe(0);
+  });
+
+  it('is independent of the mount flag — either can be set without the other', () => {
+    writeSpyHomeUnread(1);
+    expect(readSpyFabShown()).toBe(false);
+    writeSpyFabShown(true);
+    writeSpyHomeUnread(0);
+    expect(readSpyFabShown()).toBe(true);
   });
 });

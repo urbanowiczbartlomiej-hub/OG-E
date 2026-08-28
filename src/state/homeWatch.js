@@ -98,7 +98,7 @@ export const writeHomeWatch = (state, universeId) => {
  * acknowledgement, so nothing has to be clicked. Best-effort and idempotent —
  * a no-op (no write at all) once every open arrival carries a stamp.
  *
- * @param {string} universeId
+ * @param {string | undefined} universeId  Omitted ⇒ the current tab's universe.
  * @param {number} nowMs
  * @returns {Promise<boolean>} Whether anything was written.
  */
@@ -115,6 +115,19 @@ export const markHomeArrivalsShown = async (universeId, nowMs) => {
   await writeHomeWatch({ ...cur, arrivals }, universeId);
   return true;
 };
+
+/**
+ * In-game shorthand for {@link markHomeArrivalsShown} on the CURRENT universe —
+ * "I have seen who moved in". The Spyglass FAB's long-press calls it so a user
+ * who already knows the newcomer can retire the pulse without a detour through
+ * the dashboard; it writes the very same `shownAt` stamp that opening the
+ * dashboard writes, so the two paths cannot disagree about what "seen" means.
+ *
+ * @param {number} nowMs
+ * @returns {Promise<boolean>} Whether anything was written.
+ */
+export const markHomeArrivalsSeen = (nowMs) =>
+  markHomeArrivalsShown(undefined, nowMs);
 
 /**
  * Is this arrival still NEW at `nowMs`? Three gates, all of which must hold:
@@ -148,4 +161,33 @@ const isArrivalNew = (a, state, nowMs) => {
  */
 export const openHomeArrivals = (state, nowMs) => (
   (state.arrivals || []).filter((a) => isArrivalNew(a, state, nowMs))
+);
+
+/**
+ * Arrivals the user has NOT SEEN yet — still NEW *and* never displayed.
+ *
+ * The stricter twin of {@link openHomeArrivals}, and the difference is
+ * deliberate: the two surfaces are answering different questions.
+ *
+ *   - The dashboard's Home-watch card asks "which rows are recent?", and wants
+ *     the {@link NEW_ARRIVAL_TTL_MS} grace period — you read about a newcomer,
+ *     come back an hour later, and the row is still marked so you can find it
+ *     again. That is {@link openHomeArrivals}.
+ *   - The Spyglass FAB nudge asks "is there something you have not read?". A
+ *     pulsing button is a demand for attention, and once the demand is met it
+ *     has to stop: keeping it lit for another day after the user opened the
+ *     report turns the alert into furniture — the exact fate the arrival's own
+ *     max-age ceiling was written to prevent.
+ *
+ * Reading the report IS the acknowledgement (the dashboard stamps `shownAt` as
+ * it paints), so the nudge retires itself with no bookkeeping click. The same
+ * stamp is what the FAB's long-press writes for a user who has already seen who
+ * moved in and just wants the pulse gone.
+ *
+ * @param {HomeWatchState} state
+ * @param {number} nowMs
+ * @returns {HomeArrival[]}
+ */
+export const unreadHomeArrivals = (state, nowMs) => (
+  openHomeArrivals(state, nowMs).filter((a) => a.shownAt == null)
 );
