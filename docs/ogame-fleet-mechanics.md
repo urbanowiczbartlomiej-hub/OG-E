@@ -73,6 +73,47 @@ Every fleet movement shows as one or more rows in the event list
 A fleet **lands** at the **dest** on an outbound leg, and back at its **origin**
 (home) on a return leg. OG-E attaches a marker to *where the leg lands*.
 
+### Counting FLEETS, not rows (measured on a live ticker)
+
+Because a two-way mission owns two rows, **row count ≠ mission count**, and the
+ratio changes with the mission's phase:
+
+| phase | rows present |
+| --- | --- |
+| dispatched, still flying out | outbound **+** return (2) |
+| arrived / holding at the target | return only (1) |
+| flying home | return only (1) |
+
+The **return row is the one invariant**: exactly one per in-flight two-way
+mission, from dispatch until the fleet is home. So "how many are in the air" is
+`count(return rows)` — never `count(rows)`, and never `count(outbound rows)`.
+
+Two wrong models, both plausible, both measured false against a live account
+(6 planets, 2 expeditions each — 18 rows, 12 expeditions, 12/12 slots):
+
+1. *"One mission = one row."* Over-counts by 2× every mission still flying out.
+   A per-planet cap of 2 therefore read as "full" after a **single** send.
+2. *"The return leg swaps the cells, so attribute each leg to the end that is
+   the planet."* The cells do **not** swap — they are direction-stable — so this
+   under-counts to **zero** for anything holding or flying home, silently
+   freeing a slot that is still occupied.
+
+Third-party skins can make this harder to see: AntiGame Origin restyles the
+game's return row (adding `ago_events_reverse`) rather than adding a row of its
+own, and OGame numbers the two rows of one fleet as consecutive ids
+(`eventRow-655960` / `eventRow-655961`), which reads like a duplicate at a
+glance.
+
+### Expedition slot accounting
+
+An expedition occupies one of the account's expedition slots
+(`Expeditions: n/max` in the fleet-dispatch header) for its **whole round trip**
+— outbound, the hold at the expedition point, and the flight home — and the slot
+is released only when the fleet lands. Its target is **position 16** of the
+launching planet's own system, a slot no planet can occupy (a system holds
+positions 1-15), so `[g:s:16]` in a `dest` cell is always the expedition point
+and never somebody's body.
+
 ## Recall ("Zawróć")
 
 Only a leg still flying **to its target** (outbound, not yet arrived) can be
