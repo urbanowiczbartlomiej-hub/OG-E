@@ -4,6 +4,50 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.66.0] — 2026-08-28
+
+### Fixed
+
+- **"All sent" no longer stops the expedition button after one pass.** With the
+  per-planet limit at 2 or 3, the button went round every planet once and then
+  declared the job done — on a 6-planet account that meant 6 expeditions sent
+  out of 12 slots. It was counting rows in the event ticker, and a freshly sent
+  expedition puts *two* rows there (OGame writes both legs of a two-way mission
+  the moment it launches), so a single expedition read as two and every planet
+  looked full. Expeditions are now counted per fleet, in every phase — flying
+  out, holding, and on the way home — so the limit means what it says and the
+  button keeps going until the slots really are gone.
+
+- **The auto-jump after a send now respects the per-planet limit too.** It was
+  reading a marker OG-E never draws (it belongs to another extension), so
+  without that extension installed every planet looked empty and the jump went
+  to whatever body came next in the list, however many expeditions it already
+  had. It now reads the same tally the button does.
+
+- **Expeditions launched from a moon no longer trip the limit.** On a moon page
+  the game marks the active row with a different class, which OG-E did not read
+  — so it fell back to comparing the *account-wide* expedition count against the
+  per-planet limit, and with the limit at 2 any two expeditions anywhere made
+  every moon look full.
+
+### Changed
+
+- **The "new neighbour" alert appears instantly instead of a second or two into
+  the page.** The Spyglass button had to wait for the universe data and the
+  watch-list to load before it could tell you somebody had moved in next door,
+  so the alert blinked in late on every single page load. The count now survives
+  the reload, and the button paints it on the first frame.
+
+- **Reading the news retires the alert — properly this time.** Opening the
+  Spyglass tab was supposed to end the nudge, but the button kept pulsing for
+  another day afterwards. It now stops the moment you have seen who arrived.
+  New neighbours still light it up.
+
+- **You can also dismiss it without opening the dashboard: hold the Spyglass
+  button for two seconds.** For when you already checked the newcomer in the
+  galaxy view and just want the pulse gone. Same hold gesture as "skip this
+  planet" on the expedition and colony buttons.
+
 ## [1.65.0] — 2026-08-26
 
 ### Added
