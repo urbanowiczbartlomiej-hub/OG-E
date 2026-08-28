@@ -44,17 +44,16 @@
 //     reached the per-planet expedition cap (`maxExpeditionsPerPlanet`), the
 //     original `redirectUrl` (game's own choice) stays intact — the user sees
 //     exactly what the game intended, no surprise.
-//   - Detect expedition state itself. We rely on the `.ogi-exp-dots`
-//     badge that the isolated-world UI layer renders next to planets
-//     with active expeditions — DOM signal, no network. The badge draws
-//     ONE dot per in-flight expedition, so its child count IS the planet's
-//     current expedition tally, which we compare against the cap.
+//   - Ask the server for expedition state. We read the event ticker
+//     (`#eventContent`) that is already on the page — DOM signal, no network.
+//     One row per in-flight expedition, so the rows matching a planet's coords
+//     ARE that planet's current tally, which we compare against the cap.
 //
 // # Round-robin, not fill-to-max
 //
 // The cap (`maxExpeditionsPerPlanet`, default 1) is honoured by COUNTING the
-// badge dots, not by mere presence. So with the cap at 2 the hop lands on the
-// next planet still UNDER its cap — visiting 1×A, 1×B, 1×C, then 2×A, 2×B …
+// in-flight expeditions, not by mere presence. So with the cap at 2 the hop
+// lands on the next planet still UNDER its cap — visiting 1×A, 1×B, 1×C, then 2×A, 2×B …
 // (the current planet is always skipped by position, so the wrap naturally
 // spreads sends evenly) rather than draining one planet to its cap before
 // moving on, or — the pre-cap bug — stopping after a single pass because every
@@ -67,6 +66,7 @@ import { observeXHR } from './xhrObserver.js';
 import { safeLS } from '../lib/storage.js';
 import { MISSION_EXPEDITION } from '../domain/rules.js';
 import { ingameComponentUrl } from '../domain/ogameUrl.js';
+import { denseCoords } from '../domain/bodies.js';
 import { GAME, ACTIVE_PLANET_CLASS, ACTIVE_MOON_CLASS } from '../lib/gameDom.js';
 
 /**
@@ -109,15 +109,53 @@ const readMaxExpeditionsPerPlanet = () => {
 };
 
 /**
- * Count a planet's in-flight expeditions from its `.ogi-exp-dots` badge.
- * The badge (rendered by the isolated-world badges feature) draws one dot
- * child per expedition, so the child count is the tally. No badge → 0.
+ * Count a body's in-flight expeditions off the event ticker — the same tally
+ * `features/sendExpedition/domHelpers.js` computes for the button's own gate,
+ * so the hop and the button can never disagree about which planet has room.
  *
- * @param {Element} planet  A `#planetList .smallplanet` element.
+ * Counted as ONE RETURN ROW PER EXPEDITION: the game writes both legs of a
+ * two-way mission at dispatch, the outbound row vanishes on arrival at the
+ * expedition point, and the return row survives the whole round trip — so it is
+ * the one row present exactly once per in-flight expedition. Origin is
+ * direction-stable (always the launcher). See
+ * `features/sendExpedition/domHelpers.js` (`countActiveExpeditions`) for the
+ * full account and the two wrong models it replaced; the rule is duplicated
+ * rather than imported because a MAIN-world bridge may not import `features/`.
+ *
+ * Reading the ticker (rather than a planet-row badge) is what makes the cap
+ * work at all: the previous source was `.ogi-exp-dots`, a badge OG-E does not
+ * render — that is OGame Infinity's. Without that extension installed the count
+ * was always 0, every planet looked empty, and the hop walked to whatever body
+ * came next in list order no matter how many expeditions it already held.
+ *
+ * DOM-only, no network, no `state/` import — the bridge stays MAIN-world clean.
+ *
+ * @param {string | null} coords  Body coords in `g:s:p` form; `null` → 0.
  * @returns {number}
  */
-const countPlanetExpeditions = (planet) =>
-  planet.querySelector('.ogi-exp-dots')?.childElementCount ?? 0;
+const countBodyExpeditions = (coords) => {
+  if (!coords) return 0;
+  const rows = document.querySelectorAll(
+    `${GAME.EVENT_CONTENT} tr.eventFleet[data-mission-type="${MISSION_EXPEDITION}"]`
+      + '[data-return-flight="true"]',
+  );
+  let count = 0;
+  for (const row of rows) {
+    const from = denseCoords(row.querySelector(GAME.COORDS_ORIGIN)?.textContent);
+    if (from === coords) count += 1;
+  }
+  return count;
+};
+
+/**
+ * A planet row's own coordinates, read from its `.planet-koords` cell (the
+ * game's own misspelling — see `lib/gameDom.js`), normalised to `g:s:p`.
+ *
+ * @param {Element} planet  A `#planetList .smallplanet` element.
+ * @returns {string | null}
+ */
+const planetRowCoords = (planet) =>
+  denseCoords(planet.querySelector(GAME.PLANET_KOORDS)?.textContent) || null;
 
 /**
  * Extract the `mission` field from a form-encoded sendFleet body.
@@ -157,7 +195,7 @@ const getMissionFromBody = (body) => {
  * the per-planet expedition cap (`maxExpeditionsPerPlanet`).
  *
  * "Next" is defined as: the first row after the currently highlighted one
- * whose in-flight expedition count (its `.ogi-exp-dots` child count) is
+ * whose in-flight expedition count (its rows in the event ticker) is
  * below the cap, wrapping around to the start of the list if necessary.
  * On planet pages the active row carries `.hightlightPlanet`; on MOON
  * pages the game swaps it for `.hightlightMoon` (both are the game's own
@@ -173,10 +211,10 @@ const getMissionFromBody = (body) => {
  * moon-launched one on the next MOON (the row's moonlink `cp`; rows
  * without a moon are skipped).
  *
- * The `.ogi-exp-dots` badge is rendered by the isolated-world UI layer
- * next to every planet with an expedition in flight. Using the DOM as
- * the source of truth keeps this bridge decoupled from the storage
- * layer: we don't import from state/ in MAIN, and we don't need to.
+ * The event ticker the count comes from is the game's own, already rendered on
+ * the page. Using the DOM as the source of truth keeps this bridge decoupled
+ * from the storage layer: we don't import from state/ in MAIN, and we don't
+ * need to.
  *
  * Returns `null` when:
  *   - There are fewer than 2 planets (nowhere to redirect to — all
@@ -213,13 +251,13 @@ const findNextPlanetWithFreeSlot = () => {
   if (currentIdx === -1) return null;
 
   // Wrap-around scan: we skip offset 0 (that's the current body, which
-  // just finished sending an expedition — its badge hasn't caught up yet,
+  // just finished sending an expedition — the ticker hasn't caught up yet,
   // and we don't want to immediately bounce back to it) and walk forward,
   // wrapping to the start when we fall off the end. The first candidate
   // still under the cap wins.
   for (let i = 1; i < planets.length; i++) {
     const planet = planets[(currentIdx + i) % planets.length];
-    if (countPlanetExpeditions(planet) >= max) continue;
+    if (countBodyExpeditions(planetRowCoords(planet)) >= max) continue;
     if (fromMoon) {
       const href = planet.querySelector(GAME.MOON_LINK)?.getAttribute('href');
       if (!href) continue; // no moon at this slot → not a candidate

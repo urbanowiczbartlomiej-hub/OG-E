@@ -55,11 +55,19 @@ afterEach(() => {
 });
 
 /**
- * Build a planet list fixture. Each planet's expedition tally is rendered the
- * way the badges feature does it: an `.ogi-exp-dots` cluster with ONE child
- * dot per in-flight expedition (the bridge counts those children against the
- * cap). `expeditions` sets the count explicitly; the legacy `hasExpedition`
- * boolean is shorthand for one (1) expedition.
+ * Build a planet-list fixture PLUS the matching event ticker — the bridge
+ * counts a planet's in-flight expeditions off `#eventContent`, so the tally is
+ * expressed in ticker rows, not in a badge on the row.
+ *
+ * Each planet gets synthetic coords `1:1:<n>` (n = its position in the list) and
+ * every expedition is rendered as the TWO rows the game writes at dispatch for a
+ * two-way mission: an outbound leg and a return leg, both reading
+ * `origin = launcher` (coords are direction-stable). The bridge must attribute
+ * the pair to ONE expedition — counting rows is what used to make every planet
+ * look over its cap after a single round-robin pass.
+ *
+ * `expeditions` sets the count explicitly; the legacy `hasExpedition` boolean is
+ * shorthand for one (1) expedition.
  *
  * @param {Array<{ id: string, current?: boolean, currentMoon?: boolean,
  *   moonCp?: string, hasExpedition?: boolean, expeditions?: number }>} entries
@@ -68,7 +76,10 @@ afterEach(() => {
 const setPlanetList = (entries) => {
   const list = document.createElement('div');
   list.id = 'planetList';
-  for (const entry of entries) {
+  /** @type {string[]} */
+  const rows = [];
+  entries.forEach((entry, i) => {
+    const coords = `1:1:${i + 1}`;
     const planet = document.createElement('div');
     planet.classList.add('smallplanet');
     if (entry.current) planet.classList.add('hightlightPlanet');
@@ -76,6 +87,10 @@ const setPlanetList = (entries) => {
     // swaps the class) — see lib/gameDom.ACTIVE_MOON_CLASS.
     if (entry.currentMoon) planet.classList.add('hightlightMoon');
     planet.id = 'planet-' + entry.id;
+    planet.insertAdjacentHTML(
+      'beforeend',
+      `<a class="planetlink"><span class="planet-koords">[${coords}]</span></a>`,
+    );
     if (entry.moonCp) {
       planet.insertAdjacentHTML(
         'beforeend',
@@ -83,15 +98,24 @@ const setPlanetList = (entries) => {
       );
     }
     const count = entry.expeditions ?? (entry.hasExpedition ? 1 : 0);
-    if (count > 0) {
-      const dots = document.createElement('span');
-      dots.classList.add('ogi-exp-dots');
-      for (let i = 0; i < count; i++) dots.appendChild(document.createElement('span'));
-      planet.appendChild(dots);
+    for (let k = 0; k < count; k++) {
+      rows.push(`
+        <tr class="eventFleet" data-mission-type="15" data-return-flight="false">
+          <td class="coordsOrigin">[${coords}]</td>
+          <td class="destCoords">[1:1:16]</td>
+        </tr>
+        <tr class="eventFleet" data-mission-type="15" data-return-flight="true">
+          <td class="coordsOrigin">[${coords}]</td>
+          <td class="destCoords">[1:1:16]</td>
+        </tr>`);
     }
     list.appendChild(planet);
-  }
+  });
   document.body.appendChild(list);
+  document.body.insertAdjacentHTML(
+    'beforeend',
+    `<div id="eventContent"><table><tbody>${rows.join('')}</tbody></table></div>`,
+  );
 };
 
 /** Stamp the page's `ogame-planet-type` meta — how the bridge learns whether

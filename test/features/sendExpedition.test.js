@@ -190,17 +190,33 @@ const setupScene = ({
   }
 
   // Fixture coords are shared between the planet row and every
-  // synthetic expedition row so `countActiveExpeditions` (which filters
-  // by `.coordsOrigin` matching the active planet) counts them.
+  // synthetic expedition row so `countActiveExpeditions` (which reads each
+  // expedition's return row and its direction-stable origin) counts them
+  // against the active planet.
   const FIXTURE_COORDS = '1:1:8';
+  /** Where an expedition from FIXTURE_COORDS flies — position 16 of its own system. */
+  const FIXTURE_EXP_POINT = '1:1:16';
 
+  // ONE freshly sent expedition = TWO rows. The game writes both legs of a
+  // two-way mission at dispatch (outbound + return), with direction-stable
+  // coords: `origin = launcher` on both. Reproducing the pair is the point —
+  // counting rows instead of expeditions is what made a single send read as two,
+  // so a cap of 2 tripped after one pass and the button painted "All sent" with
+  // most of the account's expedition slots free.
   const expRows = Array(activeExpeditions)
     .fill(0)
     .map(
       () => `
+        <tr class="eventFleet" data-mission-type="15" data-return-flight="false">
+          <td class="originFleet">X</td>
+          <td class="coordsOrigin">[${FIXTURE_COORDS}]</td>
+          <td class="destCoords">[${FIXTURE_EXP_POINT}]</td>
+          <td class="detailsFleet"><span>1</span></td>
+        </tr>
         <tr class="eventFleet" data-mission-type="15" data-return-flight="true">
           <td class="originFleet">X</td>
           <td class="coordsOrigin">[${FIXTURE_COORDS}]</td>
+          <td class="destCoords">[${FIXTURE_EXP_POINT}]</td>
           <td class="detailsFleet"><span>1</span></td>
         </tr>
       `,
@@ -522,18 +538,28 @@ describe('installSendExpedition — long-press skip', () => {
       )
       .join('');
 
+    // Same two-rows-per-expedition shape as the single-planet fixture above:
+    // the game writes an outbound AND a return row at dispatch (see there).
     const expRows = planets
       .flatMap((p) =>
         Array(p.expeditions ?? 0)
           .fill(0)
-          .map(
-            () =>
-              `<tr class="eventFleet" data-mission-type="15" data-return-flight="true">
-                 <td class="originFleet">X</td>
-                 <td class="coordsOrigin">[${p.coords}]</td>
-                 <td class="detailsFleet"><span>1</span></td>
-               </tr>`,
-          ),
+          .map(() => {
+            const point = `${p.coords.split(':').slice(0, 2).join(':')}:16`;
+            return `
+              <tr class="eventFleet" data-mission-type="15" data-return-flight="false">
+                <td class="originFleet">X</td>
+                <td class="coordsOrigin">[${p.coords}]</td>
+                <td class="destCoords">[${point}]</td>
+                <td class="detailsFleet"><span>1</span></td>
+              </tr>
+              <tr class="eventFleet" data-mission-type="15" data-return-flight="true">
+                <td class="originFleet">X</td>
+                <td class="coordsOrigin">[${p.coords}]</td>
+                <td class="destCoords">[${point}]</td>
+                <td class="detailsFleet"><span>1</span></td>
+              </tr>`;
+          }),
       )
       .join('');
 

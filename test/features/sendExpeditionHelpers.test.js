@@ -69,17 +69,49 @@ const buildPlanetList = (rows) => {
 };
 
 /**
- * Append an `#eventContent` table of in-flight expedition rows (mission
- * type 15). Each entry is the bracketed origin coords of one expedition.
+ * Append an `#eventContent` table of in-flight expeditions (mission type 15).
+ * Each entry is the bracketed origin coords of ONE expedition, rendered the way
+ * the game renders a freshly dispatched two-way mission: an outbound row AND a
+ * return row, both carrying `origin = launcher`.
  *
  * @param {string[]} origins
  */
 const buildEventContent = (origins) => {
   const rows = origins
-    .map(
-      (o) => `
-        <tr class="eventFleet" data-mission-type="15">
+    .map((o) => {
+      const point = `${o.split(':').slice(0, 2).join(':')}:16`;
+      return `
+        <tr class="eventFleet" data-mission-type="15" data-return-flight="false">
           <td class="coordsOrigin">[${o}]</td>
+          <td class="destCoords">[${point}]</td>
+        </tr>
+        <tr class="eventFleet" data-mission-type="15" data-return-flight="true">
+          <td class="coordsOrigin">[${o}]</td>
+          <td class="destCoords">[${point}]</td>
+        </tr>`;
+    })
+    .join('');
+  const table = document.createElement('table');
+  table.id = 'eventContent';
+  table.innerHTML = rows;
+  document.body.appendChild(table);
+};
+
+/**
+ * Append an `#eventContent` table of expedition LEGS, spelling out both ends and
+ * the direction flag — the shape a live ticker really has (see
+ * `countActiveExpeditions`). Lets a case model an outbound leg, a genuine return
+ * leg, and AGR's mirror row (a "return" that kept the outbound coords).
+ *
+ * @param {Array<{ from: string, to: string, ret: boolean }>} legs
+ */
+const buildLegRows = (legs) => {
+  const rows = legs
+    .map(
+      (l) => `
+        <tr class="eventFleet" data-mission-type="15" data-return-flight="${l.ret}">
+          <td class="coordsOrigin">[${l.from}]</td>
+          <td class="destCoords">[${l.to}]</td>
         </tr>`,
     )
     .join('');
@@ -120,6 +152,22 @@ describe('getActivePlanetCoords', () => {
   it('returns null with no planet list at all', () => {
     expect(getActivePlanetCoords()).toBeNull();
   });
+
+  // On a moon page the game swaps the highlight class. Missing that read left
+  // the caller with `null`, which it treats as "count globally" — so the
+  // per-planet cap was compared against the ACCOUNT-wide expedition count and
+  // any two expeditions anywhere made every moon look full.
+  it('reads the coords off a MOON-highlighted row too', () => {
+    document.body.innerHTML = `<div id="planetList">
+      <div id="planet-1" class="smallplanet">
+        <span class="planet-koords">[1:2:3]</span>
+      </div>
+      <div id="planet-2" class="smallplanet ${ACTIVE_MOON_CLASS}">
+        <span class="planet-koords">[4:5:6]</span>
+      </div>
+    </div>`;
+    expect(getActivePlanetCoords()).toBe('4:5:6');
+  });
 });
 
 // ──────────────────────────────────────────────────────────────────
@@ -142,6 +190,58 @@ describe('countActiveExpeditions', () => {
   it('returns 0 when there are no expedition rows', () => {
     expect(countActiveExpeditions('1:2:3')).toBe(0);
     expect(countActiveExpeditions(null)).toBe(0);
+  });
+
+  // The regression that made the button paint "All sent" after one round-robin
+  // pass. A freshly dispatched expedition puts TWO rows in the ticker — the game
+  // writes both legs of a two-way mission at send time — so counting rows read
+  // one expedition as two, and a cap of 2 was "full" after a single send.
+  it('counts a freshly sent expedition once, not once per leg', () => {
+    buildLegRows([
+      { from: '1:2:3', to: '1:2:16', ret: false },
+      { from: '1:2:3', to: '1:2:16', ret: true },
+    ]);
+    expect(countActiveExpeditions('1:2:3')).toBe(1);
+    expect(countActiveExpeditions(null)).toBe(1);
+  });
+
+  // The phase the "attribute each leg to its home end" model got wrong: once the
+  // fleet reaches the point, the outbound row is gone and only the return row is
+  // left — still carrying `origin = launcher`, because the coords never swap. The
+  // slot is still taken, so the planet must still count 1.
+  it('still counts an expedition holding at the point (outbound row gone)', () => {
+    buildLegRows([{ from: '1:2:3', to: '1:2:16', ret: true }]);
+    expect(countActiveExpeditions('1:2:3')).toBe(1);
+    // Never against the expedition point — nobody owns position 16.
+    expect(countActiveExpeditions('1:2:16')).toBe(0);
+    expect(countActiveExpeditions(null)).toBe(1);
+  });
+
+  it('counts a planet at its cap across mixed phases (one flying out, one holding)', () => {
+    buildLegRows([
+      { from: '1:2:3', to: '1:2:16', ret: false },
+      { from: '1:2:3', to: '1:2:16', ret: true },
+      { from: '1:2:3', to: '1:2:16', ret: true },
+    ]);
+    expect(countActiveExpeditions('1:2:3')).toBe(2);
+    expect(countActiveExpeditions(null)).toBe(2);
+  });
+
+  // Straight off a live ticker: 6 planets, 2 expeditions each, 18 rows (6 still
+  // outbound + 12 return rows) — the account's 12 expedition slots, all used.
+  it('reproduces the live 18-row / 12-expedition ticker', () => {
+    const planets = ['1:90:9', '1:92:7', '1:93:9', '1:94:6', '1:95:9', '1:96:9'];
+    /** @type {Array<{ from: string, to: string, ret: boolean }>} */
+    const legs = [];
+    planets.forEach((p, i) => {
+      const point = `${p.split(':').slice(0, 2).join(':')}:16`;
+      legs.push({ from: p, to: point, ret: true });
+      legs.push({ from: p, to: point, ret: true });
+      if (i === 0 || i % 2 === 0) legs.push({ from: p, to: point, ret: false });
+    });
+    buildLegRows(legs);
+    for (const p of planets) expect(countActiveExpeditions(p)).toBe(2);
+    expect(countActiveExpeditions(null)).toBe(12);
   });
 });
 
