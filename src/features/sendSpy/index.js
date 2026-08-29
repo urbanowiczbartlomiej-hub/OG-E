@@ -921,7 +921,7 @@ export const installSendSpy = () => {
     const size = settingsStore.get().fabBtnSize;
     controller = makeButton({
       id: BUTTON_ID,
-      title: 'Spyglass — hold to mark a new-neighbour alert as seen',
+      title: 'Spyglass',
       ringId: 'oge-ring-spy',
       size,
       fontScale: 0.18,
