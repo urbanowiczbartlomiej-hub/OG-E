@@ -4,6 +4,14 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.66.1] — 2026-08-29
+
+### Changed
+
+- **The Spyglass button's tooltip is back to just "Spyglass".** It had grown a
+  sentence advertising the hold-to-dismiss gesture. The gesture stays exactly as
+  it is — it just no longer announces itself.
+
 ## [1.66.0] — 2026-08-28
 
 ### Fixed
