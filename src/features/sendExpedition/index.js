@@ -104,7 +104,7 @@ import { FAB_MODULES } from '../shared/fabModules.js';
 import { OWNER_EXP } from '../../domain/fleetOwnership.js';
 import { isFleetCapReached } from '../../domain/fleetPlan.js';
 import { installFleetOwnership } from '../shared/fleetOwnership.js';
-import { bareFleetdispatchUrl } from '../shared/fleetCourier.js';
+import { bareFleetdispatchUrl, awaitSendResult } from '../shared/fleetCourier.js';
 import { installFabSettingsLifecycle } from '../shared/fabSettingsLifecycle.js';
 import { createFleetDispatcherCache } from '../shared/fleetDispatcherCache.js';
 import {
@@ -126,6 +126,8 @@ import {
   computeInitialLabel,
   isCycleStart,
   chooseExpeditionStartCp,
+  classifyRefusedSend,
+  NO_FUEL_LABEL,
 } from './pure.js';
 import {
   getActivePlanetCoords,
@@ -226,6 +228,13 @@ export const installSendExpedition = () => {
   // is intercepted (see handleClick) to reload a clean fleetdispatch (restart
   // from fleet1); a retry almost always then completes. Cleared by that reload.
   let errorMode = false;
+
+  // "Carry the wave onward" latch. Set when the server refused THIS body's send
+  // for a reason the next planet doesn't share (no fuel): the button holds the
+  // reason, and the next tap hops instead of re-attempting a send that cannot
+  // succeed here. A tap — not a timer — moves the wave, so nothing navigates off
+  // a dispatch. Cleared by that tap, and by the page load a hop causes.
+  let hopOnNextTap = false;
 
   // The eventbox-readiness gate (hold the button visibly disabled on
   // fleetdispatch until OGame's post-load eventbox XHR lands) now lives in
@@ -407,6 +416,7 @@ export const installSendExpedition = () => {
     setLabel(btn, 'Wait...');
     // Sample the cycle state BEFORE the send — see rememberCycleAnchor.
     const freshCycle = isCycleStart(countActiveExpeditions(null));
+    const answer = awaitSendResult();
     const r = await dispatchWhenReady({ owner: OWNER_EXP });
 
     if (r === 'foreign') {
@@ -416,11 +426,8 @@ export const installSendExpedition = () => {
       return;
     }
     if (r === 'sent') {
-      rememberCycleAnchor(freshCycle);
-      setLabel(btn, 'Sent');
-      // Lock held; release after the post-send nav window in case the page
-      // doesn't reload (rare dispatch failure) — mirrors the fast path.
-      setTimeout(() => unlock(btn), 3000);
+      // Same settle path as the fast tap — the click is not the outcome.
+      settleSend(btn, await answer, freshCycle);
       return;
     }
     // 'timeout' — fleet2 up but the dispatch never became sendable; surface a
@@ -489,6 +496,16 @@ export const installSendExpedition = () => {
     if (errorMode) {
       errorMode = false;
       location.href = bareFleetdispatchUrl();
+      return;
+    }
+    // The previous tap's send was refused for a reason local to this body (no
+    // fuel). Carry the wave to the next planet under the cap rather than
+    // re-running a send the server has already declined here.
+    if (hopOnNextTap) {
+      hopOnNextTap = false;
+      controller?.setError(false);
+      if (hopToNextExpPlanet()) return;
+      paintAllMaxed(btn);
       return;
     }
     if (busy) return;
@@ -589,24 +606,82 @@ export const installSendExpedition = () => {
 
       // Sample the cycle state BEFORE the send — see rememberCycleAnchor.
       const freshCycle = isCycleStart(countActiveExpeditions(null));
+      // Subscribe BEFORE the click: the click is synchronous and the response a
+      // macrotask away, so ordering it this way is belt-and-braces, but it keeps
+      // "we always hear the answer" true no matter how the click path evolves.
+      const answer = awaitSendResult();
       const r = dispatchPrepared({ owner: OWNER_EXP });
       if (r === 'foreign') {
         location.href = bareFleetdispatchUrl();
         return;
       }
       if (r === 'sent') {
-        rememberCycleAnchor(freshCycle);
-        setLabel(btn, 'Sent');
-        // Lock while the game processes the dispatch + its post-send nav. In
-        // the happy path OGame reloads within ~1 s; the safety timeout covers
-        // the rare case where the dispatch fails and the page stays put.
+        // Held until the game answers — a click is not yet a launch.
         lock(btn);
-        setTimeout(() => unlock(btn), 3000);
+        setLabel(btn, 'Wait...');
+        void answer.then((res) => settleSend(btn, res, freshCycle));
       }
       return;
     }
     lock(btn);
     void runPhase2(btn);
+  };
+
+  /**
+   * Settle a dispatch the game has answered — the ONE place that decides what a
+   * click on the native send button actually achieved.
+   *
+   * Until this existed, both send paths clicked the control and immediately
+   * painted "Sent": `dispatchPrepared` reports that it clicked, not that a fleet
+   * left. OGame refuses a send with HTTP 200 and `{"success":false}` — no fuel
+   * being the everyday case — so the button announced a launch that never
+   * happened and the wave stopped dead on that planet while the page showed the
+   * game's own red "Niewystarczająca ilość paliwa!".
+   *
+   * Outcomes, per {@link classifyRefusedSend}:
+   *   - accepted → "Sent" + the cycle anchor, exactly as before;
+   *   - `'local'` (no fuel) → hold the reason and arm {@link hopOnNextTap}, so
+   *     the user's next tap carries the wave to the next planet. Deliberately
+   *     NOT automatic: nothing navigates off a send here, the tap does;
+   *   - `'global'` → the matching cap label; hopping cannot help;
+   *   - `'unknown'` → the sticky Error, whose tap reloads a clean fleetdispatch.
+   *
+   * @param {HTMLButtonElement} btn
+   * @param {{ ok: boolean, errorCode?: number | null, reason?: string }} res
+   * @param {boolean} freshCycle  Was the expedition list empty pre-send?
+   * @returns {void}
+   */
+  const settleSend = (btn, res, freshCycle) => {
+    if (res.ok) {
+      rememberCycleAnchor(freshCycle);
+      setLabel(btn, 'Sent');
+      // Lock while the game processes the dispatch + its post-send nav. In
+      // the happy path OGame reloads within ~1 s; the safety timeout covers
+      // the rare case where the page stays put.
+      lock(btn);
+      setTimeout(() => unlock(btn), 3000);
+      return;
+    }
+    const snap = fdCache.get();
+    const verdict = classifyRefusedSend(res.errorCode, {
+      fleetCap: isFleetCapReached(snap),
+      expeditionCap: isGlobalExpeditionCapReached(snap),
+    });
+    if (verdict === 'local') {
+      hopOnNextTap = true;
+      setLabel(btn, NO_FUEL_LABEL);
+      controller?.setBg('main', BG_ERROR);
+      controller?.setError(true);
+      unlock(btn);
+      return;
+    }
+    if (verdict === 'global') {
+      if (isFleetCapReached(snap)) paintCapLabel(btn, ALL_FLEETS_LABEL, BG_ERROR);
+      else paintAllMaxed(btn);
+      unlock(btn);
+      return;
+    }
+    paintError(btn);
   };
 
   /**

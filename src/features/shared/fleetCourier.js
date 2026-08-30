@@ -675,9 +675,16 @@ export const retarget = async (order) => {
  * resolves `{ ok:false, errorCode:140026 }`. Times out to `notReady`-style
  * `{ ok:false, reason:'timeout' }`.
  *
+ * Exported because {@link dispatch} is not the only way a fleet leaves: the
+ * AGR-driven buttons click the native control through
+ * `features/shared/agrRoutine.js`, which cannot use the courier's own dispatch.
+ * They need the same answer — a send the server refused must never be painted
+ * as one that happened. Subscribe BEFORE clicking; the response is a macrotask
+ * away, but ordering the two this way keeps the contract obvious.
+ *
  * @returns {Promise<{ ok: boolean, errorCode?: number | null, reason?: string }>}
  */
-const awaitSendResult = () =>
+export const awaitSendResult = () =>
   new Promise((resolve) => {
     let done = false;
     /** @param {{ ok: boolean, errorCode?: number | null, reason?: string }} v */

@@ -109,6 +109,53 @@ export const EXP_ROUTINE_OFF_LABEL = 'AGR exp off';
 /** Native tooltip spelling out the fix for {@link EXP_ROUTINE_OFF_LABEL}. */
 export const EXP_ROUTINE_OFF_HINT = 'Enable Expeditions in AGR fleet settings';
 
+// ─── Refused sends ───────────────────────────────────────────────────
+
+/**
+ * The game's error code for "not enough deuterium to fly this" — the one it
+ * renders on fleet2 as *Niewystarczająca ilość paliwa!*. Same constant the
+ * colony button already branches on; kept spelled out because a bare 140026 in
+ * a condition tells the next reader nothing.
+ */
+export const ERR_NO_FUEL = 140026;
+
+/**
+ * Copy for a send the server refused for lack of fuel. Matches sendColony's
+ * wording — one phrase for one failure across the whole FAB.
+ */
+export const NO_FUEL_LABEL = 'No fuel';
+
+/**
+ * What should the button DO about a refused send?
+ *
+ * The distinction that matters is whether the refusal is about THIS BODY or
+ * about the account:
+ *
+ *   - `'local'` — this planet cannot fly right now (no fuel). Every other
+ *     planet still can, so the wave continues there: the button holds the
+ *     reason and the next tap hops onward.
+ *   - `'global'` — no fleet of any kind, or no expedition, can launch at all
+ *     (every slot in use). Hopping would just reproduce the failure on the next
+ *     planet, so the button stops and says which budget ran out.
+ *   - `'unknown'` — an outcome we cannot name. Never guessed at: the sticky
+ *     error stays and the user's tap decides what happens next.
+ *
+ * The global cases are read off the fleetdispatch SNAPSHOT rather than from
+ * error codes, because the snapshot is the same source the pre-send gates use
+ * (`isFleetCapReached` / {@link isGlobalExpeditionCapReached}) and we have not
+ * reverse-engineered the codes the server sends for a full slot list. A refusal
+ * that coincides with a full slot list is explained by it.
+ *
+ * @param {number | null | undefined} errorCode  From the sendFleet response.
+ * @param {{ fleetCap: boolean, expeditionCap: boolean }} caps  Snapshot verdicts.
+ * @returns {'local' | 'global' | 'unknown'}
+ */
+export const classifyRefusedSend = (errorCode, caps) => {
+  if (errorCode === ERR_NO_FUEL) return 'local';
+  if (caps.fleetCap || caps.expeditionCap) return 'global';
+  return 'unknown';
+};
+
 /** How long the routine-off error stays before restoring idle (ms). */
 export const ROUTINE_OFF_LABEL_MS = 4000;
 

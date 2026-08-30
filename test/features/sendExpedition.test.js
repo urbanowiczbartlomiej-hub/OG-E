@@ -70,6 +70,22 @@ const setFleetDispatcher = (snap) => {
   );
 };
 
+/**
+ * Publish the game's own sendFleet verdict — what
+ * `bridges/sendFleetResultHook.js` emits after reading the response. OGame
+ * refuses a send with HTTP 200 and `success:false`, so this is the ONLY thing
+ * that tells the button whether a fleet actually left; a click alone never does.
+ *
+ * @param {{ success: boolean, errorCode?: number | null }} detail
+ */
+const sendResult = (detail) => {
+  document.dispatchEvent(
+    new CustomEvent('oge:sendFleetResult', {
+      detail: { errorCode: null, ...detail },
+    }),
+  );
+};
+
 // ── Location.href mocking ────────────────────────────────────────────
 
 /**
@@ -375,7 +391,7 @@ describe('installSendExpedition — click navigation', () => {
     expect(labelOf(btn)).toBe('Wait...');
   });
 
-  it('Phase 1: fleet panel + #dispatchFleet present → clicks dispatch, paints "Sent"', () => {
+  it('Phase 1: fleet panel + #dispatchFleet present → clicks dispatch, paints "Sent"', async () => {
     setupScene({ onFleetdispatch: true, mission: 15, activeCp: 42 });
     installSendExpedition();
     document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
@@ -397,9 +413,15 @@ describe('installSendExpedition — click navigation', () => {
 
     getBtn()?.click();
 
+    // A click is not a launch: the button waits for the game's own answer.
+    expect(clicks).toBe(1);
+    expect(labelOf(getBtn())).toBe('Wait...');
+
+    sendResult({ success: true });
+    await settle();
+
     expect(navTarget).toBeNull();
     expect(labelOf(getBtn())).toBe('Sent');
-    expect(clicks).toBe(1);
   });
 
   it('Phase 1: #dispatchFleet present but still .off → "Wait...", sends once .off clears → "Sent"', async () => {
@@ -430,6 +452,9 @@ describe('installSendExpedition — click navigation', () => {
     await settle();
     expect(navTarget).toBeNull();
     expect(clicks).toBe(1);
+
+    sendResult({ success: true });
+    await settle();
     expect(labelOf(getBtn())).toBe('Sent');
   });
 
@@ -904,5 +929,96 @@ describe('installSendExpedition — eventbox readiness gate', () => {
     btn?.click();
     expect(navTarget).toBeNull();
     expect(labelOf(btn)).toBe('Wait...');
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// Refused sends — the game answers "no" (HTTP 200, success:false)
+// ──────────────────────────────────────────────────────────────────
+
+describe('installSendExpedition — refused send', () => {
+  const settle = () => new Promise((r) => setTimeout(r, 600));
+
+  /**
+   * Arm a fleet2 that is ready to dispatch, tap, and return the click counter —
+   * the shared preamble of every case below.
+   *
+   * @returns {{ btn: HTMLButtonElement | null, clicks: () => number }}
+   */
+  const armAndTap = () => {
+    installSendExpedition();
+    document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
+    document.dispatchEvent(new CustomEvent('oge:checkTargetResult', {
+      detail: { galaxy: 1, system: 2, position: 16, ships: { 219: 1 } },
+    }));
+    const panel = document.createElement('div');
+    panel.id = 'ago_fleet2_main';
+    document.body.appendChild(panel);
+    const dispatch = document.createElement('button');
+    dispatch.id = 'dispatchFleet';
+    document.body.appendChild(dispatch);
+    let n = 0;
+    dispatch.addEventListener('click', () => { n += 1; });
+    const btn = getBtn();
+    btn?.click();
+    return { btn, clicks: () => n };
+  };
+
+  it('paints the reason instead of "Sent" when the server refuses for no fuel', async () => {
+    // What the user hit: fleet2 showed the game's red "not enough fuel", while
+    // OG-E reported a launch that never happened and the wave stalled there.
+    setupScene({ onFleetdispatch: true, mission: 15, activeCp: 42 });
+    const { btn } = armAndTap();
+    sendResult({ success: false, errorCode: 140026 });
+    await settle();
+
+    expect(labelOf(btn)).toBe('No fuel');
+    // No navigation of its own: the wave moves on the user's tap, never off a
+    // dispatch.
+    expect(navTarget).toBeNull();
+  });
+
+  it('carries the wave onward on the NEXT tap after a no-fuel refusal', async () => {
+    setupScene({ onFleetdispatch: true, mission: 15, activeCp: 42 });
+    // A second planet with room, so there is somewhere to carry the wave to.
+    document.querySelector('#planetList')?.insertAdjacentHTML(
+      'beforeend',
+      `<div id="planet-777" class="smallplanet">
+         <a class="planetlink"><span class="planet-koords">[1:1:9]</span></a>
+       </div>`,
+    );
+    const { btn } = armAndTap();
+    sendResult({ success: false, errorCode: 140026 });
+    await settle();
+    expect(labelOf(btn)).toBe('No fuel');
+
+    btn?.click();
+
+    expect(navTarget).toContain('cp=777');
+  });
+
+  it('stops with the fleet-cap label when the refusal coincides with a full slot list', async () => {
+    // Not a per-planet problem: hopping would reproduce it everywhere, so the
+    // button says which budget ran out and stays put.
+    setupScene({ onFleetdispatch: true, mission: 15, activeCp: 42 });
+    const { btn } = armAndTap();
+    setFleetDispatcher({
+      fleetCount: 18, maxFleetCount: 18, expeditionCount: 3, maxExpeditionCount: 12,
+    });
+    sendResult({ success: false, errorCode: 999999 });
+    await settle();
+
+    expect(labelOf(btn)).toBe('Max fleets');
+    expect(navTarget).toBeNull();
+  });
+
+  it('falls back to the sticky Error for a refusal it cannot name', async () => {
+    setupScene({ onFleetdispatch: true, mission: 15, activeCp: 42 });
+    const { btn } = armAndTap();
+    sendResult({ success: false, errorCode: 999999 });
+    await settle();
+
+    expect(labelOf(btn)).toBe('Error');
+    expect(navTarget).toBeNull();
   });
 });
