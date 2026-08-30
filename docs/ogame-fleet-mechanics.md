@@ -114,6 +114,34 @@ launching planet's own system, a slot no planet can occupy (a system holds
 positions 1-15), so `[g:s:16]` in a `dest` cell is always the expedition point
 and never somebody's body.
 
+## A refused send still answers HTTP 200
+
+`action=sendFleet` reports failure **in the body, not in the status code**: a
+send the server declines comes back `200` with
+`{"success":false,"errors":[{"error":<code>,"message":"…"}]}`, and the page
+renders that message as the red banner above fleet2. So "the click went through"
+and "a fleet left" are different facts, and only the response body separates
+them — a caller that clicks the dispatch control and assumes a launch will
+report sends that never happened.
+
+Codes seen so far:
+
+| code | meaning |
+| --- | --- |
+| `140026` | not enough deuterium for this flight (*Niewystarczająca ilość paliwa!*) |
+| `140016` | target reserved for a planet move (24 h cooldown) |
+| `140035` | no colony ship in the fleet |
+| `140008` | player on vacation |
+| `612` | every fleet slot in use |
+| `100` | spent ajax token — see above; says nothing about the fleet |
+
+Whether a refusal is worth retrying elsewhere depends on **what it is about**.
+`140026` is about the launching body — its deuterium — so another planet may
+well fly. A full slot list is about the account and will refuse identically
+everywhere. The slot counters (`fleetCount` / `maxFleetCount`,
+`expeditionCount` / `maxExpeditionCount` on `fleetDispatcher`) tell those apart
+without needing a code for every server message.
+
 ## Recall ("Zawróć")
 
 Only a leg still flying **to its target** (outbound, not yet arrived) can be
