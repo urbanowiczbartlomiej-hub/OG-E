@@ -4,6 +4,29 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.66.2] — 2026-08-30
+
+### Fixed
+
+- **The expedition button no longer says "Sent" when the send was refused.** If
+  the planet was short of deuterium, OGame turned the fleet down and showed its
+  own red "not enough fuel" — while OG-E reported a launch and the wave sat
+  there. It only ever checked that it had clicked the game's send button, never
+  what the game answered. Now it waits for the answer, and only a fleet that
+  actually left is called sent.
+
+### Added
+
+- **A refused send tells you what happened, and the wave can carry on.** No fuel
+  on this planet shows **No fuel**, and your next tap moves to the next planet
+  under your limit — the send is only missing here, so the rest of the round
+  still goes. Nothing moves on its own: the tap does it.
+
+- **A refusal that is about the whole account stops instead.** All fleet slots
+  or all expedition slots in use shows which budget ran out and stays put —
+  jumping to another planet would only repeat the same refusal there. Anything
+  OG-E cannot name keeps the old "Error" that you tap to restart cleanly.
+
 ## [1.66.1] — 2026-08-29
 
 ### Changed
