@@ -14,6 +14,7 @@ import { THREAT_HIGHLIGHT_TEST_EVENT } from '../../../lib/ogeEvents.js';
 import { EYE_GLYPH } from '../../shared/buttonGlyphs.js';
 import {
   NEXT_PLANET_GLYPH,
+  SKIP_PLANETS_GLYPH,
   READABILITY_GLYPH,
   PLANET_MARKERS_GLYPH,
   EVENT_PULSE_GLYPH,
@@ -61,6 +62,18 @@ export const preferencesSection = {
                 choices: [1, 2, 3],
                 hint: 'Max expeditions per planet',
               },
+            },
+            {
+              // The standing exclusion list — the planets the wave never
+              // visits. It belongs directly under the cap because the two are
+              // read together: the cap says how many per planet, this says
+              // which planets count. A disclosure row, not a toggle tile —
+              // see `controls.js`'s `kind: 'planetSkip'`.
+              kind: 'planetSkip',
+              key: 'expSkipCoords',
+              caption: 'Skip planets',
+              hint: 'Planets the expedition wave never sends from — tap to choose',
+              glyph: SKIP_PLANETS_GLYPH,
             },
           ],
         },

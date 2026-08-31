@@ -30,9 +30,14 @@
 //     (their `planet-<n>` ids and moonlink `cp`s) for the cycle-anchor
 //     memory — recording / validating the remembered expedition start body.
 //   - `findPlanetWithExpSlot`: reads
-//     `settingsStore.get().maxExpeditionsPerPlanet` and tests each planet
-//     with `countActiveExpeditions`; the `#planetList` walk itself is the
-//     shared `findNextPlanetInList` (`features/shared/planetList.js`).
+//     `settingsStore.get().maxExpeditionsPerPlanet` + `.expSkipCoords` and
+//     tests each planet with `countActiveExpeditions`; the `#planetList` walk
+//     itself is the shared `findNextPlanetInList`
+//     (`features/shared/planetList.js`).
+//   - `isCoordsExpSkipped` / `isActiveBodyExpSkipped` / `isCpExpSkipped`: read
+//     the same skip list against a row's `.planet-koords` — the standing
+//     "never send expeditions from here" exclusion
+//     (`domain/expeditionSkip.js`).
 //
 // The `#eventContent tr.eventFleet[data-mission-type="15"]` selector is
 // single-feature (only sendExpedition filters in-flight expeditions this way), so
@@ -45,6 +50,7 @@ import { settingsStore } from '../../state/settings.js';
 import { GAME } from '../../lib/gameDom.js';
 import { findNextPlanetInList } from '../shared/planetList.js';
 import { denseCoords } from '../../domain/bodies.js';
+import { parseSkipCoords } from '../../domain/expeditionSkip.js';
 
 /**
  * Read the currently-active body's coords from `#planetList`. Returns
@@ -163,6 +169,36 @@ export const getActiveBodyCp = () => {
 };
 
 /**
+ * The `#planetList` row a `cp` belongs to — the row whose own `planet-<n>` id
+ * matches, or (for a MOON cp) the row whose moonlink carries it. `null` when
+ * the player no longer owns that body.
+ *
+ * Shared by {@link isCpOnPlanetList} (anchor still exists?) and
+ * {@link isCpExpSkipped} (anchor still eligible?) so the two can never
+ * disagree about which row a remembered `cp` refers to.
+ *
+ * @param {number} cp
+ * @returns {HTMLElement | null}
+ */
+const planetRowForCp = (cp) => {
+  if (!(cp > 0)) return null;
+  const own = document.getElementById(`planet-${cp}`);
+  if (own) return /** @type {HTMLElement} */ (own);
+  const rows = document.querySelectorAll(GAME.SMALL_PLANET);
+  for (const row of rows) {
+    const href = row.querySelector(GAME.MOON_LINK)?.getAttribute('href');
+    if (!href) continue;
+    try {
+      if (new URL(href, location.href).searchParams.get('cp') === String(cp))
+        return /** @type {HTMLElement} */ (row);
+    } catch {
+      // Malformed href — keep scanning the remaining rows.
+    }
+  }
+  return null;
+};
+
+/**
  * Is `cp` still a body the player owns — i.e. a planet row on `#planetList`
  * or one of its moonlinks? Guards the remembered expedition anchor against a
  * planet that has since been abandoned, sold or lost: a stale id would send
@@ -171,33 +207,73 @@ export const getActiveBodyCp = () => {
  * @param {number} cp
  * @returns {boolean}
  */
-export const isCpOnPlanetList = (cp) => {
-  if (!(cp > 0)) return false;
-  if (document.getElementById(`planet-${cp}`)) return true;
-  const moons = document.querySelectorAll(
-    `${GAME.SMALL_PLANET} ${GAME.MOON_LINK}`,
+export const isCpOnPlanetList = (cp) => planetRowForCp(cp) !== null;
+
+/**
+ * The player's standing expedition skip list, as dense `g:s:p` coords. Read
+ * per call (not cached) so a change in the settings panel takes effect on the
+ * very next tap, exactly like `maxExpeditionsPerPlanet`.
+ *
+ * @returns {Set<string>}
+ */
+const skipSet = () => parseSkipCoords(settingsStore.get().expSkipCoords);
+
+/**
+ * Is this position on the player's skip list — a body the expedition wave must
+ * never visit? Coords-keyed, so a skipped position covers its planet AND its
+ * moon (same granularity the per-planet cap counts at).
+ *
+ * @param {string | null} coords  Dense `g:s:p`; `null` → `false` (unknown
+ *   position is never treated as excluded — see {@link getActivePlanetCoords}).
+ * @returns {boolean}
+ */
+export const isCoordsExpSkipped = (coords) =>
+  coords !== null && skipSet().has(coords);
+
+/**
+ * Is the body the current page belongs to on the skip list? The gate the
+ * click handler uses to hop straight off a planet the player has excluded,
+ * instead of preparing a send the planet cannot fly.
+ *
+ * @returns {boolean}
+ */
+export const isActiveBodyExpSkipped = () =>
+  isCoordsExpSkipped(getActivePlanetCoords());
+
+/**
+ * Is the remembered cycle anchor pointing at a skipped body? Reached when the
+ * player excludes the planet a cycle used to start from (or manually sent a
+ * cycle's first expedition from one) — the anchor then has to yield to the
+ * ordinary free-slot walk rather than parking every cycle on a dead body.
+ *
+ * @param {number} cp
+ * @returns {boolean}
+ */
+export const isCpExpSkipped = (cp) => {
+  const row = planetRowForCp(cp);
+  if (!row) return false;
+  return isCoordsExpSkipped(
+    denseCoords(row.querySelector(GAME.PLANET_KOORDS)?.textContent) || null,
   );
-  for (const moon of moons) {
-    const href = moon.getAttribute('href');
-    if (!href) continue;
-    try {
-      if (new URL(href, location.href).searchParams.get('cp') === String(cp))
-        return true;
-    } catch {
-      // Malformed href — keep scanning the remaining rows.
-    }
-  }
-  return false;
 };
 
 /**
  * Walk `#planetList .smallplanet` starting from the active planet and
  * return the `cp` of the first planet that has room for another
- * expedition (`count < settings.maxExpeditionsPerPlanet`).
+ * expedition (`count < settings.maxExpeditionsPerPlanet`) and is NOT on the
+ * skip list.
  *
  * Wraps around the planet list, so a player whose active planet is the
  * last in the list still finds room on earlier entries. `null` when
- * every planet (save the active one, if `skipCurrent`) is maxed.
+ * every planet (save the active one, if `skipCurrent`) is maxed or skipped.
+ *
+ * Why the skip list is checked HERE and not only at the send: a planet kept
+ * for something else (mining colony, deut farm) is under the cap all day, so
+ * the walk parks the wave on it, the server refuses the send, and the second
+ * pass over the planets that DO fly never happens. Excluding it from the walk
+ * is what keeps the round-robin going. Same predicate as
+ * `bridges/expeditionRedirect.js`'s hop, so the button and the post-send
+ * redirect can never pick different bodies.
  *
  * @param {boolean} skipCurrent
  *   When `true`, skip the active planet itself — used from the click
@@ -206,12 +282,14 @@ export const isCpOnPlanetList = (cp) => {
  */
 export const findPlanetWithExpSlot = (skipCurrent) => {
   const max = settingsStore.get().maxExpeditionsPerPlanet;
+  const skipped = skipSet();
   const cp = findNextPlanetInList(
     (p) => {
       const coords = denseCoords(
         p.querySelector(GAME.PLANET_KOORDS)?.textContent,
       );
-      return !!coords && countActiveExpeditions(coords) < max;
+      if (!coords || skipped.has(coords)) return false;
+      return countActiveExpeditions(coords) < max;
     },
     { active: skipCurrent ? 'skip' : 'first' },
   );

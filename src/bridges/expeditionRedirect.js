@@ -59,6 +59,14 @@
 // moving on, or — the pre-cap bug — stopping after a single pass because every
 // planet already had one expedition. At the default cap of 1 this reduces to
 // the original "skip any planet that already has an expedition".
+//
+// # The standing skip list overrides the cap
+//
+// A body on `oge_expSkipCoords` is never a hop target, however empty it is.
+// Without it the round-robin has no way to tell "free slot" from "planet the
+// player keeps for something else": a mining colony with no fleet stays under
+// the cap forever, so the hop lands there, the send is refused, and the wave
+// stalls one planet short of its second pass. See `domain/expeditionSkip.js`.
 
 /** @ts-check */
 
@@ -67,6 +75,7 @@ import { safeLS } from '../lib/storage.js';
 import { MISSION_EXPEDITION } from '../domain/rules.js';
 import { ingameComponentUrl } from '../domain/ogameUrl.js';
 import { denseCoords } from '../domain/bodies.js';
+import { parseSkipCoords } from '../domain/expeditionSkip.js';
 import { GAME, ACTIVE_PLANET_CLASS, ACTIVE_MOON_CLASS } from '../lib/gameDom.js';
 
 /**
@@ -107,6 +116,24 @@ const readMaxExpeditionsPerPlanet = () => {
   const raw = safeLS.int(MAX_PER_PLANET_KEY, 1);
   return raw > 0 ? raw : 1;
 };
+
+/**
+ * localStorage key for the standing expedition skip list — bodies the wave
+ * must never visit. Owned by the settings store (`state/settings.js`, field
+ * `expSkipCoords`) and mirrored here as a bare string for the same reason as
+ * {@link MAX_PER_PLANET_KEY}: a MAIN-world bridge cannot import `state/`.
+ *
+ * @type {string}
+ */
+const SKIP_COORDS_KEY = 'oge_expSkipCoords';
+
+/**
+ * The player's skip list as a set of dense `g:s:p` coords. Missing key → empty
+ * set (nothing excluded — the behaviour before the setting existed).
+ *
+ * @returns {Set<string>}
+ */
+const readSkipCoords = () => parseSkipCoords(safeLS.get(SKIP_COORDS_KEY));
 
 /**
  * Count a body's in-flight expeditions off the event ticker — the same tally
@@ -232,6 +259,7 @@ const getMissionFromBody = (body) => {
  */
 const findNextPlanetWithFreeSlot = () => {
   const max = readMaxExpeditionsPerPlanet();
+  const skipped = readSkipCoords();
   const planets = /** @type {HTMLElement[]} */ (
     [...document.querySelectorAll(GAME.SMALL_PLANET)]
   );
@@ -257,7 +285,13 @@ const findNextPlanetWithFreeSlot = () => {
   // still under the cap wins.
   for (let i = 1; i < planets.length; i++) {
     const planet = planets[(currentIdx + i) % planets.length];
-    if (countBodyExpeditions(planetRowCoords(planet)) >= max) continue;
+    const coords = planetRowCoords(planet);
+    // Standing exclusion beats the cap: a body on the skip list is never a
+    // hop target no matter how empty it is. Same filter the button's own walk
+    // applies (`features/sendExpedition/domHelpers.js`), so the post-send hop
+    // and the button can never disagree about where the wave goes next.
+    if (coords !== null && skipped.has(coords)) continue;
+    if (countBodyExpeditions(coords) >= max) continue;
     if (fromMoon) {
       const href = planet.querySelector(GAME.MOON_LINK)?.getAttribute('href');
       if (!href) continue; // no moon at this slot → not a candidate
@@ -454,4 +488,5 @@ export const _internalsForTest = {
   overrideResponseText,
   ENABLED_KEY,
   MAX_PER_PLANET_KEY,
+  SKIP_COORDS_KEY,
 };

@@ -30,6 +30,9 @@ import { settingsStore } from '../../state/settings.js';
 import { SECTIONS } from './sections/index.js';
 import { injectStyle, parseSvg } from '../../lib/dom.js';
 import { appendGlyph, installButtonChrome } from '../shared/buttonChrome.js';
+import { GAME } from '../../lib/gameDom.js';
+import { denseCoords } from '../../domain/bodies.js';
+import { parseSkipCoords, toggleSkipCoords } from '../../domain/expeditionSkip.js';
 
 /**
  * Shape of a single option in the SECTIONS config. Each `type` is
@@ -95,9 +98,18 @@ import { appendGlyph, installButtonChrome } from '../shared/buttonChrome.js';
  * semantics, clicks don't toggle the tile) and a corner action pill
  * (`action` — fires independently of the toggle, e.g. the banner preview).
  *
+ * `kind: 'planetSkip'` swaps the whole flavour: the entry renders as a
+ * disclosure ROW over a STRING field (the expedition skip list) with a planet
+ * picker underneath, and `seg` / `action` do not apply. It lives in this
+ * typedef rather than its own control type because it belongs INSIDE the
+ * preferences panel's Expeditions group, next to the cap it modifies — a
+ * separate `SettingsOption` would render as its own row outside the panel.
+ *
  * @typedef {object} PrefTile
  * @property {keyof import('../../state/settings.js').Settings} key
- *   Boolean Settings field the tile toggles.
+ *   Boolean Settings field the tile toggles (the STRING skip list when
+ *   `kind` is `'planetSkip'`).
+ * @property {'planetSkip'} [kind] Non-toggle flavour — see above.
  * @property {string} caption Keyword label (full sentence goes in `hint`).
  * @property {string} glyph   Inner SVG markup (`0 0 64 64`, currentColor).
  * @property {string} [hint]  Tooltip — the old full-sentence row label.
@@ -228,7 +240,10 @@ const TILES_CSS = [
   // The block: ONE bordered rounded box holding the optional top slot (the
   // Dashboard launcher) flush above the module tiles — they read as a single
   // command block.
-  '.oge-fab-block{width:100%;box-sizing:border-box;',
+  // Side margins match `.oge-pref-panel` below (and the `.oge-range-wrap`
+  // slider between them), so the command block and the preferences panel are
+  // one aligned column rather than a full-bleed box sitting over an inset one.
+  '.oge-fab-block{box-sizing:border-box;margin:0 10px;',
   'border:1px solid #2a3a4c;border-radius:8px;overflow:hidden;background:#0b1016;}',
   // Top segment — the Dashboard launcher (structure in sections/data.js).
   // Class-driven (not inline) so hover/focus rules can win. Same anatomy as
@@ -278,15 +293,23 @@ const TILES_CSS = [
 const PREF_STYLE_ID = 'oge-setting-pref-style';
 
 const PREF_CSS = [
-  // Side margins match `.oge-range-wrap` above — the inset slider + inset
-  // panel read as one aligned column under the full-bleed command block.
+  // Side margins match the command block and the `.oge-range-wrap` slider
+  // above — every block in the tab shares one inset column, so nothing reads
+  // as wider or more important than its neighbour.
   '.oge-pref-panel{box-sizing:border-box;margin:0 10px;',
   'border:1px solid #2a3a4c;border-radius:8px;overflow:hidden;background:#0b1016;}',
-  // Group captions carry the same typographic weight as the Dashboard
-  // launcher's label (12px bold) so the groups scan as real headings, but
-  // stay in the panel's muted blue-grey — gold remains the launcher's mark.
-  '.oge-pref-cap{padding:11px 12px 4px;font-size:13px;font-weight:bold;',
-  'letter-spacing:.02em;color:#a7b8cb;}',
+  // Group captions are full-bleed CENTRED BANDS: a faint wash plus a hairline
+  // under it, so a caption is legible as a heading on its own rather than as
+  // the first (oddly bold) line of the group beneath it. Full-bleed and square
+  // is what keeps them from reading as buttons — every real control in this
+  // panel is inset with rounded corners. They stay in the panel's muted
+  // blue-grey; gold remains the Dashboard launcher's mark.
+  '.oge-pref-cap{padding:9px 12px;font-size:12px;font-weight:bold;text-align:center;',
+  'letter-spacing:.08em;color:#a7b8cb;background:rgba(255,255,255,.04);',
+  'border-bottom:1px solid #1a2735;}',
+  // No extra gap above a later caption: the band already separates the groups
+  // on its own, and a margin here only opens dead space that pushes the whole
+  // panel down the tab.
   '.oge-pref-cap.sep{border-top:1px solid #1a2735;}',
   '.oge-pref-grid{display:grid;}',
   // A tile is a <div role="button"> (not <button>): the row variant nests the
@@ -322,6 +345,64 @@ const PREF_CSS = [
   'font-size:12px;cursor:pointer;font-family:inherit;}',
   // Hover reddens toward the banner it previews.
   '.oge-pref-pill:hover{border-color:#fb7185;color:#ffb3bd;}',
+  // Planet-skip row — a full-width DISCLOSURE row rather than a toggle tile
+  // (its picker is a workspace, not a switch), but it still has a genuine
+  // on/off: an empty list does nothing, a non-empty one changes where every
+  // wave goes. So it wears the SAME lit treatment as `.oge-pref-tile.on` —
+  // there is no reason for the one active control in the panel to announce
+  // itself differently from all the others.
+  //
+  // Two states share this row and MUST NOT share a marker:
+  //   - is anything excluded? → the row's own lit/dim state (blue = yes).
+  //   - is the picker open?   → a faint background tint, plus the picker
+  //     itself being on screen.
+  // They were one marker at first (the readout lit while the picker was open)
+  // and that read as "collapsing the picker turned the feature off" — folding
+  // a workspace away has to leave the row saying exactly what it said before.
+  '.oge-pref-row{position:relative;display:flex;align-items:center;gap:10px;',
+  'padding:14px 12px;margin:0;cursor:pointer;user-select:none;color:#5a6672;}',
+  '.oge-pref-row svg{width:28px;height:28px;overflow:visible;flex:none;}',
+  '.oge-pref-row-cap{font-size:13px;color:#66727f;}',
+  '.oge-pref-row:hover{background:rgba(74,158,255,.07);}',
+  '.oge-pref-row.open{background:rgba(74,158,255,.07);}',
+  '.oge-pref-row.active{background:rgba(74,158,255,.10);',
+  'box-shadow:inset 0 -2px 0 #4a9eff;color:#7db8ff;}',
+  '.oge-pref-row.active .oge-pref-row-cap{color:#dfe7f2;}',
+  '.oge-pref-row:focus-visible{outline:1px solid #4a9eff;outline-offset:-2px;}',
+  // The readout borrows the segment's look (bordered box, and the segment's
+  // own lit fill once the row is active) so it reads as part of the same
+  // control family as the `Max / planet` segment beside it.
+  '.oge-pref-sum{flex:none;max-width:50%;overflow:hidden;text-overflow:ellipsis;',
+  'white-space:nowrap;border:1px solid #2a3a4c;border-radius:6px;padding:8px 12px;',
+  'font-size:13px;color:#66727f;}',
+  '.oge-pref-row.active .oge-pref-sum{border-color:#3a5a7c;',
+  'background:rgba(74,158,255,.16);color:#cfe4ff;}',
+  // The picker itself: three columns. Two fit a longer name, but a 15-planet
+  // account then scrolls for ages every time the panel is open — and the
+  // coords line underneath already disambiguates a truncated name, so the
+  // denser grid loses nothing that matters.
+  '.oge-pref-planets{display:grid;grid-template-columns:repeat(3,1fr);',
+  'border-top:1px solid #1a2735;}',
+  '.oge-pref-planets[hidden]{display:none;}',
+  '.oge-planet-chip{display:flex;flex-direction:column;align-items:flex-start;gap:1px;',
+  'border:none;margin:0;padding:10px 8px;background:transparent;font-family:inherit;',
+  'text-align:left;cursor:pointer;color:#a7b8cb;min-width:0;}',
+  '.oge-planet-chip:not(:nth-child(3n+1)){border-left:1px solid #1a2735;}',
+  '.oge-planet-chip:nth-child(n+4){border-top:1px solid #1a2735;}',
+  '.oge-planet-chip:hover{background:rgba(74,158,255,.07);}',
+  '.oge-planet-chip:focus-visible{outline:1px solid #4a9eff;outline-offset:-2px;}',
+  '.oge-planet-chip .hd{display:flex;align-items:baseline;gap:5px;max-width:100%;min-width:0;}',
+  '.oge-planet-chip .idx{flex:none;font-size:10px;color:#5f6c7b;',
+  'font-variant-numeric:tabular-nums;}',
+  '.oge-planet-chip .nm{font-size:12px;line-height:1.2;overflow:hidden;',
+  'text-overflow:ellipsis;white-space:nowrap;}',
+  '.oge-planet-chip .co{font-size:10px;color:#5f6c7b;font-variant-numeric:tabular-nums;}',
+  // Excluded state: rose + a struck name. Only the EXCEPTIONS are marked —
+  // an account where 13 of 15 planets fly should not read as a wall of colour.
+  '.oge-planet-chip.skip{color:#fb7185;}',
+  '.oge-planet-chip.skip .nm{text-decoration:line-through;}',
+  '.oge-planet-chip.skip .idx,.oge-planet-chip.skip .co{color:#c9737f;}',
+  '.oge-pref-empty{grid-column:1/-1;padding:14px 12px;font-size:12px;color:#5f6c7b;}',
 ].join('');
 
 // ─── Anti-loop flag + bound state helpers ────────────────────────────────
@@ -638,6 +719,236 @@ const buildPrefSeg = (seg) => {
   return wrap;
 };
 
+// ─── Planet-skip picker (expedition skip list) ───────────────────────────
+//
+// The picker is a real list of the player's bodies rather than a text field of
+// list positions: it needs no keyboard on mobile, and it names planets the way
+// the player knows them. The stored value is coords, never the index — see
+// `domain/expeditionSkip.js` for why a position is not a stable name for a
+// body. The index a chip shows is display only, there to match how the player
+// counts their sidebar.
+
+/**
+ * @typedef {object} PlanetRow
+ * @property {number} index  1-based position in `#planetList` (display only).
+ * @property {string} coords Dense `g:s:p` — the stored identity.
+ * @property {string} name   The planet's own name, or its coords as fallback.
+ */
+
+/**
+ * Read the player's bodies off the game's planet list, in list order. Same
+ * rows and same order the expedition walks iterate
+ * (`features/shared/planetList.js`), so a chip's index is the position the
+ * player sees in the sidebar. Rows without readable coords are dropped —
+ * they can't be stored, so they can't be excluded either.
+ *
+ * @returns {PlanetRow[]}
+ */
+const readPlanetRows = () => {
+  /** @type {PlanetRow[]} */
+  const out = [];
+  for (const row of document.querySelectorAll(GAME.SMALL_PLANET)) {
+    const coords = denseCoords(
+      row.querySelector(GAME.PLANET_KOORDS)?.textContent,
+    );
+    if (!coords) continue;
+    const name = (row.querySelector(GAME.PLANET_NAME)?.textContent || '').trim();
+    out.push({ index: out.length + 1, coords, name: name || coords });
+  }
+  return out;
+};
+
+/**
+ * Collapsed-row readout for the skip list: what it says, and whether anything
+ * is excluded at all. Names while the selection is small enough to read at a
+ * glance, a count beyond that — so the row answers "what is excluded?" without
+ * opening the picker (the UI rule: a value may never live only behind an
+ * interaction).
+ *
+ * `active` is the row's ONLY activation signal, and it is deliberately
+ * independent of whether the picker is open: emptying the list is what turns
+ * the feature off, folding the picker away is not.
+ *
+ * Only bodies the player still OWNS are counted. A stored entry for a planet
+ * that has since been abandoned or sold matches no row, can never affect a
+ * walk, and would otherwise inflate the readout past what the picker shows.
+ * The exception is a page with no planet list at all, where nothing can be
+ * resolved and the raw stored count is the honest answer.
+ *
+ * @param {string} raw          Stored `expSkipCoords` value.
+ * @param {{coords: string, name: string}[]} rows  Bodies the player owns.
+ * @returns {{ text: string, active: boolean }}
+ */
+const skipReadout = (raw, rows) => {
+  const set = parseSkipCoords(raw);
+  const none = { text: 'None', active: false };
+  if (set.size === 0) return none;
+  const plural = (/** @type {number} */ n) =>
+    `${n} planet${n === 1 ? '' : 's'}`;
+  if (rows.length === 0) return { text: plural(set.size), active: true };
+  const hit = rows.filter((r) => set.has(r.coords));
+  if (hit.length === 0) return none;
+  return {
+    text: hit.length <= 2 ? hit.map((r) => r.name).join(' · ') : plural(hit.length),
+    active: true,
+  };
+};
+
+/**
+ * Repaint a picker (chip states + its row's readout) from the current store
+ * value. The single paint path: the chip click handler and
+ * {@link syncInputsFromState} both call it, so a cross-device settings sync
+ * repaints exactly like a local tap.
+ *
+ * Reads the body list back off the chips' own datasets rather than re-querying
+ * the game DOM — the planet list cannot change without a page load, and this
+ * keeps a repaint free of DOM traversal.
+ *
+ * @param {HTMLElement} picker
+ * @returns {void}
+ */
+const paintPlanetSkip = (picker) => {
+  const key = picker.dataset.key;
+  if (!key) return;
+  const raw = String(readSetting(key) ?? '');
+  const set = parseSkipCoords(raw);
+  /** @type {{coords: string, name: string}[]} */
+  const rows = [];
+  for (const el of picker.querySelectorAll('.oge-planet-chip')) {
+    const chip = /** @type {HTMLElement} */ (el);
+    const coords = chip.dataset.coords || '';
+    rows.push({ coords, name: chip.dataset.name || coords });
+    const on = set.has(coords);
+    chip.classList.toggle('skip', on);
+    chip.setAttribute('aria-pressed', String(on));
+  }
+  const row = picker.previousElementSibling;
+  const sum = row?.querySelector('.oge-pref-sum');
+  if (!row || !sum) return;
+  const readout = skipReadout(raw, rows);
+  sum.textContent = readout.text;
+  // Lit on the ROW, exactly like a tile's `.on` — "this preference is doing
+  // something", independent of whether the picker happens to be unfolded.
+  row.classList.toggle('active', readout.active);
+};
+
+/**
+ * Build one chip: index + name over coords, toggling that body's membership
+ * in the skip list. A real `<button>` (the picker is a SIBLING of the
+ * disclosure row, not nested inside it, so no interactive-in-role=button
+ * nesting problem arises here).
+ *
+ * @param {PlanetRow} p
+ * @param {string} key      Settings field holding the skip list.
+ * @param {HTMLElement} picker  Repaint target after a toggle.
+ * @returns {HTMLButtonElement}
+ */
+const buildPlanetChip = (p, key, picker) => {
+  const chip = document.createElement('button');
+  chip.type = 'button';
+  chip.className = 'oge-planet-chip';
+  chip.dataset.coords = p.coords;
+  chip.dataset.name = p.name;
+
+  const hd = document.createElement('span');
+  hd.className = 'hd';
+  const idx = document.createElement('span');
+  idx.className = 'idx';
+  idx.textContent = String(p.index);
+  const nm = document.createElement('span');
+  nm.className = 'nm';
+  nm.textContent = p.name;
+  hd.append(idx, nm);
+
+  const co = document.createElement('span');
+  co.className = 'co';
+  co.textContent = p.coords;
+  chip.append(hd, co);
+
+  chip.addEventListener('click', () => {
+    writeSetting(key, toggleSkipCoords(String(readSetting(key) ?? ''), p.coords));
+    paintPlanetSkip(picker);
+  });
+  return chip;
+};
+
+/**
+ * Build the planet-skip entry: a disclosure row plus the (collapsed) picker
+ * below it. Returned as a fragment because the two are siblings in the group
+ * grid — the row keeps the tile rhythm, the picker spans the full panel.
+ *
+ * Collapsed by default, and collapsing is free: the readout keeps naming what
+ * is excluded whether the picker is open or shut, so a long planet list is
+ * something you unfold to edit and fold away again rather than something the
+ * panel makes you scroll past on every visit.
+ *
+ * @param {PrefTile} tile
+ * @returns {DocumentFragment}
+ */
+const buildPlanetSkipEntry = (tile) => {
+  const frag = document.createDocumentFragment();
+
+  const row = document.createElement('div');
+  row.className = 'oge-pref-row';
+  row.setAttribute('role', 'button');
+  row.tabIndex = 0;
+  row.setAttribute('aria-expanded', 'false');
+  if (tile.hint) row.title = tile.hint;
+  row.appendChild(
+    parseSvg(
+      '<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" focusable="false" aria-hidden="true">' +
+        tile.glyph +
+        '</svg>',
+    ),
+  );
+  const cap = document.createElement('span');
+  cap.className = 'oge-pref-row-cap';
+  cap.textContent = tile.caption;
+  const spacer = document.createElement('span');
+  spacer.className = 'oge-pref-spacer';
+  const sum = document.createElement('span');
+  sum.className = 'oge-pref-sum';
+  row.append(cap, spacer, sum);
+
+  const picker = document.createElement('div');
+  picker.className = 'oge-pref-planets';
+  picker.dataset.key = tile.key;
+  picker.hidden = true;
+
+  const rows = readPlanetRows();
+  if (rows.length === 0) {
+    // Only reachable off an ingame page (the panel lives in AGR's menu, which
+    // only exists there) — but a layout without the sidebar must still say
+    // why the picker is empty rather than render a blank box.
+    const empty = document.createElement('div');
+    empty.className = 'oge-pref-empty';
+    empty.textContent = 'Planet list unavailable on this page.';
+    picker.appendChild(empty);
+  }
+  for (const p of rows) picker.appendChild(buildPlanetChip(p, tile.key, picker));
+
+  // Pure view state — it writes NO setting. The picker is a workspace you
+  // unfold to mark planets and fold away again; what is excluded is decided
+  // by the chips inside it and reported by the row's readout either way.
+  const toggleOpen = () => {
+    const open = picker.hidden;
+    picker.hidden = !open;
+    row.classList.toggle('open', open);
+    row.setAttribute('aria-expanded', String(open));
+  };
+  row.addEventListener('click', toggleOpen);
+  row.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggleOpen();
+    }
+  });
+
+  frag.append(row, picker);
+  paintPlanetSkip(picker);
+  return frag;
+};
+
 /**
  * Build one preference tile: flat glyph + keyword caption over a boolean
  * Settings field, with the optional embedded segment / corner action pill.
@@ -735,7 +1046,11 @@ const buildPrefTilesControl = (opt, valueCell) => {
     grid.className = 'oge-pref-grid' + (group.columns === 3 ? ' cols3' : '');
     grid.style.gridTemplateColumns = `repeat(${group.columns},1fr)`;
     for (const tile of group.tiles) {
-      grid.appendChild(buildPrefTile(tile, group.columns === 1));
+      grid.appendChild(
+        tile.kind === 'planetSkip'
+          ? buildPlanetSkipEntry(tile)
+          : buildPrefTile(tile, group.columns === 1),
+      );
     }
     panel.appendChild(grid);
   }
@@ -982,6 +1297,12 @@ export const syncInputsFromState = () => {
               Number(/** @type {HTMLElement} */ (b).dataset.value) === current,
             );
           }
+        }
+        // Planet-skip pickers bind a STRING field, so they can't ride the
+        // boolean tile loop above — same intent though: repaint from the
+        // store so a cross-device sync lands here too.
+        for (const picker of el.querySelectorAll('.oge-pref-planets')) {
+          paintPlanetSkip(/** @type {HTMLElement} */ (picker));
         }
       }
     }

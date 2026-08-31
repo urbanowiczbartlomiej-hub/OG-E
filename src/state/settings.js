@@ -69,6 +69,9 @@ export const SETTINGS_PREFIX = 'oge_';
  *   showExpeditionButton    true  — Expeditions module visible on the FAB
  *   autoRedirectExpedition  true  — redirect to next planet after expedition
  *   maxExpeditionsPerPlanet         1     — simultaneous expeditions per planet
+ *   expSkipCoords           ''    — bodies the expedition wave never visits,
+ *                                   as comma-separated dense `g:s:p` coords
+ *                                   (see `domain/expeditionSkip.js`)
  *
  *   (colonyMinGap / colonyMinFields / colonyPassword moved OUT of Settings
  *    into the per-universe Galaxy-Scan config — edited in the dashboard,
@@ -103,6 +106,7 @@ export const SETTINGS_PREFIX = 'oge_';
  * @property {boolean} showDailyRunButton
  * @property {boolean} autoRedirectExpedition
  * @property {number}  maxExpeditionsPerPlanet
+ * @property {string}  expSkipCoords
  * @property {boolean} cloudSync
  * @property {string}  gistToken
  * @property {boolean} readabilityBoost
@@ -172,6 +176,7 @@ export const SETTINGS_SCHEMA = {
   showDailyRunButton:     { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'showDailyRunButton' },
   autoRedirectExpedition: { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'autoRedirectExpedition' },
   maxExpeditionsPerPlanet:        { type: 'int',    default: 1,     key: SETTINGS_PREFIX + 'maxExpeditionsPerPlanet' },
+  expSkipCoords:          { type: 'string', default: '',    key: SETTINGS_PREFIX + 'expSkipCoords' },
   cloudSync:              { type: 'bool',   default: false, key: SETTINGS_PREFIX + 'cloudSync' },
   gistToken:              { type: 'string', default: '',    key: SETTINGS_PREFIX + 'gistToken' },
   readabilityBoost:       { type: 'bool',   default: true,  key: SETTINGS_PREFIX + 'readabilityBoost' },

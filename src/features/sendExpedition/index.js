@@ -43,6 +43,22 @@
 // continues from the destination. Paints "All sent" when no OTHER planet
 // has a free slot. This is navigation only — still zero server actions.
 //
+// # Standing skip list (not the same thing as the long-press skip)
+//
+// The long-press above is a ONE-SHOT "not this planet, this time". The skip
+// list (`expSkipCoords`, edited in the settings panel) is the PERMANENT
+// counterpart: bodies the wave must never visit at all — the mining colony
+// with no fleet, the deut farm with no tank. Every walk in the feature (this
+// file's hops, the initial pick, and `bridges/expeditionRedirect.js`'s
+// post-send hop) filters them out, and a tap that lands on one anyway hops
+// straight off it.
+//
+// Why it exists: the walks test only "in-flight count < per-planet cap", so a
+// planet kept for something else always looks free. With the cap at 2, one
+// pass over 8 planets fills the 6 that fly, then the walk parks on the two
+// that don't — each send is refused (no fuel / no ships) and the second pass
+// over the 6 never happens. See `domain/expeditionSkip.js`.
+//
 // # Cycle anchor (where a fresh round of expeditions begins)
 //
 // Mid-cycle the planet order is driven by the round-robin walk (this file's
@@ -133,6 +149,8 @@ import {
   getActivePlanetCoords,
   getActiveBodyCp,
   isCpOnPlanetList,
+  isCpExpSkipped,
+  isActiveBodyExpSkipped,
   countActiveExpeditions,
   findPlanetWithExpSlot,
 } from './domHelpers.js';
@@ -455,7 +473,10 @@ export const installSendExpedition = () => {
   const rememberCycleAnchor = (freshCycle) => {
     if (!freshCycle) return;
     const cp = getActiveBodyCp();
-    if (cp > 0) writeExpStartCp(cp);
+    // A body on the skip list must never become the anchor: the next cycle's
+    // first tap would navigate there only for the skip gate to bounce straight
+    // off it. Reachable when the player sends manually from an excluded planet.
+    if (cp > 0 && !isCpExpSkipped(cp)) writeExpStartCp(cp);
   };
 
   /**
@@ -541,7 +562,7 @@ export const installSendExpedition = () => {
       const cp = chooseExpeditionStartCp({
         inFlight: countActiveExpeditions(null),
         startCp,
-        startCpOnList: isCpOnPlanetList(startCp),
+        startCpOnList: isCpOnPlanetList(startCp) && !isCpExpSkipped(startCp),
         fallbackCp: findPlanetWithExpSlot(false),
       });
       if (cp === null) {
@@ -549,6 +570,20 @@ export const installSendExpedition = () => {
         return;
       }
       location.href = buildFleetdispatchUrl(cp);
+      return;
+    }
+
+    // On fleetdispatch, standing on a body the player EXCLUDED from the wave
+    // (`expSkipCoords`) ⇒ never prepare a send here, just walk on. The walk
+    // itself already refuses to land on a skipped body, so this only fires
+    // when something else put us here: a manual planet click, a bookmark, or
+    // a redirect issued before the planet was excluded. Without it the tap
+    // would arm AGR on a planet that cannot fly, the server would refuse the
+    // send, and the wave would stall exactly where the skip list exists to
+    // stop it stalling.
+    if (isActiveBodyExpSkipped()) {
+      if (hopToNextExpPlanet()) return;
+      paintAllMaxed(btn);
       return;
     }
 

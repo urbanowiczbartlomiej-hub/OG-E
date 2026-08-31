@@ -66,6 +66,12 @@ export const UNIVERSE_SCOPED_SETTINGS = new Set([
   // own origin) — it was cloud sync that flattened them into one global value
   // and pushed it onto every server.
   'autoRedirectExpedition',
+  // The expedition skip list is literally a set of COORDINATES — `1:301:4`
+  // names a body on one server and nothing at all on the next. Syncing it
+  // globally would push one universe's excluded planets onto every other
+  // universe, where they either match nothing (harmless) or, worse, match an
+  // unrelated body the player does fly expeditions from.
+  'expSkipCoords',
   'alarmClockNtfyToken',
 ]);
 
