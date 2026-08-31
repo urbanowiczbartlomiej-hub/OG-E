@@ -4,6 +4,34 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.67.0] — 2026-09-01
+
+### Added
+
+- **Skip planets — tell the expedition wave which planets to leave alone.** If
+  you keep a couple of planets for something other than expeditions, the wave
+  used to walk onto them anyway: they are under your per-planet limit all day,
+  so they look like the emptiest bodies on the list. The send was then refused
+  for no fuel or no ships, and the round stalled there instead of coming back
+  for its second pass over the planets that do fly. Settings → Expeditions →
+  **Skip planets** opens a list of your planets; tap the ones to leave out and
+  fold it away again. Both the button's own jumps and the automatic "next
+  planet" after a send respect it.
+
+- **Standing on a skipped planet, one tap moves you on.** However you got there
+  — clicking the planet yourself, an old bookmark, a jump from before you
+  excluded it — the button walks to the next planet that flies instead of
+  arming a send the server will turn down.
+
+### Changed
+
+- **The settings panel reads as a set of blocks.** Section headings sit on
+  their own centred band, and the dashboard block now lines up with the panel
+  below it instead of running wider.
+
+- **"Open Dashboard" is now "Open Dashboard & Settings"** — some settings
+  (Galaxy-Scan, AlarmClock) live in the dashboard, and nothing said so.
+
 ## [1.66.2] — 2026-08-30
 
 ### Fixed
