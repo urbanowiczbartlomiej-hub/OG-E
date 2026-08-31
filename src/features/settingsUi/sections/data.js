@@ -70,9 +70,12 @@ export const buildDashboardButton = () => {
   const lens = /** @type {HTMLElement | null} */ (icon.querySelector('.oge-lens'));
   if (lens) lens.style.cssText += ';position:absolute;left:0;top:0;width:100%;height:100%;transform:none;';
   // Verb-led label — "OG-E Dashboard" read as a section title, not a
-  // clickable control, once the launcher fused with the module tiles.
+  // clickable control, once the launcher fused with the module tiles. Both
+  // destinations are named because the dashboard is where the per-universe
+  // settings live (Galaxy-Scan config, AlarmClock schedules): a player looking
+  // for a knob that is NOT in this panel has no other hint where it went.
   const label = document.createElement('span');
-  label.textContent = 'Open Dashboard';
+  label.textContent = 'Open Dashboard & Settings';
   btn.append(icon, label);
   btn.addEventListener('click', () => {
     if (!DASHBOARD_URL) return;
