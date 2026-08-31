@@ -31,7 +31,7 @@ import {
 } from '../../src/bridges/expeditionRedirect.js';
 import { _resetObserversForTest } from '../../src/bridges/xhrObserver.js';
 
-const { isEnabled, getMissionFromBody, findNextPlanetWithFreeSlot, buildRedirectUrl, overrideResponseText, ENABLED_KEY, MAX_PER_PLANET_KEY } =
+const { isEnabled, getMissionFromBody, findNextPlanetWithFreeSlot, buildRedirectUrl, overrideResponseText, ENABLED_KEY, MAX_PER_PLANET_KEY, SKIP_COORDS_KEY } =
   _internalsForTest;
 
 const SEND_FLEET_URL =
@@ -610,5 +610,61 @@ describe('installExpeditionRedirect — integration smoke', () => {
 
     const xhr2 = fakeSendFleetXHR('mission=15&galaxy=4&system=30&position=16');
     expect(Object.getOwnPropertyDescriptor(xhr2, 'responseText')).toBeUndefined();
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// findNextPlanetWithFreeSlot — the standing skip list
+// ──────────────────────────────────────────────────────────────────
+//
+// The hop must apply the SAME exclusion the button's own walk applies
+// (`features/sendExpedition/domHelpers.js`), or a successful send would still
+// land the player on a body the button then refuses to send from.
+
+describe('findNextPlanetWithFreeSlot — standing skip list', () => {
+  it('never hops to an excluded body, however empty it is', () => {
+    // The reported bug: planet 3 is a colony kept for something else, so it
+    // sits at zero expeditions and looks like the emptiest body on the list —
+    // the hop lands there, the send is refused, and the wave stalls. Excluded,
+    // the hop carries on to planet 4, which is under the cap and does fly.
+    localStorage.setItem(MAX_PER_PLANET_KEY, '2');
+    setPlanetList([
+      { id: '111', current: true, expeditions: 1 },
+      { id: '222', expeditions: 2 },
+      { id: '333', expeditions: 0 },
+      { id: '444', expeditions: 1 },
+    ]);
+    expect(findNextPlanetWithFreeSlot()).toBe('333');
+
+    localStorage.setItem(SKIP_COORDS_KEY, '1:1:3');
+    expect(findNextPlanetWithFreeSlot()).toBe('444');
+  });
+
+  it('returns null when every body that still flies is at the cap', () => {
+    setPlanetList([
+      { id: '111', current: true, expeditions: 1 },
+      { id: '222', expeditions: 1 },
+      { id: '333', expeditions: 0 },
+    ]);
+    localStorage.setItem(SKIP_COORDS_KEY, '1:1:3');
+    expect(findNextPlanetWithFreeSlot()).toBeNull();
+  });
+
+  it('excludes nothing when the key is unset — the pre-existing behaviour', () => {
+    setPlanetList([
+      { id: '111', current: true, expeditions: 1 },
+      { id: '222', expeditions: 0 },
+    ]);
+    expect(findNextPlanetWithFreeSlot()).toBe('222');
+  });
+
+  it('matches a stored coord written with brackets or spaces', () => {
+    setPlanetList([
+      { id: '111', current: true, expeditions: 1 },
+      { id: '222', expeditions: 0 },
+      { id: '333', expeditions: 0 },
+    ]);
+    localStorage.setItem(SKIP_COORDS_KEY, ' [1:1:2] ');
+    expect(findNextPlanetWithFreeSlot()).toBe('333');
   });
 });

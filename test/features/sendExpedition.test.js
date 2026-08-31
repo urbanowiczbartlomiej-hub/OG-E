@@ -1022,3 +1022,114 @@ describe('installSendExpedition — refused send', () => {
     expect(navTarget).toBeNull();
   });
 });
+
+// ──────────────────────────────────────────────────────────────────
+// Standing skip list (expSkipCoords)
+// ──────────────────────────────────────────────────────────────────
+//
+// The permanent counterpart to the long-press skip: bodies the wave must never
+// visit at all. Filtering lives in `domHelpers` (covered there); what the
+// orchestrator owns is the gate that gets the player OFF a skipped body when
+// something else put them on one.
+
+describe('installSendExpedition — standing skip list', () => {
+  /**
+   * Same multi-planet scene the round-robin cases use, but with the page on
+   * the active body's FLEETDISPATCH — the state the click gate cares about.
+   *
+   * @param {{ maxExpeditionsPerPlanet?: number, expSkipCoords?: string, planets: Array<{ cp: number, coords: string, current?: boolean, expeditions?: number }> }} opts
+   */
+  const setupSkipScene = ({ maxExpeditionsPerPlanet = 1, expSkipCoords = '', planets }) => {
+    settingsStore.set({
+      ...settingsStore.get(),
+      showExpeditionButton: true,
+      maxExpeditionsPerPlanet,
+      expSkipCoords,
+    });
+    const current = planets.find((p) => p.current) ?? planets[0];
+    location.search = `?page=ingame&component=fleetdispatch&cp=${current.cp}`;
+
+    const planetRows = planets
+      .map(
+        (p) =>
+          `<div class="smallplanet${p.current ? ' hightlightPlanet' : ''}" id="planet-${p.cp}">
+             <a class="planetlink"><span class="planet-koords">[${p.coords}]</span></a>
+           </div>`,
+      )
+      .join('');
+    const expRows = planets
+      .flatMap((p) =>
+        Array(p.expeditions ?? 0)
+          .fill(0)
+          .map(() => {
+            const point = `${p.coords.split(':').slice(0, 2).join(':')}:16`;
+            return `
+              <tr class="eventFleet" data-mission-type="15" data-return-flight="true">
+                <td class="coordsOrigin">[${p.coords}]</td>
+                <td class="destCoords">[${point}]</td>
+              </tr>`;
+          }),
+      )
+      .join('');
+    document.body.innerHTML = `
+      <div id="planetList">${planetRows}</div>
+      <div id="eventContent"><table><tbody>${expRows}</tbody></table></div>
+    `;
+  };
+
+  it('hops off a skipped body instead of preparing a send there', () => {
+    // Reachable by a manual planet click, a bookmark, or a redirect issued
+    // before the planet was excluded. Without this gate the tap would arm AGR
+    // on a planet that cannot fly and the server would refuse the send —
+    // exactly the stall the skip list exists to prevent.
+    setupSkipScene({
+      maxExpeditionsPerPlanet: 2,
+      expSkipCoords: '1:1:1',
+      planets: [
+        { cp: 100, coords: '1:1:1', current: true, expeditions: 0 },
+        { cp: 200, coords: '1:1:2', expeditions: 1 },
+      ],
+    });
+    installSendExpedition();
+
+    getBtn()?.click();
+
+    expect(navTarget).toContain('cp=200');
+  });
+
+  it('prepares normally on a body that is NOT excluded', () => {
+    setupSkipScene({
+      maxExpeditionsPerPlanet: 2,
+      expSkipCoords: '1:1:2',
+      planets: [
+        { cp: 100, coords: '1:1:1', current: true, expeditions: 0 },
+        { cp: 200, coords: '1:1:2', expeditions: 0 },
+      ],
+    });
+    installSendExpedition();
+
+    getBtn()?.click();
+
+    // No AGR routine and no dispatch button in this scene, so the tap falls
+    // through to phase 2 and waits — the point is that it did NOT navigate
+    // away from a body the player never excluded.
+    expect(navTarget).toBeNull();
+  });
+
+  it('the long-press hop never lands on an excluded body either', () => {
+    setupSkipScene({
+      maxExpeditionsPerPlanet: 2,
+      expSkipCoords: '1:1:2',
+      planets: [
+        { cp: 100, coords: '1:1:1', current: true, expeditions: 0 },
+        { cp: 200, coords: '1:1:2', expeditions: 0 },
+        { cp: 300, coords: '1:1:3', expeditions: 1 },
+      ],
+    });
+    installSendExpedition();
+
+    _onSkipForTest();
+
+    expect(navTarget).toContain('cp=300');
+  });
+});

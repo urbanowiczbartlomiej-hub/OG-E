@@ -410,3 +410,147 @@ describe('installSettingsUi — dispose + idempotency', () => {
     expect(document.getElementById(TABLE_ID)).toBeNull();
   });
 });
+
+// ──────────────────────────────────────────────────────────────────
+// Planet-skip picker (expedition skip list)
+// ──────────────────────────────────────────────────────────────────
+//
+// The picker is the one control in the panel bound to a STRING field, and the
+// one that reads the GAME's DOM (`#planetList`) to build itself — so it needs
+// a scene with both the AGR container and a planet list.
+
+/**
+ * Paint the AGR container next to a `#planetList` of `[cp, "g:s:p", name]`
+ * rows, the two things the picker needs to exist.
+ *
+ * @param {Array<[number, string, string]>} rows
+ */
+const setupAGRWithPlanets = (rows) => {
+  const items = rows
+    .map(
+      ([cp, coords, name]) => `
+      <div id="planet-${cp}" class="smallplanet">
+        <span class="planet-name">${name}</span>
+        <span class="planet-koords">[${coords}]</span>
+      </div>`,
+    )
+    .join('');
+  document.body.innerHTML =
+    `<div id="${AGR_ID}"></div><div id="planetList">${items}</div>`;
+};
+
+/** @returns {HTMLElement | null} */
+const skipPicker = () =>
+  /** @type {HTMLElement | null} */ (
+    document.querySelector('.oge-pref-planets')
+  );
+
+/** @returns {HTMLElement[]} */
+const skipChips = () =>
+  /** @type {HTMLElement[]} */ ([...document.querySelectorAll('.oge-planet-chip')]);
+
+/** @returns {HTMLElement | null} */
+const skipRow = () =>
+  /** @type {HTMLElement | null} */ (document.querySelector('.oge-pref-row'));
+
+const PLANETS = /** @type {Array<[number, string, string]>} */ ([
+  [11, '1:234:5', 'Homeworld'],
+  [22, '1:240:9', 'Mine'],
+  [33, '1:301:4', 'Deut Farm'],
+]);
+
+describe('installSettingsUi — planet-skip picker', () => {
+  it('builds one chip per body on the planet list, collapsed', async () => {
+    setupAGRWithPlanets(PLANETS);
+    installSettingsUi();
+    await flushWaitFor();
+
+    expect(skipChips().map((c) => c.dataset.coords)).toEqual([
+      '1:234:5',
+      '1:240:9',
+      '1:301:4',
+    ]);
+    // Collapsed by default — a long planet list must not be something the
+    // panel makes you scroll past on every visit.
+    expect(skipPicker()?.hidden).toBe(true);
+  });
+
+  it('writes the tapped body into expSkipCoords, and untapping clears it', async () => {
+    setupAGRWithPlanets(PLANETS);
+    installSettingsUi();
+    await flushWaitFor();
+
+    const chip = skipChips()[2];
+    chip.click();
+    expect(settingsStore.get().expSkipCoords).toBe('1:301:4');
+    expect(chip.classList.contains('skip')).toBe(true);
+
+    chip.click();
+    expect(settingsStore.get().expSkipCoords).toBe('');
+    expect(chip.classList.contains('skip')).toBe(false);
+  });
+
+  it('lights the ROW while anything is excluded — emptying the list is the off switch', async () => {
+    setupAGRWithPlanets(PLANETS);
+    installSettingsUi();
+    await flushWaitFor();
+
+    expect(skipRow()?.classList.contains('active')).toBe(false);
+    skipChips()[1].click();
+    expect(skipRow()?.classList.contains('active')).toBe(true);
+    skipChips()[1].click();
+    expect(skipRow()?.classList.contains('active')).toBe(false);
+  });
+
+  it('keeps the row lit after the picker is folded away', async () => {
+    // The regression this guards: the readout used to light while the picker
+    // was OPEN, so collapsing it read as "the feature just turned off".
+    setupAGRWithPlanets(PLANETS);
+    installSettingsUi();
+    await flushWaitFor();
+
+    skipChips()[1].click();
+    skipRow()?.click(); // open
+    expect(skipPicker()?.hidden).toBe(false);
+    skipRow()?.click(); // fold away again
+    expect(skipPicker()?.hidden).toBe(true);
+    expect(skipRow()?.classList.contains('active')).toBe(true);
+    expect(settingsStore.get().expSkipCoords).toBe('1:240:9');
+  });
+
+  it('reads out names while the selection is small, a count beyond that', async () => {
+    setupAGRWithPlanets(PLANETS);
+    installSettingsUi();
+    await flushWaitFor();
+
+    const sum = () => document.querySelector('.oge-pref-sum')?.textContent;
+    expect(sum()).toBe('None');
+    skipChips()[1].click();
+    expect(sum()).toBe('Mine');
+    skipChips()[2].click();
+    expect(sum()).toBe('Mine · Deut Farm');
+    skipChips()[0].click();
+    expect(sum()).toBe('3 planets');
+  });
+
+  it('ignores a stored body the player no longer owns', async () => {
+    // A sold or abandoned planet leaves an entry that matches no row. It can
+    // never affect a walk, so it must not inflate the readout either.
+    settingsStore.set({ ...settingsStore.get(), expSkipCoords: '9:99:9' });
+    setupAGRWithPlanets(PLANETS);
+    installSettingsUi();
+    await flushWaitFor();
+
+    expect(document.querySelector('.oge-pref-sum')?.textContent).toBe('None');
+    expect(skipRow()?.classList.contains('active')).toBe(false);
+  });
+
+  it('says so rather than rendering a blank box when there is no planet list', async () => {
+    setupAGR();
+    installSettingsUi();
+    await flushWaitFor();
+
+    expect(skipChips()).toHaveLength(0);
+    expect(document.querySelector('.oge-pref-empty')).not.toBeNull();
+  });
+});

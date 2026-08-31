@@ -88,6 +88,7 @@ describe('SETTINGS_PREFIX and SETTINGS_SCHEMA', () => {
         'cloudSync',
         'eventMenuHighlight',
         'expeditionBadges',
+        'expSkipCoords',
         'fabBtnSize',
         'gistToken',
         'maxExpeditionsPerPlanet',
