@@ -25,6 +25,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { installBadges, _resetBadgesForTest } from '../../src/features/badges/index.js';
+import { MAX_EXPEDITION_HEARTS } from '../../src/features/badges/pure.js';
 import { settingsStore, SETTINGS_SCHEMA } from '../../src/state/settings.js';
 import { galaxyScanConfigStore } from '../../src/state/galaxyScanConfig.js';
 import { writeFleetSaveEntries } from '../../src/state/fleetSaveSet.js';
@@ -220,6 +221,81 @@ describe('installBadges — rendering', () => {
 
     expect(document.querySelectorAll('.oge-mb-col').length).toBe(1);
     expect(markersOn(1)).toEqual(['explore']);
+  });
+
+  it('draws ONE heart per expedition out from the body', () => {
+    // The count is what makes the marker answer "how many expedition slots am
+    // I still free to send from here?" without opening the popover.
+    setupGameDOM({
+      legs: [
+        { id: 1, mission: '15', returning: true, origin: '1:2:3', dest: '7:8:9' },
+        { id: 2, mission: '15', returning: true, origin: '1:2:3', dest: '4:5:16' },
+      ],
+      bodies: [{ cp: 1, coords: '[1:2:3]' }],
+    });
+    installBadges();
+
+    const explore = /** @type {HTMLElement} */ (colOf(1)?.querySelector('.oge-mb-explore'));
+    expect(explore.querySelectorAll('.h').length).toBe(2);
+    expect(explore.title).toBe('Expedition ×2');
+  });
+
+  it('caps the heart stack at 3 but keeps the true count in the tooltip', () => {
+    setupGameDOM({
+      legs: [1, 2, 3, 4, 5].map((id) => ({
+        id,
+        mission: '15',
+        returning: true,
+        origin: '1:2:3',
+        dest: `${id}:5:16`,
+      })),
+      bodies: [{ cp: 1, coords: '[1:2:3]' }],
+    });
+    installBadges();
+
+    const explore = /** @type {HTMLElement} */ (colOf(1)?.querySelector('.oge-mb-explore'));
+    expect(explore.querySelectorAll('.h').length).toBe(MAX_EXPEDITION_HEARTS);
+    expect(explore.title).toBe('Expedition ×5');
+  });
+
+  it('a single expedition is still exactly one heart', () => {
+    setupGameDOM({
+      legs: [{ id: 1, mission: '15', returning: true, origin: '1:2:3', dest: '7:8:9' }],
+      bodies: [{ cp: 1, coords: '[1:2:3]' }],
+    });
+    installBadges();
+
+    const explore = /** @type {HTMLElement} */ (colOf(1)?.querySelector('.oge-mb-explore'));
+    expect(explore.querySelectorAll('.h').length).toBe(1);
+    expect(explore.title).toBe('Expedition');
+  });
+
+  it('restores the heart COUNT from the optimistic cache on the next page-load', () => {
+    // The cache is what paints before the event-list XHR lands. If it only
+    // carried the category, a reload would flash a single heart on a planet
+    // running three expeditions and then correct itself — so the count is
+    // encoded in the cached token and must survive the round-trip.
+    setupGameDOM({
+      legs: [1, 2, 3].map((id) => ({
+        id,
+        mission: '15',
+        returning: true,
+        origin: '1:2:3',
+        dest: `${id}:5:16`,
+      })),
+      bodies: [{ cp: 1, coords: '[1:2:3]' }],
+    });
+    installBadges();
+    _resetBadgesForTest();
+
+    // Next page-load, pre-XHR: the planet bar is server-rendered, the event
+    // list is not in the DOM yet — the window the optimistic paint exists for.
+    setupGameDOM({ bodies: [{ cp: 1, coords: '[1:2:3]' }] });
+    document.getElementById('eventContent')?.remove();
+    installBadges();
+
+    const explore = /** @type {HTMLElement} */ (colOf(1)?.querySelector('.oge-mb-explore'));
+    expect(explore.querySelectorAll('.h').length).toBe(3);
   });
 
   it('stacks several categories on one body in priority order', () => {

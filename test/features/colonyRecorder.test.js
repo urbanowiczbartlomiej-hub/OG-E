@@ -105,6 +105,21 @@ const planetRow = ({
 };
 
 /**
+ * The account's home planet, already built on — the companion row the
+ * single-colony scenes below get for free.
+ *
+ * It is here because the recorder deliberately records NOTHING on a one-planet
+ * account: that planet can only be the starting planet the game hands out at
+ * registration, which is not a sample of the colony-size distribution. So a
+ * scene that means "the player colonised something" must show a second planet,
+ * exactly like a real account does. `usedFields > 0` keeps it out of the
+ * dataset itself (the freshness gate), so it changes nothing else.
+ *
+ * @type {PlanetSpec}
+ */
+const HOME_PLANET = { cp: 11111, usedFields: 42, maxFields: 188, coords: '[1:1:1]' };
+
+/**
  * Paint the document to look like any ingame page's planet sidebar. All knobs
  * are optional — the defaults describe ONE fresh colony at cp=12345, [4:30:8],
  * 163 max fields, 0 used. Pass `planets` for the multi-planet cases.
@@ -119,7 +134,7 @@ const planetRow = ({
  */
 const setupSidebarScene = ({ planets, page = 'overview', ...one } = {}) => {
   location.search = `?page=ingame&component=${page}`;
-  const rows = (planets ?? [{ active: true, ...one }]).map(planetRow).join('');
+  const rows = (planets ?? [HOME_PLANET, { active: true, ...one }]).map(planetRow).join('');
   document.body.innerHTML = `<div id="planetList">${rows}</div>`;
 };
 
@@ -181,7 +196,7 @@ describe('installColonyRecorder — synchronous path', () => {
 
   it('records a fresh colony the player is NOT standing on', async () => {
     // No `.hightlightPlanet` anywhere: the active planet is irrelevant now.
-    setupSidebarScene({ planets: [{ cp: 777, coords: '[7:7:7]', maxFields: 190 }] });
+    setupSidebarScene({ planets: [HOME_PLANET, { cp: 777, coords: '[7:7:7]', maxFields: 190 }] });
     installColonyRecorder();
     await flushMicrotasks();
 
@@ -234,6 +249,7 @@ describe('installColonyRecorder — synchronous path', () => {
   it('never records a moon — its field count is a different quantity', async () => {
     setupSidebarScene({
       planets: [
+        HOME_PLANET,
         { cp: 50, coords: '[5:5:5]', moon: true, maxFields: 20 },
         { cp: 51, coords: '[5:5:6]', maxFields: 170 },
       ],
@@ -256,6 +272,52 @@ describe('installColonyRecorder — synchronous path', () => {
     await flushMicrotasks();
 
     expect(historyStore.get().map((e) => e.cp)).toEqual([62]);
+  });
+
+  it('records nothing on a ONE-planet account — that planet is the starting one', async () => {
+    // A brand-new account: one planet, nothing built on it. It passes the
+    // freshness gate, and it is exactly the planet that must never enter the
+    // histogram — the game hands it out at registration, so it is not a sample
+    // of what the universe offers, and on a young dataset that one small value
+    // skews the whole distribution.
+    setupSidebarScene({ planets: [{ cp: 900, coords: '[3:100:9]', maxFields: 163 }] });
+    installColonyRecorder();
+    await flushMicrotasks();
+
+    expect(historyStore.get()).toEqual([]);
+  });
+
+  it('records the fresh colony once a SECOND planet exists', async () => {
+    // The other side of the gate: the moment there are two planets, the fresh
+    // one is a genuine colonisation and must be recorded. Note the home planet
+    // here is fresh too — it is still skipped, because the gate is about the
+    // account having exactly one planet, not about which one is built on.
+    setupSidebarScene({
+      planets: [
+        { cp: 900, coords: '[3:100:9]', maxFields: 163 },
+        { cp: 901, coords: '[3:100:10]', maxFields: 205 },
+      ],
+    });
+    installColonyRecorder();
+    await flushMicrotasks();
+
+    expect(historyStore.get().map((e) => e.cp)).toEqual([900, 901]);
+  });
+
+  it('still records when a two-planet account has one unreadable row', async () => {
+    // The gate counts DOM rows, not parsed ones. A malformed tooltip drops its
+    // row from the projection, which would otherwise make a real two-planet
+    // account look like a fresh one-planet one and silently lose the colony.
+    setupSidebarScene({
+      planets: [
+        { cp: 910, coords: '[8:1:1]', tooltip: null },
+        { cp: 911, coords: '[8:1:2]', maxFields: 181 },
+      ],
+    });
+    installColonyRecorder();
+    await flushMicrotasks();
+
+    expect(historyStore.get().map((e) => e.cp)).toEqual([911]);
   });
 
   it('does nothing when the sidebar is absent (not an ingame page)', async () => {

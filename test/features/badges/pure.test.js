@@ -10,6 +10,7 @@ import {
   groupMarkers,
   bodyKey,
   MAX_MARKERS,
+  MAX_EXPEDITION_HEARTS,
   MARKER_ORDER,
   MARKER_LABEL,
   TARGET_PLANET,
@@ -47,6 +48,10 @@ describe('bodyKey', () => {
 describe('constants', () => {
   it('MAX_MARKERS is 3', () => {
     expect(MAX_MARKERS).toBe(3);
+  });
+
+  it('MAX_EXPEDITION_HEARTS is 3 — the expedition heart stack cap', () => {
+    expect(MAX_EXPEDITION_HEARTS).toBe(3);
   });
 
   it('MARKER_ORDER is the documented priority order', () => {
@@ -167,6 +172,29 @@ describe('groupMarkers — my own fleets', () => {
   it('my expedition (mission 15) → explore', () => {
     const out = groupMarkers([ownReturn('15')], myKeys);
     expect(out.get(bodyKey('1:1:1', TARGET_PLANET))?.[0].category).toBe('explore');
+  });
+
+  it('a marker carries how many fleets it stands for', () => {
+    // `count` is what lets the renderer draw one heart per expedition. It is
+    // carried on the marker (not just derived from `fleets`) because the
+    // optimistic cache paint restores counts without the per-fleet detail.
+    const out = groupMarkers(
+      [
+        ownReturn('15', { id: 'eventRow-1' }),
+        ownReturn('15', { id: 'eventRow-2' }),
+        ownReturn('15', { id: 'eventRow-3' }),
+      ],
+      myKeys,
+    );
+    const m = out.get(bodyKey('1:1:1', TARGET_PLANET))?.[0];
+    expect(m?.category).toBe('explore');
+    expect(m?.count).toBe(3);
+    expect(m?.fleets).toHaveLength(3);
+  });
+
+  it('a single-fleet marker counts 1', () => {
+    const out = groupMarkers([ownReturn('15')], myKeys);
+    expect(out.get(bodyKey('1:1:1', TARGET_PLANET))?.[0].count).toBe(1);
   });
 
   it('my recycle (mission 8) → economy', () => {
