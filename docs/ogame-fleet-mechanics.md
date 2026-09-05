@@ -309,6 +309,21 @@ counts ranged **182–387**. That is the re-roll rule above, quantified — and 
 reason the histogram keeps every observation including abandoned ones (small
 rolls are abandoned fast, so pruning them would empty the left tail).
 
+**The home planet is not a colonization draw.** Every account starts with one
+planet handed out at registration; its field count comes from the game's starter
+rules, not from the per-colonization re-roll above, and it sits at the small end
+— nobody would keep a *colony* that size. It is also, at that moment, a
+completely empty planet (`0/x` fields used), so it looks exactly like a fresh
+colony to any "nothing built yet" test. That combination is a trap for a
+field-size dataset: it is the one planet that passes such a gate on a brand-new
+account, and it drags a young distribution down.
+
+Two rules make it identifiable without reading names (which are localised and
+renameable): **you cannot abandon your last planet, and the home planet cannot be
+abandoned at all**. So an account showing exactly ONE planet in the planet bar is
+always sitting on its starting planet, and the second planet an account ever owns
+is by definition a colony.
+
 **A dispatched colonizer does not always become a colony.** The fleet may be
 recalled, the account may be at its colony cap, or some other event may stop the
 colony forming — in which case no size is ever recorded and the position was
