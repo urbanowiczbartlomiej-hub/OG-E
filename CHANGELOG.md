@@ -4,6 +4,25 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.68.0] — 2026-09-05
+
+### Added
+
+- **The expedition heart counts your expeditions.** A planet running two
+  expeditions now shows two hearts, three shows three — laid side by side and
+  half-overlapped, so a glance down the planet bar tells you which planets still
+  have a slot free without opening anything. More than three keeps the stack at
+  three and puts the real number in the tooltip.
+
+### Fixed
+
+- **The starting planet no longer skews the colony histogram.** The planet the
+  game hands you when the account is created is empty, so it looked exactly like
+  a freshly colonised one and went into the dataset — and being small, it pulled
+  the whole distribution down on a young account. It is not a planet anyone finds
+  or keeps, so it is not counted any more. Colonies already recorded are
+  untouched; this applies from here on.
+
 ## [1.67.0] — 2026-09-01
 
 ### Added
