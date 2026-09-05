@@ -56,7 +56,7 @@ import { clock } from '../../lib/clock.js';
 import { denseCoords } from '../../domain/bodies.js';
 import { shipCountFromText } from '../../domain/fleetSave.js';
 import { figureType } from '../shared/eventRow.js';
-import { groupMarkers, bodyKey, MARKER_LABEL } from './pure.js';
+import { groupMarkers, bodyKey, MARKER_LABEL, MAX_EXPEDITION_HEARTS } from './pure.js';
 
 // ── OG-E-owned ids/classes (NOT a DOM contract — ours to rename freely) ──
 
@@ -213,14 +213,28 @@ const buildCss = () => `
 @media (prefers-reduced-motion:reduce){
   .oge-mb-fs.landed{animation:none;}
 }
-/* Expedition — a small blue heart (the expeditor's own badge), inline SVG so
-   it stays crisp at any size. */
+/* Expedition — small blue hearts (the expeditor's own badge), inline SVG so
+   they stay crisp at any size. ONE heart per expedition currently out from
+   this body, up to ${MAX_EXPEDITION_HEARTS}, laid out horizontally and
+   overlapped by half a heart: 1/2/3 then read as three clearly different
+   silhouettes at a glance ("which planets still have an expedition slot
+   free?") while the stack stays narrow enough not to crowd the planet row.
+   The marker box itself is width:auto — the row of hearts sizes it. */
 .oge-mb-explore{
-  width:10px;height:10px;
-  border-radius:0;box-shadow:none;
-  background:url("${EXPEDITION_HEART_URI}") center/contain no-repeat;
-  filter:drop-shadow(0 0 1px rgba(0,0,0,.9));
+  width:auto;height:10px;
+  border-radius:0;box-shadow:none;background:none;
+  display:flex;align-items:center;justify-content:center;
 }
+.oge-mb-explore .h{
+  flex:0 0 10px;width:10px;height:10px;
+  background:url("${EXPEDITION_HEART_URI}") center/contain no-repeat;
+  /* Per-heart (not per-marker) shadow on purpose: each heart is drawn OVER the
+     previous one, so its own dark outline is what separates two identically
+     coloured hearts. The extra left-offset shadow thickens exactly the edge
+     that does the separating. */
+  filter:drop-shadow(-1px 0 0 rgba(0,0,0,.85)) drop-shadow(0 0 1px rgba(0,0,0,.9));
+}
+.oge-mb-explore .h + .h{margin-left:-5px;}
 /* "?" help chip overlapping the top of the planet list → hover reveals the
    legend. PORTALED to <body> (position:fixed, JS sets top/left from the planet
    list's rect) for the SAME reason as the legend: a child of #planetList is
@@ -278,7 +292,9 @@ const buildCss = () => `
    a second line inside the box instead of overflowing it; the swatch keeps to
    the first line. */
 .oge-mb-legend-row{display:flex;align-items:flex-start;gap:9px;margin:4px 0;}
-.oge-mb-legend-row .sw{flex:0 0 18px;display:flex;align-items:center;justify-content:center;}
+/* 22px, not 18: wide enough for the 3-heart expedition stack to sit in the
+   swatch column without spilling into the label. */
+.oge-mb-legend-row .sw{flex:0 0 22px;display:flex;align-items:center;justify-content:center;}
 .oge-mb-legend-row .lbl{min-width:0;white-space:normal;}
 .oge-mb-legend .note{margin-top:7px;color:#9fb8c9;white-space:normal;}
 `;
@@ -291,7 +307,7 @@ const HIDE_CSS = `.${COL_CLASS},.oge-mb-help,.oge-mb-legend{display:none!importa
  * Legend rows — each renders the REAL marker visual (same classes as the live
  * markers) next to its meaning, so the key always matches what's on screen.
  *
- * @type {{ category: string, landed?: boolean, label: string }[]}
+ * @type {{ category: string, landed?: boolean, count?: number, label: string }[]}
  */
 const LEGEND_ROWS = [
   // Attack, ACS attack, espionage and MOON DESTRUCTION all share one marker on
@@ -302,7 +318,11 @@ const LEGEND_ROWS = [
   { category: 'fs', label: 'Fleet-save — in motion (safe)' },
   { category: 'fs', landed: true, label: 'Fleet reminder — landed fleet' },
   { category: 'aggro', label: 'Your attack, spy or moon destruction' },
-  { category: 'explore', label: 'Your expedition' },
+  {
+    category: 'explore',
+    count: MAX_EXPEDITION_HEARTS,
+    label: `Your expeditions — one heart each, up to ${MAX_EXPEDITION_HEARTS}`,
+  },
   { category: 'logistics', label: 'Logistics (transport / deploy / defend)' },
   { category: 'economy', label: 'Recycle' },
 ];
@@ -324,6 +344,7 @@ const buildLegend = () => {
     mk.className = `${DOT_CLASS} oge-mb-${row.category}${row.landed ? ' landed' : ''}`;
     if (row.category === 'fs') mk.textContent = row.landed ? 'FR' : 'FS';
     else if (row.category === 'threat') mk.textContent = '!!!';
+    else if (row.category === 'explore') fillHearts(mk, row.count ?? 1);
     sw.appendChild(mk);
     const lb = document.createElement('span');
     lb.className = 'lbl';
@@ -494,19 +515,42 @@ const clearColumns = () => {
 };
 
 /**
+ * Fill an `explore` marker with one heart per expedition, capped at
+ * {@link MAX_EXPEDITION_HEARTS}. Each heart is its own element so CSS can
+ * overlap them (see `.oge-mb-explore .h`); a lone expedition is still exactly
+ * the single heart this marker has always been.
+ *
+ * @param {HTMLElement} el The marker element.
+ * @param {number} count   Expeditions out from this body (≥ 1).
+ * @returns {void}
+ */
+const fillHearts = (el, count) => {
+  const n = Math.min(Math.max(Math.trunc(count) || 1, 1), MAX_EXPEDITION_HEARTS);
+  for (let i = 0; i < n; i += 1) {
+    const h = document.createElement('span');
+    h.className = 'h';
+    el.appendChild(h);
+  }
+};
+
+/**
  * @param {import('./pure.js').Marker} m
  * @returns {HTMLElement}
  */
 const buildMarker = (m) => {
   const el = document.createElement('span');
   el.className = `${DOT_CLASS} oge-mb-${m.category}${m.landed ? ' landed' : ''}`;
-  // explore renders via a CSS background SVG (a heart); the FS + threat tags are
-  // text ("FS" / "!!!"), everything else a filled dot.
+  // explore renders as 1-3 overlapped heart SVGs (one per expedition); the FS +
+  // threat tags are text ("FS" / "!!!"), everything else a filled dot.
   if (m.category === 'fs') el.textContent = m.landed ? 'FR' : 'FS';
   else if (m.category === 'threat') el.textContent = '!!!';
+  else if (m.category === 'explore') fillHearts(el, m.count);
+  // The tooltip carries the TRUE count even when the stack is capped, so a
+  // player running more than three from one planet still sees the real number.
+  const n = m.count || 1;
   el.title = m.landed
     ? 'Fleet reminder · landed fleet (exposed)'
-    : MARKER_LABEL[m.category] || 'Fleet';
+    : `${MARKER_LABEL[m.category] || 'Fleet'}${m.category === 'explore' && n > 1 ? ` ×${n}` : ''}`;
   return el;
 };
 
@@ -597,8 +641,17 @@ const slimSnapshot = (snapshot) => {
   const out = {};
   for (const [key, markers] of Object.entries(snapshot)) {
     // Encode a landed FS as a distinct token so the optimistic paint keeps its
-    // orange variant across a reload.
-    out[key] = markers.map((m) => (m.category === 'fs' && m.landed ? 'fsLanded' : m.category));
+    // orange variant across a reload, and suffix an explore marker with its
+    // heart count (`explore*2`) so the reload paints the same stack instead of
+    // flashing a single heart until the event XHR lands. Unknown/legacy tokens
+    // decode to a plain single marker, so an older cache stays readable.
+    out[key] = markers.map((m) => {
+      if (m.category === 'fs' && m.landed) return 'fsLanded';
+      if (m.category === 'explore' && m.count > 1) {
+        return `explore*${Math.min(m.count, MAX_EXPEDITION_HEARTS)}`;
+      }
+      return m.category;
+    });
   }
   return out;
 };
@@ -681,11 +734,12 @@ const renderFromCache = () => {
     if (!cats || cats.length === 0) continue;
     paintBody(
       body,
-      cats.map((cat) =>
-        cat === 'fsLanded'
-          ? { category: 'fs', landed: true, fleets: [] }
-          : { category: cat, landed: false, fleets: [] },
-      ),
+      cats.map((cat) => {
+        if (cat === 'fsLanded') return { category: 'fs', landed: true, fleets: [], count: 1 };
+        // `explore*N` — the heart count survives the reload (see slimSnapshot).
+        const [category, n] = cat.split('*');
+        return { category, landed: false, fleets: [], count: Number(n) || 1 };
+      }),
     );
   }
 };

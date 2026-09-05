@@ -43,6 +43,13 @@
 // rare and deliberately out of scope — the first is a shop purchase, the
 // second costs an hour of intentionally suboptimal play on one planet.
 //
+// # Why a ONE-PLANET account records nothing
+//
+// The home planet the game hands out at registration is not a sample of the
+// colony-size distribution, and it is fresh precisely when a new player first
+// loads OG-E. See the gate in `tryCollect` for the full reasoning and why
+// "the list has exactly one planet" identifies it exactly.
+//
 // # Why we do NOT prune abandoned colonies
 //
 // This is documented at length in `src/state/history.js`: the histogram is
@@ -163,6 +170,31 @@ import { GAME } from '../lib/gameDom.js';
 const tryCollect = async () => {
   const rows = readPlanetRows();
   if (rows.length === 0) return 0;
+
+  // The STARTING planet is never an observation — skip a one-planet account.
+  //
+  // Every OGame account is handed a home planet at registration, and that
+  // planet is NOT drawn from the same distribution the histogram is trying to
+  // estimate: the game hands out a small, fixed-ish starter, and nobody ever
+  // "finds" a planet that way. Worse, it is fresh (`used === 0`) at exactly the
+  // moment a new player installs OG-E, so it is the one planet that sails
+  // through the freshness gate below and lands in the dataset — and on a young
+  // account, where the dataset is a handful of rows, that single small value
+  // drags the whole distribution down. A colonised slot, by contrast, is a
+  // genuine sample of what the universe offers (and players deliberately keep
+  // the big ones, which is a separate bias the "never prune" rule handles).
+  //
+  // "One planet in the list" identifies it exactly, with no name/i18n guessing:
+  // an account can only ever be down to a single planet while that planet is
+  // the home planet — OGame does not let you abandon your last one, and the
+  // home planet cannot be abandoned at all. The second planet you ever own is
+  // a colony, so no real colonisation is lost here.
+  //
+  // Counted off the DOM rows, NOT `rows.length`: the projection drops a row it
+  // cannot parse, so a two-planet account with one unreadable tooltip would
+  // otherwise read as "one planet" and lose a real observation. The question
+  // here is how many planets the account HAS, which is a row count.
+  if (document.querySelectorAll(GAME.SMALL_PLANET_ONLY).length === 1) return 0;
 
   // Fresh planets only — see the module header on why this gate must stay.
   // Also the first of the three staged gates: on a page-load where nothing

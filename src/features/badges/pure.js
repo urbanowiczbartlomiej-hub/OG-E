@@ -27,8 +27,11 @@
 //   logistics  — my transport / deployment / ACS defend.
 //   economy    — my recycle.
 //
-// Each present category renders ONE marker (no counts, no directions — the
-// marker is a subtle status dot, per-fleet detail lives in the click popover).
+// Each present category renders ONE marker (no directions — the marker is a
+// subtle status dot, per-fleet detail lives in the click popover). The one
+// place a COUNT surfaces is `explore`, which draws one overlapped heart per
+// expedition (capped at {@link MAX_EXPEDITION_HEARTS}); every marker still
+// carries its `count` so the renderer can decide.
 // Per body we keep the distinct categories present, ordered by priority, capped
 // at {@link MAX_MARKERS}; lower-priority overflow is dropped.
 //
@@ -44,6 +47,16 @@ import { bodyKey } from '../../domain/bodies.js';
 
 /** Max markers rendered on one body (priority-ordered; the rest are dropped). */
 export const MAX_MARKERS = 3;
+
+/**
+ * Max hearts drawn for the `explore` marker. One heart per expedition currently
+ * out from that body, overlapped 50% horizontally, so "how many of my
+ * expedition slots are spent from here" is answerable at a glance instead of
+ * only from the popover. Past this we stop stacking (the true count still rides
+ * the tooltip): three is where the overlapping silhouette stays countable, and
+ * it matches the usual per-planet expedition ceiling.
+ */
+export const MAX_EXPEDITION_HEARTS = 3;
 
 /**
  * Category ids in priority order — first = highest priority, also the render
@@ -136,6 +149,10 @@ export { bodyKey };
  * @property {boolean} landed  An `fs` marker for a LANDED (exposed) save — no
  *   live leg, rendered as the orange variant. Always false for other categories.
  * @property {TileFleet[]} fleets Per-fleet detail for the popover.
+ * @property {number} count How many fleets this marker stands for. Normally
+ *   `fleets.length`; carried explicitly because the optimistic cache paint
+ *   restores counts without the per-fleet detail. Only `explore` renders it
+ *   (as stacked hearts) — every other category stays one flat marker.
  */
 
 /**
@@ -252,13 +269,13 @@ export const groupMarkers = (
       if (cats.has(cat)) {
         const fleets = /** @type {TileFleet[]} */ (cats.get(cat));
         // Live legs are always in-motion (non-empty) ⇒ never the landed variant.
-        markers.push({ category: cat, landed: false, fleets });
+        markers.push({ category: cat, landed: false, fleets, count: fleets.length });
       }
       // Emit the landed-FR twin immediately after the FS slot, so FS (in-motion,
       // yellow) and FR (landed, orange) render as an adjacent pair and both sit
       // above lower-priority categories under the MAX_MARKERS cap.
       if (cat === 'fs' && landedBodies.has(key)) {
-        markers.push({ category: 'fs', landed: true, fleets: [] });
+        markers.push({ category: 'fs', landed: true, fleets: [], count: 1 });
       }
     }
     out.set(key, markers.slice(0, MAX_MARKERS));
