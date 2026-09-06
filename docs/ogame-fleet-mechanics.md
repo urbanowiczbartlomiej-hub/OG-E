@@ -7,12 +7,15 @@ planet status markers) depend on. This is the **single home for the game
 marker classification, the authoritative source is the code:
 [`src/features/badges/pure.js`](../src/features/badges/pure.js).
 
-## The ajax token — one rotating value per session (13.0+)
+## The ajax token — TWO rotating values per session (13.0+)
 
 Diagnosed 2026-07-27 from a HAR of a **13.0.0-r5** universe, re-checked against
-the shipped bundle.
+the shipped bundle. The section below describes the **page** token; the chat
+owns a second, independent one — see
+[the next section](#there-are-two-token-namespaces-not-one), and read it first
+if you are about to touch anything that reads or writes a token.
 
-- The session holds **one** ajax token. Since 13.0 `action=checkTarget`
+- Since 13.0 `action=checkTarget`
   **spends** the token it was sent and returns a fresh one as `newAjaxToken`.
   Replaying a spent value is refused with
   `{"error":100,"message":"LOCA_ERROR_INQUIRY_NOT_WORKED_TRYAGAIN"}` — the red
@@ -54,6 +57,50 @@ OG-E's answer is [`src/bridges/ajaxTokenKeeper.js`](../src/bridges/ajaxTokenKeep
 — it learns each rotation from responses the page already made and keeps the
 page's token holders in step (see that file's header, and
 [`fair-play.md`](fair-play.md) for the classification).
+
+### There are TWO token namespaces, not one
+
+**We had this wrong until 2026-09-06**, and the wrong version is the intuitive
+one, so it is written down here as well as the truth: reading the fleet code
+(and this document's own earlier wording) it looks like a session owns exactly
+one ajax token, rotated by whichever endpoint happens to spend it. It owns two.
+
+| namespace | variable | rotated by | read by |
+| --- | --- | --- | --- |
+| page | global `token` | every ordinary component | everything: fleet dispatch, alliance, messages, empire, … |
+| chat | `window.ajaxChatToken` | `game/index.php?page=ingame&component=chat&asJson=1` (the `chatUrl` global) — **only** this URL | the chat's own requests only |
+
+What makes this a trap rather than a footnote:
+
+- Both are 32-char hex strings — **shape tells you nothing** about which one a
+  value is.
+- Both live behind the **same** `game/index.php` entry point, so a URL filter
+  written as "the game's ajax endpoints" catches both.
+- The chat spells its value with the **same JSON field name** as everything
+  else: `window.ajaxChatToken = data.newAjaxToken`. So a response scanner keyed
+  on `newAjaxToken` cannot tell the namespaces apart on content either.
+
+Cross-writing a chat token into the page global is **terminal for the tab, not
+transient**, because of how the failure lands:
+
+- The server answers a request bearing the wrong token with the HTML error page
+  `An error has occured!` and **HTTP 200** (the same 200-on-refusal habit
+  documented under [A refused send still answers HTTP 200](#a-refused-send-still-answers-http-200)).
+- Callers use `$.getJSON`, so that body never parses, so the success callback —
+  which is the only thing that would have adopted a fresh `newAjaxToken` and
+  healed the global — **never runs**. One bad write locks the component out
+  until a full page reload.
+
+Observed on the alliance component (`component=alliance`), where every tab does
+`$.getJSON(target.attr('rel'), { token: token }, …)`: `fetchOverview`,
+`fetchManagement`, `fetchBroadcast`, `fetchApplications` and `fetchClasses` all
+died together, all replaying the same wrong token, and stayed dead. The same
+shape applies anywhere else the page token is sent.
+
+Also worth knowing while you are in here: `Alliance.prototype.updateToken`
+assigns the bare global (`token = newtoken`), and the page declares
+`var token = "…"` **twice** in its inline scripts. Both are the same global —
+there is no shadowing to exploit or worry about.
 
 ## Event list — how OGame generates fleet rows
 
