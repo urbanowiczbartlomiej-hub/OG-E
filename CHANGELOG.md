@@ -4,6 +4,23 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.68.1] — 2026-09-06
+
+### Fixed
+
+- **The alliance page works again.** Podgląd, Interfejs, Komunikacja, Podania
+  and Klasy sojuszu all answered "An error has occured!" and stayed dead until
+  you reloaded the page. OG-E was the cause: OGame quietly keeps a *second*
+  session token just for the chat, spelled exactly like the main one, and OG-E
+  was mistaking one for the other and writing the chat's token where the rest
+  of the game reads its own. It now keeps them apart, and refuses on principle
+  to replace any token with one it cannot prove is newer.
+- **A reloaded extension no longer floods the console.** After updating or
+  reloading OG-E, every game tab that was already open kept logging a red error
+  on every single save. Those tabs are simply orphaned — nothing they do can be
+  saved until you reload them — so they now say that once, in one line, and
+  stay quiet. Genuine save failures are still reported as loudly as before.
+
 ## [1.68.0] — 2026-09-05
 
 ### Added
