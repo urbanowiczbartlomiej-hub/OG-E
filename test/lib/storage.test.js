@@ -9,7 +9,12 @@
 // Promise facade presented to callers.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { safeLS, chromeStore } from '../../src/lib/storage.js';
+import {
+  safeLS,
+  chromeStore,
+  isExtensionContextAlive,
+  isExtensionContextInvalidatedError,
+} from '../../src/lib/storage.js';
 
 describe('safeLS', () => {
   beforeEach(() => {
@@ -359,5 +364,58 @@ describe('chromeStore', () => {
       // Listener was never registered, so no dispatch path exists.
       expect(cb).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('isExtensionContextAlive / isExtensionContextInvalidatedError', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('is alive when the runtime has an id', () => {
+    vi.stubGlobal('chrome', { runtime: { id: 'abc' } });
+    expect(isExtensionContextAlive()).toBe(true);
+  });
+
+  it('is dead once the runtime has lost its id (the orphaned content script)', () => {
+    vi.stubGlobal('chrome', { runtime: {} });
+    expect(isExtensionContextAlive()).toBe(false);
+  });
+
+  it('is dead when reading the id itself throws', () => {
+    vi.stubGlobal('chrome', {
+      runtime: {
+        get id() {
+          throw new Error('Extension context invalidated.');
+        },
+      },
+    });
+    expect(isExtensionContextAlive()).toBe(false);
+  });
+
+  it('reports ALIVE when there is no WebExtension API at all', () => {
+    // Node tests and the MAIN world have no runtime to invalidate. Callers
+    // must keep their normal behaviour there, so "absent" is never "orphaned".
+    vi.stubGlobal('chrome', undefined);
+    vi.stubGlobal('browser', undefined);
+    expect(isExtensionContextAlive()).toBe(true);
+  });
+
+  it('prefers the browser namespace over chrome, like the rest of this module', () => {
+    vi.stubGlobal('browser', { runtime: {} });
+    vi.stubGlobal('chrome', { runtime: { id: 'abc' } });
+    expect(isExtensionContextAlive()).toBe(false);
+  });
+
+  it('recognises the browser wording of the error', () => {
+    expect(isExtensionContextInvalidatedError(new Error('Extension context invalidated.'))).toBe(
+      true,
+    );
+    expect(isExtensionContextInvalidatedError('Error: Extension context invalidated')).toBe(true);
+  });
+
+  it('does not mistake an ordinary failure for it', () => {
+    expect(isExtensionContextInvalidatedError(new Error('QUOTA_BYTES quota exceeded'))).toBe(false);
+    expect(isExtensionContextInvalidatedError(undefined)).toBe(false);
   });
 });

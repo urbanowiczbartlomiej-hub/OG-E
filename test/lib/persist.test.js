@@ -384,3 +384,79 @@ describe('persist — a failed save is reported, never silently dropped', () => 
     expect(errSpy).not.toHaveBeenCalled();
   });
 });
+
+describe('persist — an orphaned content script is reported ONCE', () => {
+  // Reloading/updating/disabling the extension severs an already-open tab's
+  // bridge to chrome.storage: `chrome.runtime.id` goes undefined and every
+  // write throws "Extension context invalidated". That is one fact about the
+  // TAB, not one per store change — logged per write it buried the console
+  // under hundreds of identical red errors. And it is not the silent-data-loss
+  // case the error log exists for: nothing in that tab can be saved again
+  // until the page reloads.
+  /** @type {any} */
+  let errSpy;
+  /** @type {any} */
+  let warnSpy;
+
+  beforeEach(async () => {
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { _resetOrphanReportForTest } = await import('../../src/lib/persist.js');
+    _resetOrphanReportForTest();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete (/** @type {any} */ (globalThis).chrome);
+  });
+
+  const invalidated = () => new Error('Extension context invalidated.');
+
+  it('warns once and never errors, however many writes fail', async () => {
+    const store = createStore('initial');
+    persist({ store, load: () => null, save: () => Promise.reject(invalidated()) });
+
+    for (const v of ['a', 'b', 'c', 'd']) store.set(v);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(errSpy).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(String(warnSpy.mock.calls[0].join(' '))).toContain('Reload the page');
+  });
+
+  it('recognises the state from a dead runtime even when the error says nothing', () => {
+    // Not every failure downstream of an invalidated context carries the
+    // browser's wording; `chrome.runtime.id` gone is the same fact.
+    /** @type {any} */ (globalThis).chrome = { runtime: {} };
+    const store = createStore('initial');
+    persist({
+      store,
+      load: () => null,
+      save: () => {
+        throw new Error('something vague');
+      },
+    });
+
+    store.set('next');
+
+    expect(errSpy).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('still shouts about an ordinary write failure', async () => {
+    const store = createStore('initial');
+    persist({
+      store,
+      load: () => null,
+      save: () => Promise.reject(new Error('QUOTA_BYTES quota exceeded')),
+    });
+
+    store.set('next');
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(warnSpy).not.toHaveBeenCalled();
+    expect(errSpy).toHaveBeenCalled();
+  });
+});

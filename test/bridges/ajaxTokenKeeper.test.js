@@ -24,6 +24,8 @@ const CHECK_TARGET_URL =
   '/game/index.php?page=ingame&component=fleetdispatch&action=checkTarget&asJson=1';
 const EVENTBOX_URL =
   '/game/index.php?page=ingame&component=eventlist&action=fetchEventBox&asJson=1';
+/** The chat — same entry point, but a DIFFERENT token (`window.ajaxChatToken`). */
+const CHAT_URL = '/game/index.php?page=ingame&component=chat&asJson=1';
 
 /** @param {string} token */
 const rotationResponse = (token) => `{"status":"success","newAjaxToken":"${token}"}`;
@@ -176,6 +178,82 @@ describe('ajaxTokenKeeper — learning rotations', () => {
     await fakeXHR(EVENTBOX_URL, { responseText: rotationResponse(T1) });
 
     expect(snapshot().rotations).toBe(1);
+  });
+});
+
+// The chat rotates `window.ajaxChatToken`, NOT `window.token`, and spells it
+// with the very same `newAjaxToken` field on the very same `game/index.php`
+// entry point. Conflating the two wrote a chat token into the page global and
+// locked every alliance tab out with "An error has occured!" until reload — the
+// game's `$.getJSON` never parses that body, so its own `updateToken` never
+// runs to heal the global. These pin the separation.
+describe('ajaxTokenKeeper — the chat is a different token namespace', () => {
+  it('never learns a rotation from the chat', async () => {
+    setPageToken(T0);
+    installAjaxTokenKeeper();
+
+    await fakeXHR(CHAT_URL, { method: 'POST', responseText: rotationResponse(T1) });
+
+    expect(pageToken()).toBe(T0);
+    expect(snapshot().rotations).toBe(0);
+    expect(snapshot().repairs).toBe(0);
+  });
+
+  it('leaves the page token alone when the chat rotates after a real rotation', async () => {
+    setPageToken(T0);
+    installAjaxTokenKeeper();
+
+    await fakeXHR(EVENTBOX_URL, { responseText: rotationResponse(T1) });
+    expect(pageToken()).toBe(T1);
+
+    // The chat rotates its own credential; the page's must not follow.
+    await fakeXHR(CHAT_URL, { method: 'POST', responseText: rotationResponse(T2) });
+
+    expect(pageToken()).toBe(T1);
+    expect(snapshot().rotations).toBe(1);
+  });
+
+  it('does not even count a chat request', async () => {
+    installAjaxTokenKeeper();
+
+    await fakeXHR(CHAT_URL, { method: 'POST', responseText: rotationResponse(T1) });
+
+    expect(snapshot().requests).toBe(0);
+  });
+
+  it('will not drag a holder BACK to a token older than the one it holds', async () => {
+    setPageToken(T0);
+    installAjaxTokenKeeper();
+    await fakeXHR(CHAT_URL, { method: 'POST', responseText: rotationResponse(T2) });
+
+    // Something has put a value in the page global that is later in the issue
+    // sequence than anything we have accepted. Knowing where a value came from
+    // (the install-time seed notes whatever the holders contain) is NOT the
+    // same as knowing ours is newer — and the repair path used to conflate the
+    // two, which is how a token learned from the wrong source overwrote a live
+    // one. Only ever move a holder FORWARD.
+    setPageToken(T2);
+    await fakeXHR(EVENTBOX_URL, { responseText: rotationResponse(T1) });
+
+    expect(pageToken()).toBe(T2);
+    expect(snapshot().repairs).toBe(0);
+    expect(
+      /** @type {string[]} */ (snapshot().log).some((d) => d.startsWith('repair:noforward')),
+    ).toBe(true);
+  });
+
+  it('still learns from a non-chat component whose URL merely mentions chat', async () => {
+    // The filter keys on the `component=` parameter, not on the substring —
+    // a hypothetical `action=fetchChatSettings` on another component is normal
+    // page-token traffic and must keep working.
+    setPageToken(T0);
+    installAjaxTokenKeeper();
+
+    await fakeXHR('/game/index.php?page=ingame&component=messages&action=fetchChat&asJson=1', {
+      responseText: rotationResponse(T1),
+    });
+
+    expect(pageToken()).toBe(T1);
   });
 });
 
