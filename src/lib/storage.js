@@ -274,3 +274,48 @@ export const chromeStore = {
     };
   },
 };
+
+/**
+ * True while this content script's extension context is still live.
+ *
+ * When the extension is reloaded, updated or disabled, every page that was
+ * already open keeps running the OLD content script — but its bridge to the
+ * extension is severed. `chrome.runtime.id` becomes `undefined` and every
+ * `chrome.storage.*` call throws "Extension context invalidated". Nothing
+ * that tab does can ever be persisted again; only a page reload injects a
+ * fresh script. So this is NOT a failure worth screaming about on every
+ * write — it is a terminal, expected state that callers should report once.
+ *
+ * Returns `true` when the WebExtension API is absent entirely (node tests,
+ * MAIN world): "no runtime to invalidate" is not an orphaned context, and
+ * callers must keep their normal behaviour there.
+ *
+ * @returns {boolean}
+ */
+export const isExtensionContextAlive = () => {
+  const g = /** @type {Record<string, any>} */ (/** @type {unknown} */ (globalThis));
+  const rt = (g.browser ?? g.chrome)?.runtime;
+  if (!rt) return true;
+  try {
+    return rt.id !== undefined && rt.id !== null;
+  } catch {
+    // Touching `runtime.id` on a dead context can itself throw.
+    return false;
+  }
+};
+
+/**
+ * Does this error come from an orphaned content script (see
+ * `isExtensionContextAlive`)? Matched on the message because the browser
+ * gives us nothing else — Chrome and Firefox both word it "Extension
+ * context invalidated", with different trailing punctuation/detail.
+ *
+ * @param {unknown} err
+ * @returns {boolean}
+ */
+export const isExtensionContextInvalidatedError = (err) => {
+  const msg = err && typeof err === 'object' && 'message' in err
+    ? String(/** @type {{ message: unknown }} */ (err).message)
+    : String(err);
+  return /context invalidated/i.test(msg);
+};

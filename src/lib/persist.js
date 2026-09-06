@@ -31,6 +31,43 @@
 // future teardown path has a clean cut-point.
 
 import { debounce } from './debounce.js';
+import { isExtensionContextAlive, isExtensionContextInvalidatedError } from './storage.js';
+
+// An orphaned content script (extension reloaded/updated/disabled while this
+// tab stayed open) fails EVERY subsequent chrome.storage write with
+// "Extension context invalidated". That is one fact about the TAB, not one
+// fact per store change — logged per write it buried the console under
+// hundreds of identical errors, and it is not the silent-data-loss case the
+// logging below exists for: nothing in this tab can be saved again until the
+// page is reloaded. Report it once, as a warning that names the remedy.
+let orphanReported = false;
+
+/**
+ * @param {'failed' | 'threw'} phase
+ * @param {unknown} err
+ */
+const reportWriteFailure = (phase, err) => {
+  if (isExtensionContextInvalidatedError(err) || !isExtensionContextAlive()) {
+    if (orphanReported) return;
+    orphanReported = true;
+    // eslint-disable-next-line no-console -- the user needs to know this tab is dead
+    console.warn(
+      '[OG-E] the extension was reloaded or updated, so this tab is running an ' +
+        'orphaned copy and can no longer save anything. Reload the page to resume.',
+    );
+    return;
+  }
+  // Raw console, NOT lib/logger: that sink is opt-in (off unless the user sets
+  // the debug flag), and losing a write must be visible to the user who never
+  // knew a flag existed.
+  // eslint-disable-next-line no-console -- silent data loss is worse than a stray log
+  console.error(`[OG-E] persist: write ${phase}, change NOT saved:`, err);
+};
+
+/** Clear the once-per-page orphan warning. Test-only. */
+export const _resetOrphanReportForTest = () => {
+  orphanReported = false;
+};
 
 /**
  * Wire `store` to a backing storage layer. Hydrates synchronously or
@@ -100,17 +137,10 @@ export const persist = ({ store, load, save, debounceMs = 0, onHydrate }) => {
     try {
       const r = save(store.get());
       if (r && typeof (/** @type {any} */ (r)).then === 'function') {
-        /** @type {Promise<void>} */ (r).catch((err) => {
-          // Raw console, NOT lib/logger: that sink is opt-in (off unless the
-          // user sets the debug flag), and losing a write must be visible to
-          // the user who never knew a flag existed.
-          // eslint-disable-next-line no-console -- silent data loss is worse than a stray log
-          console.error('[OG-E] persist: write failed, change NOT saved:', err);
-        });
+        /** @type {Promise<void>} */ (r).catch((err) => reportWriteFailure('failed', err));
       }
     } catch (err) {
-      // eslint-disable-next-line no-console -- see above
-      console.error('[OG-E] persist: write threw, change NOT saved:', err);
+      reportWriteFailure('threw', err);
     }
   };
   const write = debounceMs > 0 ? debounce(writeNow, debounceMs) : writeNow;
