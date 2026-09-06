@@ -42,7 +42,8 @@
 //     • LEARN. Every game XHR response is scanned for `newAjaxToken`
 //       (regex, no JSON.parse — responses here can be large). Failure
 //       responses carry a usable fresh token too, so a refusal is itself a
-//       recovery point.
+//       recovery point. The one exclusion is the CHAT component, which spells
+//       a DIFFERENT token with the same field name — see {@link CHAT_XHR}.
 //     • REPAIR. When a holder the page reads from (`window.token`, which is
 //       what `appendTokenParams()` reads; `fleetDispatcher.token`, which the
 //       game sets once at construction and never updates; the hidden `token`
@@ -106,6 +107,33 @@ import { logger } from '../lib/logger.js';
  * "everything" so third-party traffic in the page is never inspected.
  */
 const GAME_XHR = /(?:game\/index\.php|ajax\.php)/;
+
+/**
+ * The chat, which is a DIFFERENT TOKEN NAMESPACE on the same entry point.
+ *
+ * OGame's session does NOT own one ajax token — it owns two, and only one of
+ * them is the page's. `game/index.php?page=ingame&component=chat&asJson=1`
+ * (the `chatUrl` global) rotates `window.ajaxChatToken`, and its JSON answers
+ * spell that value with the SAME field name every other endpoint uses:
+ * `"newAjaxToken"`. The two values are unrelated 32-hex strings; sending one
+ * where the other belongs is simply an invalid token.
+ *
+ * Before this filter the keeper could not tell them apart. Chat traffic
+ * matched {@link GAME_XHR}, so a chat rotation was learned as {@link latest}
+ * and {@link repairHolders} then wrote the CHAT token into `window.token` —
+ * the very variable the rest of the game reads. Every page-token request after
+ * that was refused by the server, permanently: the alliance tabs
+ * (`fetchOverview` / `fetchManagement` / `fetchBroadcast` /
+ * `fetchApplications` / `fetchClasses` all send `{token: token}`) answered
+ * "An error has occured!" with HTTP 200, and because that body is not the JSON
+ * `$.getJSON` expects, the game's own `updateToken` never ran to heal the
+ * global — so one poisoned write locked the whole component out until reload.
+ *
+ * Chat is therefore excluded from BOTH halves: its tokens are never learned
+ * and never recorded as provenance (a chat value sitting in `seen` would also
+ * corrupt the generation ordering the rewrite guard depends on).
+ */
+const CHAT_XHR = /[?&]component=chat(?:&|$)/;
 
 /** The freshly issued token, as it appears in any JSON envelope. */
 const NEW_TOKEN_RE = /"newAjaxToken"\s*:\s*"([A-Za-z0-9]{16,64})"/;
@@ -435,6 +463,17 @@ const repairHolders = () => {
       });
       continue;
     }
+    // DIRECTION, same rule the outgoing rewrite obeys: only ever move a holder
+    // FORWARD along the sequence the server issued. `overwritable` says we know
+    // where the current value came from; it does NOT say ours is newer, and the
+    // repair path used to take that on faith — which is what let a rotation
+    // learned from the wrong source (the chat namespace, before CHAT_XHR) stomp
+    // a perfectly live `window.token`. Refusing is always safe: the worst case
+    // is the stale-token refusal the player would have seen anyway.
+    if (generationOf(latest) <= generationOf(/** @type {string} */ (current))) {
+      trace('repair:noforward', /** @type {string} */ (current), `have=${latest.slice(0, 4)}`);
+      continue;
+    }
     try {
       h.write(latest);
       repaired += 1;
@@ -488,7 +527,8 @@ export const installAjaxTokenKeeper = () => {
   const unsubLoad = observeXHR({
     urlPattern: GAME_XHR,
     on: 'load',
-    handler: ({ xhr, response }) => {
+    handler: ({ xhr, url, response }) => {
+      if (CHAT_XHR.test(url)) return; // other namespace — see CHAT_XHR
       if (typeof response !== 'string' || response === '') return;
 
       // A request WE repaired that was refused anyway ⇒ our "newest" is not
@@ -559,6 +599,8 @@ export const installAjaxTokenKeeper = () => {
     on: 'send',
     rewritesBody: true,
     handler: ({ xhr, url, body }) => {
+      if (CHAT_XHR.test(url)) return; // other namespace — see CHAT_XHR
+
       // Stamp EVERY game request with its send order — that is what makes the
       // load handler's out-of-order guard possible.
       stats.requests += 1;
