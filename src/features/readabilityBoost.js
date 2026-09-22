@@ -71,9 +71,11 @@ import { createVisibilityObserver } from '../lib/visibilityObserver.js';
 //
 // OGame's page arrows on the messages page are 16px `sq16` gradient
 // buttons — under half the ~40px a finger needs, and they are the most
-// used control on that page. We scale each arrow up 2.2× with a CSS
+// used control on that page. We scale each arrow up 3× with a CSS
 // `transform` rather than resizing its box — the skin is cut for a 16px
-// square, so resizing stretches the frame off the glyph. The bottom pager
+// square, so resizing stretches the frame off the glyph — and multiply that
+// by the page's shrink-to-fit factor (`--oge-touch-k`), because a phone
+// renders OGame's desktop-width layout scaled down to the screen. The bottom pager
 // is also pinned to the viewport bottom (`position: sticky`) so the arrows
 // are in reach without scrolling past the whole list — which makes the page's
 // second, top copy of the pager redundant, so that one is hidden. The CSS
@@ -507,24 +509,31 @@ a.ago_movement.tooltip .ago_color_palered,
    arrow, and gap:18px is then real air between two of them. The row's own
    padding pays the VERTICAL overhang: the wrapper stays 20px tall, so a 48px
    arrow spills (48-20)/2 = 14px above and below it, and 16px of padding
-   clears that. */
+   clears that.
+
+   Every size below is multiplied by --oge-touch-k (set on <html> by
+   syncTouchScale). OGame ships no mobile viewport: a phone lays the page out
+   on a ~1000px-wide layout viewport and shrinks the whole thing to fit the
+   screen, so 48 CSS px land on the glass as ~19px — the "3×" alone never
+   reached a finger-sized target. k = layout width / screen width undoes that
+   shrink (k=1 on desktop, where the window is never wider than the screen). */
 .messagePaginator {
   height: auto !important;
-  gap: 18px !important;
-  padding: 16px 0 !important;
+  gap: calc(18px * var(--oge-touch-k, 1)) !important;
+  padding: calc(16px * var(--oge-touch-k, 1)) 0 !important;
 }
 .messagePaginator .firstPage,
 .messagePaginator .previousPage,
 .messagePaginator .nextPage,
 .messagePaginator .lastPage {
-  width: 52px !important;
+  width: calc(52px * var(--oge-touch-k, 1)) !important;
   display: flex !important;
   justify-content: center !important;
   align-items: center !important;
 }
 .messagePaginator gradient-button {
   display: inline-block !important;
-  transform: scale(3) !important;
+  transform: scale(calc(3 * var(--oge-touch-k, 1))) !important;
   transform-origin: center !important;
 }
 /* The messages page renders the pager TWICE (above the list and below it).
@@ -550,13 +559,13 @@ a.ago_movement.tooltip .ago_color_palered,
    the document so the last message can always be scrolled clear of it. Keyed
    on "this page has a pager" so no other page pays for it. */
 body:has(.messagePaginator) {
-  padding-bottom: 96px !important;
+  padding-bottom: calc(96px * var(--oge-touch-k, 1)) !important;
 }
 /* The "1/7" readout between the arrows — sized up with them so the row
    reads as one control strip. */
 .messagePaginator .currentPage {
-  font-size: 18px !important;
-  padding: 0 4px !important;
+  font-size: calc(18px * var(--oge-touch-k, 1)) !important;
+  padding: 0 calc(4px * var(--oge-touch-k, 1)) !important;
   white-space: nowrap !important;
 }
 `;
@@ -608,8 +617,26 @@ export const installReadabilityBoost = () => {
    *
    * @returns {void}
    */
+  /**
+   * Publish the page's shrink-to-fit factor as `--oge-touch-k` on `<html>`
+   * (see the paginator CSS). `clientWidth` is the layout viewport — stable
+   * under pinch-zoom, unlike `innerWidth` — and `screen.width` is the device
+   * width in CSS px. Clamped to [1, 4]: never shrink on desktop, and never
+   * blow up on a bogus `screen` report.
+   *
+   * @returns {void}
+   */
+  const syncTouchScale = () => {
+    const layout = document.documentElement?.clientWidth ?? 0;
+    const device = globalThis.screen?.width ?? 0;
+    const k = layout > 0 && device > 0 ? Math.min(4, Math.max(1, layout / device)) : 1;
+    document.documentElement?.style.setProperty('--oge-touch-k', k.toFixed(3));
+  };
+
   const inject = () => {
     if (styleEl && styleEl.parentNode) return;
+    syncTouchScale();
+    window.addEventListener('resize', syncTouchScale);
     styleEl = document.createElement('style');
     styleEl.id = STYLE_ID;
     styleEl.textContent = CSS;
@@ -625,6 +652,8 @@ export const installReadabilityBoost = () => {
   const retract = () => {
     if (styleEl && styleEl.parentNode) styleEl.parentNode.removeChild(styleEl);
     styleEl = null;
+    window.removeEventListener('resize', syncTouchScale);
+    document.documentElement?.style.removeProperty('--oge-touch-k');
   };
 
   // ─── Countdown suffix trimmer ─────────────────────────────────────
