@@ -4,6 +4,17 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.68.2] — 2026-09-22
+
+### Fixed
+
+- **The messages page arrows are finally finger-sized on a phone.** They had
+  already been made three times bigger, yet on a phone they still came out
+  tiny: OGame draws its pages for a desktop-wide screen and the phone shrinks
+  the whole page down to fit, arrows included. OG-E now measures how much the
+  page is being shrunk and grows the page arrows by exactly that much, so they
+  land at a proper touch size whatever the phone. Nothing changes on desktop.
+
 ## [1.68.1] — 2026-09-06
 
 ### Fixed
