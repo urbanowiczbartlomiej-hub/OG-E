@@ -218,7 +218,7 @@ describe('readabilityBoost', () => {
     const css = document.getElementById(STYLE_ID)?.textContent ?? '';
     const rule = css.match(/body:has\(\.messagePaginator\)\s*\{([^}]*)\}/);
     expect(rule).not.toBeNull();
-    const pad = rule?.[1].match(/padding-bottom:\s*(\d+)px/);
+    const pad = rule?.[1].match(/padding-bottom:\s*calc\((\d+)px \* var\(--oge-touch-k, 1\)\)/);
     expect(pad).not.toBeNull();
     // Taller than the pinned strip itself (scaled arrows + its 19px offset).
     expect(parseInt(pad?.[1] ?? '0', 10)).toBeGreaterThanOrEqual(54);
@@ -231,9 +231,39 @@ describe('readabilityBoost', () => {
     const css = document.getElementById(STYLE_ID)?.textContent ?? '';
     const rule = css.match(/\.messagePaginator \.firstPage,[^{]*\{([^}]*)\}/);
     expect(rule).not.toBeNull();
-    const width = rule?.[1].match(/width:\s*(\d+)px/);
+    const width = rule?.[1].match(/width:\s*calc\((\d+)px \* var\(--oge-touch-k, 1\)\)/);
     expect(width).not.toBeNull();
     expect(parseInt(width?.[1] ?? '0', 10)).toBeGreaterThanOrEqual(35);
+  });
+
+  it('publishes the shrink-to-fit factor so the pager survives a phone\'s scaled-down viewport', () => {
+    // A phone lays OGame out ~1000px wide and shrinks it to the screen, so the
+    // pager's sizes are multiplied by layout width / screen width.
+    const html = document.documentElement;
+    const cw = Object.getOwnPropertyDescriptor(html, 'clientWidth');
+    const sw = Object.getOwnPropertyDescriptor(window.screen, 'width');
+    Object.defineProperty(html, 'clientWidth', { configurable: true, value: 980 });
+    Object.defineProperty(window.screen, 'width', { configurable: true, value: 392 });
+    try {
+      installReadabilityBoost();
+      expect(html.style.getPropertyValue('--oge-touch-k')).toBe('2.500');
+      const css = document.getElementById(STYLE_ID)?.textContent ?? '';
+      expect(css).toMatch(/transform:\s*scale\(calc\(3 \* var\(--oge-touch-k, 1\)\)\)/);
+
+      // Desktop: the window is never wider than the screen → never shrink.
+      Object.defineProperty(window.screen, 'width', { configurable: true, value: 1920 });
+      window.dispatchEvent(new Event('resize'));
+      expect(html.style.getPropertyValue('--oge-touch-k')).toBe('1.000');
+
+      // Retract cleans the variable up with the stylesheet.
+      settingsStore.update((s) => ({ ...s, readabilityBoost: false }));
+      expect(html.style.getPropertyValue('--oge-touch-k')).toBe('');
+    } finally {
+      if (cw) Object.defineProperty(html, 'clientWidth', cw);
+      else delete (/** @type {any} */ (html)).clientWidth;
+      if (sw) Object.defineProperty(window.screen, 'width', sw);
+      else delete (/** @type {any} */ (window.screen)).width;
+    }
   });
 
   it('removes the <style> when settings.readabilityBoost flips to false', () => {
