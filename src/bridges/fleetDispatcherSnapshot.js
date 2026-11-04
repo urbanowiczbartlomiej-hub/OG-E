@@ -152,6 +152,68 @@ const publish = () => {
 };
 
 /**
+ * Publish, then — when the ship list came back empty — keep watching for the
+ * game to fill it (see {@link startShipSettle}).
+ *
+ * @returns {void}
+ */
+const publishAndSettle = () => {
+  publish();
+  const fd = /** @type {any} */ (window).fleetDispatcher;
+  if (!fd) return;
+  if (Array.isArray(fd.shipsOnPlanet) && fd.shipsOnPlanet.length > 0) return;
+  startShipSettle();
+};
+
+/**
+ * Ship-settle poll. The DOMContentLoaded publish can catch `fleetDispatcher`
+ * constructed but with `shipsOnPlanet` still EMPTY (the game fills it from its
+ * own ready handler, which on a slow/mobile load runs after ours). Published
+ * as-is, that snapshot is indistinguishable from "this planet has no ships" —
+ * and because the only other publish trigger is a `checkTarget` XHR, which a
+ * page nobody has picked a target on never fires, the isolated world would
+ * keep believing it for the whole page view. So after the first publish we
+ * re-read on a short poll and publish again the moment the ship list appears,
+ * giving up at the deadline (a genuinely empty planet never fills it).
+ */
+const SHIP_SETTLE_POLL_MS = 200;
+const SHIP_SETTLE_DEADLINE_MS = 6000;
+
+/** @type {ReturnType<typeof setInterval> | null} */
+let settleTimer = null;
+
+/**
+ * Start the ship-settle poll (see {@link SHIP_SETTLE_POLL_MS}). No-op when a
+ * poll is already running or the first read already saw ships.
+ *
+ * @returns {void}
+ */
+const startShipSettle = () => {
+  if (settleTimer !== null) return;
+  const started = Date.now();
+  settleTimer = setInterval(() => {
+    const fd = /** @type {any} */ (window).fleetDispatcher;
+    const loaded = !!fd && Array.isArray(fd.shipsOnPlanet) && fd.shipsOnPlanet.length > 0;
+    if (!loaded && Date.now() - started < SHIP_SETTLE_DEADLINE_MS) return;
+    stopShipSettle();
+    // One last publish either way: with the real ship list, or — at the
+    // deadline — re-asserting the empty one now that the page has settled.
+    publish();
+  }, SHIP_SETTLE_POLL_MS);
+};
+
+/**
+ * Stop the ship-settle poll. Idempotent.
+ *
+ * @returns {void}
+ */
+const stopShipSettle = () => {
+  if (settleTimer === null) return;
+  clearInterval(settleTimer);
+  settleTimer = null;
+};
+
+/**
  * Module-scope install handle. Idempotent — a second call returns the
  * same unsubscribe without double-registering.
  *
@@ -179,11 +241,11 @@ export const installFleetDispatcherSnapshot = () => {
   if (installed) return installed;
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', publish, { once: true });
+    document.addEventListener('DOMContentLoaded', publishAndSettle, { once: true });
   } else {
     // Defer to a microtask so any synchronous game init still in
     // flight at module load finishes first.
-    Promise.resolve().then(publish);
+    Promise.resolve().then(publishAndSettle);
   }
 
   const unsub = observeXHR({
@@ -198,6 +260,7 @@ export const installFleetDispatcherSnapshot = () => {
 
   installed = () => {
     unsub();
+    stopShipSettle();
     installed = null;
   };
   return installed;
@@ -210,5 +273,6 @@ export const installFleetDispatcherSnapshot = () => {
  */
 export const _resetFleetDispatcherSnapshotForTest = () => {
   if (installed) installed();
+  stopShipSettle();
   installed = null;
 };

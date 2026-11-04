@@ -148,6 +148,17 @@ const POLL_MS = 100;
 let snapshot = /** @type {import('../../bridges/fleetDispatcherSnapshot.js').FleetDispatcherSnapshot | null} */ (
   null
 );
+/**
+ * Was the live snapshot captured on a page that had FINISHED loading? Read at
+ * capture time, because that is when it says something: a snapshot taken while
+ * the page is still hydrating can carry an empty `shipsOnPlanet` simply because
+ * the game had not filled it yet (see the bridge's ship-settle poll), and an
+ * empty list read as "zero ships" is how the Daily Run button used to paint a
+ * false "No ships" on a planet that had a full hangar. Once the page is
+ * complete an empty list is the truth — a planet with nothing on it.
+ */
+let snapshotSettled = false;
+
 /** Monotonic RPC id. */
 let rpcSeq = 0;
 /** @type {((e: Event) => void) | null} */
@@ -364,6 +375,18 @@ const availability = () => {
 };
 
 /**
+ * Can this snapshot's ship list be trusted when it comes back EMPTY? Yes once
+ * it actually carries ships (the game filled it), and yes once the page itself
+ * has finished loading — before that an empty list is just "not hydrated yet".
+ *
+ * @param {{ shipsOnPlanet?: Array<unknown> } | null} snap
+ * @returns {boolean}
+ */
+const isPageSettled = (snap) =>
+  (Array.isArray(snap?.shipsOnPlanet) && snap.shipsOnPlanet.length > 0)
+  || (typeof document !== 'undefined' && document.readyState === 'complete');
+
+/**
  * Read-only ship availability from the latest fleetDispatcher snapshot —
  * `null` until a snapshot has been captured (off the fleetdispatch page, or
  * before the bridge fires), so callers can tell "unknown" apart from "the
@@ -373,7 +396,15 @@ const availability = () => {
  *
  * @returns {Record<number, number> | null}
  */
-export const shipAvailability = () => (snapshot ? availability() : null);
+export const shipAvailability = () => {
+  if (!snapshot) return null;
+  const map = availability();
+  // Empty + page still hydrating ⇒ UNKNOWN, not "empty planet" (see
+  // {@link snapshotSettled}). Callers already treat null as "can't tell" and
+  // fall through to the untouched off-page behaviour.
+  if (!snapshotSettled && Object.keys(map).length === 0) return null;
+  return map;
+};
 
 // ─── the two-tap surface ───────────────────────────────────────────────────
 
@@ -409,6 +440,14 @@ export const select = async (order) => {
 
   const sel = resolveSelection(order.spec, availability());
   if (!sel.ok) {
+    // A selection that fails over an UNSETTLED empty ship list is not a verdict
+    // about the planet — the game simply had not filled `shipsOnPlanet` when we
+    // snapshotted it (see {@link snapshotSettled}). Report it as "not ready"
+    // (the caller paints "Wait…" and the tap can be repeated) rather than the
+    // flatly wrong "No ships" this used to throw on a hangar full of ships.
+    if (!snapshotSettled && Object.keys(availability()).length === 0) {
+      return { ok: false, reason: 'notReady' };
+    }
     return {
       ok: false,
       reason: sel.requirementsMet ? 'empty' : 'noShips',
@@ -740,6 +779,7 @@ export const installFleetCourier = () => {
   installFleetOwnership();
   onSnapshot = (e) => {
     snapshot = /** @type {any} */ (/** @type {CustomEvent} */ (e).detail);
+    snapshotSettled = isPageSettled(snapshot);
   };
   document.addEventListener(FLEET_DISPATCHER_EVENT, onSnapshot);
   // Seed from a live fleetDispatcher if readable (tests / Firefox Xray).
@@ -750,6 +790,7 @@ export const installFleetCourier = () => {
     const fd = /** @type {any} */ (window).fleetDispatcher;
     if (fd && Array.isArray(fd.shipsOnPlanet)) {
       snapshot = /** @type {any} */ (seedFromLiveFd(fd));
+      snapshotSettled = isPageSettled(snapshot);
     }
   }
 };
@@ -763,6 +804,7 @@ export const _resetFleetCourierForTest = () => {
   if (onSnapshot) document.removeEventListener(FLEET_DISPATCHER_EVENT, onSnapshot);
   onSnapshot = null;
   snapshot = null;
+  snapshotSettled = false;
   installed = false;
   rpcSeq = 0;
 };
