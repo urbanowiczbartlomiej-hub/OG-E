@@ -12,7 +12,7 @@
 // assertion is preceded by `flush()` (two microtask turns — one for the
 // observer handler, one for the deferred publish).
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   installFleetDispatcherSnapshot,
   _resetFleetDispatcherSnapshotForTest,
@@ -233,5 +233,85 @@ describe('publish lifecycle', () => {
     unsub();
     await fireCheckTarget();
     expect(fired).toBe(0);
+  });
+});
+
+describe('ship-settle poll', () => {
+  // The initial publish can catch fleetDispatcher constructed but with
+  // shipsOnPlanet still empty (the game fills it from its own ready handler).
+  // Published as-is that snapshot is indistinguishable from "this planet has
+  // no ships" — and with no checkTarget on a page nobody has aimed yet, it
+  // would be the isolated world's belief for the whole page view. So the
+  // bridge keeps re-reading until the list appears.
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('republishes with the real ship list once the game fills it', async () => {
+    const fd = /** @type {{ shipsOnPlanet: Array<{ id: number, number: number }>, orders: Record<string, boolean> }} */ (
+      { shipsOnPlanet: [], orders: { 4: true } }
+    );
+    setFleetDispatcher(fd);
+    installFleetDispatcherSnapshot();
+    await flush();
+    // Publish 1 — the empty list the game had not filled yet.
+    expect(fired).toBe(1);
+    expect(detail.shipsOnPlanet).toEqual([]);
+
+    // The game's own init lands.
+    fd.shipsOnPlanet = [{ id: 202, number: 120 }];
+    await vi.advanceTimersByTimeAsync(400);
+
+    expect(fired).toBe(2);
+    expect(detail.shipsOnPlanet).toEqual([{ id: 202, number: 120 }]);
+  });
+
+  it('stops polling once the ships have landed', async () => {
+    const fd = /** @type {{ shipsOnPlanet: Array<{ id: number, number: number }> }} */ ({ shipsOnPlanet: [] });
+    setFleetDispatcher(fd);
+    installFleetDispatcherSnapshot();
+    await flush();
+    fd.shipsOnPlanet = [{ id: 203, number: 5 }];
+    await vi.advanceTimersByTimeAsync(400);
+    expect(fired).toBe(2);
+
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(fired).toBe(2);
+  });
+
+  it('gives up on a genuinely empty planet — one final publish, then quiet', async () => {
+    setFleetDispatcher({ shipsOnPlanet: [] });
+    installFleetDispatcherSnapshot();
+    await flush();
+    expect(fired).toBe(1);
+
+    // Still empty well past the deadline: that IS the planet's state.
+    await vi.advanceTimersByTimeAsync(7000);
+    expect(fired).toBe(2);
+    expect(detail.shipsOnPlanet).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(fired).toBe(2);
+  });
+
+  it('does not poll at all when the first read already saw ships', async () => {
+    setFleetDispatcher({ shipsOnPlanet: [{ id: 202, number: 1 }] });
+    installFleetDispatcherSnapshot();
+    await flush();
+    expect(fired).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(fired).toBe(1);
+  });
+
+  it('unsubscribe stops the settle poll', async () => {
+    const fd = /** @type {{ shipsOnPlanet: Array<{ id: number, number: number }> }} */ ({ shipsOnPlanet: [] });
+    setFleetDispatcher(fd);
+    const unsub = installFleetDispatcherSnapshot();
+    await flush();
+    unsub();
+
+    fd.shipsOnPlanet = [{ id: 202, number: 9 }];
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(fired).toBe(1);
   });
 });

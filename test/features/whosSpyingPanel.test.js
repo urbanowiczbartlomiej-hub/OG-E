@@ -14,12 +14,26 @@
 // `.messagesHolder`. Driven through the store subscription (synchronous) so
 // no test waits on the panel's MutationObserver.
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+
+// The device cache the panel reads the alliance rows from. Mocked so a test
+// can land it BEFORE or AFTER the mount, which is the whole point of the
+// apiContext re-read below.
+const cache = vi.hoisted(() => ({ value: /** @type {any} */ ({}) }));
+vi.mock('../../src/state/apiCache.js', () => ({
+  readApiCache: () => Promise.resolve(cache.value),
+}));
+
 import {
   installWhosSpyingPanel,
   _resetWhosSpyingPanelForTest,
 } from '../../src/features/whosSpyingPanel.js';
 import { proximityReportsStore } from '../../src/state/proximityReports.js';
+import {
+  setApiContext,
+  _resetApiContextStoreForTest,
+} from '../../src/features/shared/apiContextStore.js';
+import { dangerColor01 } from '../../src/lib/dangerColor.js';
 
 const PANEL_ID = 'oge-spyback';
 
@@ -88,6 +102,8 @@ const panel = () => document.getElementById(PANEL_ID);
 
 afterEach(() => {
   _resetWhosSpyingPanelForTest();
+  _resetApiContextStoreForTest();
+  cache.value = {};
   proximityReportsStore.set([]);
   document.body.innerHTML = '';
 });
@@ -236,5 +252,59 @@ describe('installWhosSpyingPanel — lifecycle', () => {
     dispose();
     expect(panel()).toBeNull();
     expect(document.getElementById('oge-spyback-style')).toBeNull();
+  });
+});
+
+describe('installWhosSpyingPanel — late apiContext handoff', () => {
+  // Danger (the nick colour) and the allianceId the `[TAG]` chip resolves
+  // through both ride the apiContext handoff, built asynchronously from the
+  // API feeds. It normally lands well AFTER the panel's first paint, so the
+  // panel has to repaint on the publish — otherwise the rows keep the white
+  // nicks and tagless names they were first drawn with.
+  const firstRow = () =>
+    /** @type {HTMLElement | null} */ (panel()?.querySelector('tbody tr') ?? null);
+
+  /** @param {Record<string, unknown>} [extra] */
+  const publishDanger = (extra = {}) =>
+    setApiContext(/** @type {any} */ ({
+      index: { occupied: new Map(), ownColonies: new Map() },
+      danger: new Map([[116337, { danger: 0.9, allianceId: '500', ...extra }]]),
+    }));
+
+  it('repaints the nick colour when the handoff lands after mount', () => {
+    buildMessagesDom();
+    proximityReportsStore.set([report()]);
+    installWhosSpyingPanel();
+    // No profiles yet → the neutral fallback (the "white nick" state).
+    expect(firstRow()?.style.getPropertyValue('--d')).toBe('#d8e6f4');
+
+    publishDanger();
+    expect(firstRow()?.style.getPropertyValue('--d')).toBe(dangerColor01(0.9, '#d8e6f4'));
+  });
+
+  it('fills in the [TAG] chip from alliance rows cached after mount', async () => {
+    buildMessagesDom();
+    proximityReportsStore.set([report()]);
+    installWhosSpyingPanel();
+    await Promise.resolve();
+    expect(panel()?.querySelector('.oge-sb-tag')).toBeNull();
+
+    // A cold cache fills during the context build — i.e. after our mount read.
+    cache.value = { alliances: { alliances: { 500: { tag: 'OGE', name: 'Origin' } } } };
+    publishDanger();
+    // The re-read is async; the repaint rides its resolution.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(panel()?.querySelector('.oge-sb-tag')?.textContent).toBe('OGE');
+  });
+
+  it('dispose drops the handoff subscription', () => {
+    buildMessagesDom();
+    proximityReportsStore.set([report()]);
+    const dispose = installWhosSpyingPanel();
+    dispose();
+    // No panel to repaint — a publish must not resurrect one or throw.
+    expect(() => publishDanger()).not.toThrow();
+    expect(panel()).toBeNull();
   });
 });

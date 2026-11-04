@@ -11,6 +11,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   step,
   readyToDispatch,
+  shipAvailability,
   select,
   retarget,
   dispatch,
@@ -213,6 +214,57 @@ describe('select — happy path', () => {
     expect(cmds.find((c) => c.op === 'ensureTargetType')?.args.type).toBe(3);
     expect(ops.indexOf('ensureTargetType')).toBeGreaterThan(ops.indexOf('setTargetType'));
     expect(ops.indexOf('ensureTargetType')).toBeLessThan(ops.indexOf('selectMission'));
+  });
+});
+
+describe('ship availability — "empty" vs "not hydrated yet"', () => {
+  /** Force document.readyState for the duration of one test. */
+  const setReadyState = (/** @type {string} */ value) => {
+    Object.defineProperty(document, 'readyState', { value, configurable: true });
+  };
+  afterEach(() => setReadyState('complete'));
+
+  it('reports UNKNOWN for an empty ship list captured mid-load', () => {
+    // The game constructs fleetDispatcher before it fills shipsOnPlanet; a
+    // snapshot taken in that window says nothing about the planet.
+    setReadyState('loading');
+    snapshot([]);
+    expect(shipAvailability()).toBeNull();
+  });
+
+  it('reports an EMPTY planet for an empty list captured after load', () => {
+    setReadyState('complete');
+    snapshot([]);
+    expect(shipAvailability()).toEqual({});
+  });
+
+  it('trusts a mid-load snapshot that actually carries ships', () => {
+    setReadyState('loading');
+    snapshot([{ id: 203, number: 7 }]);
+    expect(shipAvailability()).toEqual({ 203: 7 });
+  });
+
+  it('a later, settled snapshot overrides the mid-load unknown', () => {
+    setReadyState('loading');
+    snapshot([]);
+    expect(shipAvailability()).toBeNull();
+    // The bridge's ship-settle poll republishes once the game fills the list.
+    snapshot([{ id: 202, number: 40 }]);
+    expect(shipAvailability()).toEqual({ 202: 40 });
+  });
+
+  it('select() reports notReady — not noShips — on a mid-load empty snapshot', async () => {
+    setReadyState('loading');
+    buildFleet1();
+    unhook = fakeExecutor();
+    snapshot([]);
+    const r = await select({
+      spec: { kind: 'list', ships: [{ id: 202, qty: 10, frac: 1 }] },
+      target: TARGET,
+      mission: 4,
+    });
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe('notReady');
   });
 });
 
