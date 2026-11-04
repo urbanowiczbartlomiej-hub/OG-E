@@ -65,7 +65,7 @@ import { ingameComponentUrl } from '../domain/ogameUrl.js';
 import { safeLS } from '../lib/storage.js';
 import { clock } from '../lib/clock.js';
 import { parseUniverseId } from '../lib/universeId.js';
-import { getApiContext } from './shared/apiContextStore.js';
+import { getApiContext, subscribeApiContext } from './shared/apiContextStore.js';
 
 /**
  * AGR's spy-report overview on the messages page — the PREFERRED slot when
@@ -842,11 +842,22 @@ export const installWhosSpyingPanel = () => {
    * @type {Record<string, { name?: string, tag?: string }>}
    */
   let alliancesById = {};
-  void readApiCache().then((cache) => {
-    if (!installed) return;
-    alliancesById = cache?.alliances?.alliances ?? {};
-    refresh({ force: true });
-  });
+  /**
+   * (Re-)read the alliance rows from the device cache and repaint. Called at
+   * mount AND on every apiContext publish: `features/apiContext` refreshes the
+   * cached feeds asynchronously, so on a cold cache the alliances.xml rows land
+   * AFTER our mount read — without the re-read the `[TAG]` chips would stay
+   * missing for the whole page view.
+   * @returns {void}
+   */
+  const loadAlliances = () => {
+    void readApiCache().then((cache) => {
+      if (!installed) return;
+      alliancesById = cache?.alliances?.alliances ?? {};
+      refresh({ force: true });
+    });
+  };
+  loadAlliances();
 
   /**
    * Probers the user has muted — read once at mount for the same reason
@@ -1042,6 +1053,18 @@ export const installWhosSpyingPanel = () => {
   const unsubPoll = clock.subscribe(() => refresh({ force: true }), { everyMs: POLL_MS });
   const unsubSettings = settingsStore.subscribe(() => refresh());
   const unsubBodies = bodiesStore.subscribe(() => refresh());
+  // The Danger profiles (which drive the nick colour) and the allianceId the
+  // `[TAG]` chip is resolved through BOTH ride the apiContext handoff — built
+  // asynchronously (feed refresh + join), so it normally lands well after our
+  // first paint. Without this subscription the rows kept what they were first
+  // painted with — white nicks, no tags — until the 60 s age poll happened to
+  // force a repaint: exactly the "sometimes after a while, sometimes never"
+  // the panel used to show. A publish also means the cache was just refreshed,
+  // so re-read the alliance rows in the same breath.
+  const unsubApi = subscribeApiContext(() => {
+    loadAlliances();
+    refresh({ force: true });
+  });
 
   installed = {
     dispose: () => {
@@ -1050,6 +1073,7 @@ export const installWhosSpyingPanel = () => {
       unsubPoll();
       unsubSettings();
       unsubBodies();
+      unsubApi();
       const live = document.getElementById(PANEL_ID);
       if (live) live.remove();
       const style = document.getElementById(STYLE_ID);
