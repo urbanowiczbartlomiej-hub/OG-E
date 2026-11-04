@@ -4,6 +4,28 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.68.3] — 2026-11-04
+
+### Fixed
+
+- **Daily Run no longer claims "No ships" on a planet that has them.** Clicking
+  quickly from planet to planet — especially on a phone — could leave both
+  halves of the button saying there was nothing to send, and the tap refused to
+  do anything; a second tap then sent the fleet perfectly normally. The game
+  builds the fleet page in two stages and fills in the ship list a moment after
+  the page itself is ready, and OG-E was reading that gap as an empty hangar and
+  keeping that answer for the rest of the page. It now waits for the real list,
+  and while it genuinely does not know yet it says "Wait…" instead of inventing
+  a verdict.
+- **The Who's-spying-on-you list gets its colours and alliance tags.** The
+  danger colour on each nick and the `[TAG]` beside it arrive with the public
+  statistics, which load in the background a few seconds after the page. Nothing
+  told the list they had arrived, so the nicks stayed white and the tags missing
+  until something else happened to redraw it — up to a minute later, or never.
+  The list now redraws the moment that data lands. Alliance tags also appear on
+  the very first visit of a new installation, instead of only from the second
+  page load onwards.
+
 ## [1.68.2] — 2026-09-22
 
 ### Fixed
