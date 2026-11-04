@@ -102,6 +102,39 @@ assigns the bare global (`token = newtoken`), and the page declares
 `var token = "…"` **twice** in its inline scripts. Both are the same global —
 there is no shadowing to exploit or worry about.
 
+## Fleetdispatch hydrates in TWO stages — `fleetDispatcher` first, its ship list later
+
+`window.fleetDispatcher` is constructed early: by `DOMContentLoaded` the object
+exists and most of its scalar fields (`currentPlanet`, `fleetCount`,
+`maxFleetCount`, `expeditionCount`) already read true. **Its `shipsOnPlanet`
+array does not.** The game fills that from its own ready handler, which runs
+after any listener registered at `document_start` — so a read taken on
+`DOMContentLoaded` can hand you `shipsOnPlanet: []` on a planet with a full
+hangar. Observed on slow/mobile loads, 2026-11.
+
+- **The wrong intuition** (and it is a comfortable one): *"`fleetDispatcher`
+  exists, therefore its ship list is real."* It is not. The presence of the
+  object says nothing about the state of the array — the two arrive at
+  different times, and nothing on the object flags which stage you caught.
+- So **an empty `shipsOnPlanet` is ambiguous**: "not hydrated yet" and
+  "this planet genuinely has nothing" look identical. The only cheap
+  discriminator is time — on a planet that has ships the list fills within a
+  few hundred ms of load, and once the page reaches
+  `document.readyState === 'complete'` an empty list is the planet's real
+  state.
+- There is **no second chance by default**: the page re-publishes its
+  dispatcher state on `action=checkTarget`, which only fires once somebody
+  picks a target. A planet view nobody has aimed from never issues one, so a
+  reader that caches the first read keeps the pre-hydration value for the
+  entire page view — not for a moment, but until the next navigation.
+
+Related timing, same page: the event-list XHR can land **~600 ms before**
+`DOMContentLoaded` (see the measured HAR offsets in the ajax-token section
+above — `fetchEventBox` at +190 ms, `DOMContentLoaded` at +811 ms). A
+readiness gate keyed on the event list therefore opens while the rest of the
+page is still hydrating; it is a statement about the event list, not about the
+page.
+
 ## Event list — how OGame generates fleet rows
 
 Every fleet movement shows as one or more rows in the event list
