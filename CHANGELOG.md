@@ -4,6 +4,43 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.69.0] — 2026-11-05
+
+### Added
+
+- **OG-E now tells you when a reminder could not be scheduled.** Until now
+  this failed in silence: if your ntfy daily message allowance was spent, or
+  the access token was refused, or the network dropped at the wrong moment,
+  the reminder simply did not exist — and you found out when it never arrived,
+  which is always too late. A fleet-save, armed-fleet or bare-fleet reminder
+  that could not be queued now raises a notice in game saying so plainly, with
+  the reason. An expedition reminder that was skipped gets a quiet one-line
+  note instead, because missing one costs you idle minutes rather than a fleet.
+
+### Fixed
+
+- **Expedition reminders no longer burn through your ntfy allowance.** Two
+  separate faults were spending it on reminders you never needed. An
+  expedition can come home earlier or later than planned — the game decides
+  that at the end of the hold — and OG-E read the changed time as a *different*
+  wave, so it booked a second full set of reminders for a wave it was already
+  reminding you about, and never undid it. Separately, it booked a wave's
+  reminders the moment it saw the first expedition of it: sending the rest of
+  the wave takes minutes, so it kept re-booking and cancelling as the wave
+  filled in, and every booking counts against the daily allowance even when it
+  is cancelled a second later. A wave is now followed by the fleets in it
+  rather than by their clocks, and is left to finish before anything is
+  booked — a fifteen-expedition send costs exactly one set of reminders.
+- **A wave's reminders stay on the first mission you sent.** If a later
+  mission happened to come home earlier, the whole series quietly slid onto
+  that one instead. It now stays anchored where it belongs, so the reminder
+  still cues repeating the same send in the same order.
+- **A failed reminder no longer takes the others down with it.** The kinds
+  were scheduled one after another with expeditions first, so an allowance
+  spent on expedition reminders stopped the run before your fleet-save
+  reminder was ever booked. The kinds that can cost you a fleet are now
+  scheduled first, and one failing no longer stops the rest.
+
 ## [1.68.3] — 2026-11-04
 
 ### Fixed
