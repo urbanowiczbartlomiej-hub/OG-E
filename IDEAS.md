@@ -142,3 +142,74 @@ which is a bigger fixture but not impossible; do them last, if at all.
 - The `demo` field is OPTIONAL and language-independent (markup is shared, the
   caption is per locale) — keep it that way; the EN mirror stays a caption
   translation, not a second render.
+
+---
+
+## 6. The send → page-close race: teach it, don't hide it
+
+**The gap.** Every reminder OG-E queues for a fleet is queued *after* the send,
+from the page that OGame reloads in response to it. The producer's debounce,
+the event-list read, the gist round-trip and the ntfy POSTs all happen in that
+reloaded page. Lock the phone — or close the tab — a second after the last
+expedition of a wave goes out, or straight after a fleet-save, and the content
+script is torn down before any of it runs. Nothing is queued. The fleet flies
+with no reminder behind it.
+
+We cannot close this from inside a content script: there is no worker, no
+background scheduling, and the one durable queue we have (ntfy's) is reachable
+only by a POST we never got to make. Attempts to hold the page open (a
+`beforeunload` stall, a sync XHR) are user-hostile and would be the wrong thing
+to ship even if they worked.
+
+**So the move is honesty, not concealment.** A user who hits this reads it as
+"the extension is broken and ate my fleet-save" and rates it accordingly. That
+is a worse outcome than them knowing the rule — and it is not really our bug:
+it is the shape of the platform. Options, roughly in order of cost:
+
+- **A "queued" confirmation.** After a successful sync that scheduled something,
+  say so where the player is already looking (the FAB, a brief line in the event
+  list). Absence of the confirmation then *means* something, and the player
+  learns to give it the second it needs. This doubles as the positive signal the
+  product has never had — today a working reminder is indistinguishable from a
+  silently lost one.
+- **A "hold on" hint right after a send** — shown from the moment the reloaded
+  page starts its sync until it lands, so the wait has a visible reason.
+- **Say it in the docs and the AMO listing**, in one plain sentence, next to the
+  alarm-clock feature rather than buried in a FAQ.
+
+**Related, and the reason this matters more than it sounds:** a missed
+EXPEDITION reminder costs a few idle minutes. A missed FLEET-SAVE reminder can
+cost the fleet, and with it months of play. Whatever we build here should weigh
+the kinds differently — see entry 7.
+
+---
+
+## 7. Surface ntfy failures in game — and weight them by what they protect
+
+**The gap.** When a push cannot be queued — the ntfy daily budget is spent, the
+token is wrong, the account is rate-limited, the network is down — OG-E today
+fails quietly. The reconciler throws, the sync round aborts, and the next one
+re-converges; nothing tells the player that the reminder they are counting on
+does not exist. The one visible symptom is a push that never arrives, which by
+construction arrives too late to act on.
+
+OG-E already has the right precedent in the "AntiGame Origin is not installed"
+notice: a single, calm, in-game line that explains what is missing and what it
+costs. This wants the same shape.
+
+**The weighting is the real design content.** The kinds are not equal:
+
+- **Fleet-save** — a reminder that fails silently can cost the fleet. This
+  deserves a loud, in-game, stays-until-acknowledged notice, and it should be
+  the LAST kind we drop when the budget runs short.
+- **Ad-hoc** — the player armed it deliberately and we do not know what it
+  guards; assume it matters. Treat it like fleet-save.
+- **Expedition waves** — the costliest kind by volume (one wave = a full offset
+  series) and the cheapest to miss. This is the kind to shed first, and a
+  quiet line is enough.
+
+That ordering suggests the fix is not only a message but a BUDGET POLICY: when
+posts are being refused, spend what is left on fleet-save and ad-hoc and skip
+the wave series, rather than letting whichever kind reconciles first consume
+the remainder. Worth measuring the real daily post count per kind before
+choosing the numbers.
