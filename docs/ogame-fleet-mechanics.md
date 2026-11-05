@@ -194,6 +194,55 @@ launching planet's own system, a slot no planet can occupy (a system holds
 positions 1-15), so `[g:s:16]` in a `dest` cell is always the expedition point
 and never somebody's body.
 
+### An expedition's return time is NOT fixed at send
+
+**The wrong intuition, and we held it in writing for several releases:** *"each
+in-flight expedition has a fixed, deterministic return time the moment OGame
+accepts the send; that timestamp never changes in flight."* It is false, and it
+is the kind of false that survives a long time, because it is true of every
+other mission.
+
+An expedition resolves its outcome at the END of its hold at the expedition
+point, and some of those outcomes change the flight home: the fleet comes back
+faster, or it is delayed. When that happens the return row's
+`data-arrival-time` **jumps** — by minutes, not seconds — part-way through the
+flight. The row is updated in place; nothing else about it moves.
+
+Consequences for anything that tracks expeditions:
+
+- **The arrival time is an attribute of a leg, never its identity.** Anything
+  keyed on it will see one fleet vanish and a different fleet appear at the
+  moment the outcome lands.
+- Two expeditions sent seconds apart, to the same point, with the same ships,
+  can therefore come home far apart. "Sent together" does not mean "returns
+  together", and it does not even mean "returns in send order".
+- The jump can be large enough to leave any sensible grouping window, so a
+  grouping threshold cannot be made wide enough to absorb it without also
+  merging things that are genuinely unrelated.
+
+Not measured: the DISTRIBUTION of the jump — how often an outcome moves the
+return at all, and by how much. We know the magnitude reaches double-digit
+minutes; we do not know the shape. Worth recording when someone has the data.
+
+### Event rows: the event id and the fleet id are different things
+
+Each in-flight leg is one `<tr class="eventFleet" id="eventRow-<n>">`. That
+`<n>` is the **event** id, one per LEG; `data-fleet-id` is the **fleet** id,
+shared by a fleet's outbound and return legs (which is why OGame numbers the
+two rows of one fleet consecutively — see the note above about this reading
+like a duplicate).
+
+For a two-way mission the return row is the invariant: exactly one, from
+dispatch until the fleet is home. Its event id is therefore the natural handle
+for following one in-flight expedition across page loads.
+
+**Not verified:** whether that event id survives a return-time change (the
+outcome above). The expectation is yes — it is the same event record being
+updated, and the row is rewritten in place rather than replaced — but nobody
+has watched a specific id across the jump. If it turns out the id rotates, the
+fallback handle is `data-fleet-id`, which is bound to the fleet rather than
+the leg.
+
 ## A refused send still answers HTTP 200
 
 `action=sendFleet` reports failure **in the body, not in the status code**: a
