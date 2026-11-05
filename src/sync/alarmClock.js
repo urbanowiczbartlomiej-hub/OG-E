@@ -72,7 +72,7 @@
 
 import { gh, ensureGist, getToken, getGistId } from './gist.js';
 import { chromeStore } from '../lib/storage.js';
-import { reconcileWaves, pruneNotifyState } from '../domain/waves.js';
+import { reconcileWaves, pruneNotifyState, isWaveCommitted } from '../domain/waves.js';
 import {
   reconcileAdhoc, pruneAdhocNotify, parseAdhocOffsets, adhocFireTimes,
 } from '../domain/adhoc.js';
@@ -525,8 +525,9 @@ const resolveNtfyToken = async (configToken) => {
  *
  * @param {AlarmClockConfig} config  Current config (from the store).
  * @param {object} dom             DOM-derived inputs for this scan.
- * @param {import('../domain/waves.js').WaveCandidate[]} dom.waveCandidates
- *   Freshly clustered expedition-return candidates (no id yet).
+ * @param {import('../domain/waves.js').ReturnEntry[]} dom.waveReturns
+ *   Every expedition return row observed this scan (row id + return time).
+ *   Grouping and identity are decided inside {@link reconcileWaves}.
  * @param {PresentFleet[]} dom.present  Every fleet leg currently in the
  *   event list (id + arrivalAt) — the authoritative set ad-hoc cleanup
  *   matches against. MUST come from a real event-box read.
@@ -571,7 +572,7 @@ export const syncAlarmClock = async (config, dom, now, universeId) => {
   if (!getToken()) return { ok: false, reason: 'no-token' };
 
   const {
-    waveCandidates, present, adhocMutate, waveMutate,
+    waveReturns, present, adhocMutate, waveMutate,
     fleetSaveCandidates = [], fsCancelById = {}, localFleetSave = [],
     guardianAcked = {}, fleetReminders = [],
   } = dom;
@@ -598,7 +599,7 @@ export const syncAlarmClock = async (config, dom, now, universeId) => {
   const prevFsNotify = existing?.fleetSaveNotify ?? {};
 
   const prevWavesMutated = waveMutate ? waveMutate(prevWaves) : prevWaves;
-  const { waves } = reconcileWaves(prevWavesMutated, waveCandidates, now);
+  const { waves } = reconcileWaves(prevWavesMutated, waveReturns, now);
 
   const adhocWorking = adhocMutate ? adhocMutate(prevAdhoc) : prevAdhoc;
   const { entries: adhoc } = reconcileAdhoc(adhocWorking, present);
@@ -614,12 +615,14 @@ export const syncAlarmClock = async (config, dom, now, universeId) => {
     cancelledById: fsCancelById,
   });
 
-  // Each wave's schedule is anchored at a base time locked on first sight
-  // (`baseAt`). Re-derive it from the prev bookkeeping when we have it;
-  // fall back to the current earliest return for a wave we've not yet
-  // recorded. Stable across scans → stable slot times → idempotent reconcile.
+  // Each wave's schedule is anchored at `anchorAt` — the earliest return
+  // seen when the wave was created, frozen for life by the domain (never
+  // the current earliest, which drifts as fleets land and can jump when an
+  // expedition rolls a return-speed outcome). The stored `baseAt` wins
+  // where it exists so waves written by an older build keep the exact slot
+  // times they already have queued on ntfy.
   /** @param {Wave} w */
-  const baseAtFor = (w) => prevNotify[w.id]?.baseAt ?? w.nextWaveAt;
+  const baseAtFor = (w) => prevNotify[w.id]?.baseAt ?? w.anchorAt ?? w.nextWaveAt;
 
   const topic = await deriveNtfyTopic(ntfyToken);
 
@@ -664,8 +667,17 @@ export const syncAlarmClock = async (config, dom, now, universeId) => {
     // alarmClock are off (master off, or auto-wave off) — ALL waves are
     // excluded, so the reconciler sweeps their messages. Idempotent against
     // ntfy's own queue, so an interrupted prior run just converges.
+    // Only COMMITTED waves are scheduled. A wave stays provisional while
+    // its membership is still moving — i.e. for the few minutes a send
+    // takes — and scheduling one then is what used to buy a reminder set
+    // for a half-sent wave and throw it away on the next scan (every POST
+    // counts against the ntfy daily budget; a cancellation refunds
+    // nothing). The domain seals the wave as soon as the send settles, or
+    // immediately if its anchor is near. See domain/waves.js.
     const liveWaves = waveActive
-      ? waves.filter((w) => !w.cancelled).map((w) => ({ id: w.id, baseAt: baseAtFor(w) }))
+      ? waves
+          .filter((w) => !w.cancelled && isWaveCommitted(w))
+          .map((w) => ({ id: w.id, baseAt: baseAtFor(w) }))
       : [];
     const waveRes = await reconcileWaveQueue({
       waves: liveWaves, topic, token: ntfyToken, now, universeId,
@@ -676,7 +688,9 @@ export const syncAlarmClock = async (config, dom, now, universeId) => {
     // the gist always mirrors what's actually on the queue.
     notifyState = {};
     for (const w of waves) {
-      const ids = (!waveActive || w.cancelled) ? [] : (waveRes.idsByWave[w.id] ?? []);
+      const ids = (!waveActive || w.cancelled || !isWaveCommitted(w))
+        ? []
+        : (waveRes.idsByWave[w.id] ?? []);
       notifyState[w.id] = { baseAt: baseAtFor(w), scheduledMessageIds: ids };
     }
 

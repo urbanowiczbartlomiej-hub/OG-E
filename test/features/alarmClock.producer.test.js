@@ -34,11 +34,13 @@ const paint = (rowsHtml) => {
 };
 
 describe('extractReturnEntries', () => {
-  it('reads returnAt and dense origin coords from return-flight rows', () => {
+  it('reads the row id, returnAt and dense origin coords from return-flight rows', () => {
     paint(row({ id: '141279718', arrival: '1779913212', coords: '4:467:15' }));
     const entries = extractReturnEntries();
+    // The row id is the wave MEMBER key (domain/waves.js): it is what lets a
+    // member survive a mid-flight return-time change.
     expect(entries).toEqual([
-      { returnAt: 1779913212, origin: '4:467:15' },
+      { id: 'eventRow-141279718', returnAt: 1779913212, origin: '4:467:15' },
     ]);
   });
 

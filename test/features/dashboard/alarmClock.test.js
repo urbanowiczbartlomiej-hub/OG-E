@@ -162,7 +162,7 @@ describe('guardianMessagesFor — this server\'s queued guardian pushes only', (
 });
 
 describe('reconcileWaves — landed-wave drop feeds toCancel in syncAlarmClockWaves', () => {
-  // Integration-level conceptual test: when a prev wave's fleet IDs
+  // Integration-level conceptual test: when a prev wave's members
   // disappear from the current observation (all expeditions landed),
   // it falls into droppedIds — the caller pipes those into
   // cancelWaveAlarmClock.
@@ -171,36 +171,54 @@ describe('reconcileWaves — landed-wave drop feeds toCancel in syncAlarmClockWa
    *  @returns {import('../../../src/domain/waves.js').Wave} */
   const wave = (w) => ({
     id: w.id ?? 'w_' + (w.returnAts?.[0] ?? 0),
+    memberIds: w.memberIds ?? ['eventRow-1'],
+    anchorAt: w.anchorAt ?? w.nextWaveAt ?? 1000,
     nextWaveAt: w.nextWaveAt ?? 1000,
     fleetCount: w.fleetCount ?? (w.returnAts?.length ?? 1),
     returnAts: w.returnAts ?? [1000],
     origins: w.origins ?? ['1:1:1'],
     detectedAt: w.detectedAt,
+    committedAt: w.committedAt,
   });
 
-  it('landed wave (return-times disjoint from current) flows into droppedIds', () => {
+  /** @param {string} id @param {number} returnAt */
+  const ret = (id, returnAt) => ({ id, returnAt, origin: '1:1:1' });
+
+  it('landed wave (no member still in flight) flows into droppedIds', () => {
     const oldWave = wave({
-      id: 'w_old', returnAts: [1000, 1002], nextWaveAt: 1000,
+      id: 'w_old', memberIds: ['eventRow-1', 'eventRow-2'],
+      returnAts: [1000, 1002], nextWaveAt: 1000, committedAt: 900,
     });
-    // New observation: brand-new wave, completely disjoint return-times.
-    const newCands = [{
-      nextWaveAt: 2000, fleetCount: 1, returnAts: [2000], origins: ['1:1:1'],
-    }];
-    const { waves, droppedIds } = reconcileWaves([oldWave], newCands, 1100);
+    // New observation: a different fleet entirely — none of w_old's members.
+    const { waves, droppedIds } = reconcileWaves(
+      [oldWave], [ret('eventRow-9', 2000)], 1100);
     expect(droppedIds).toEqual(['w_old']);
     expect(waves.map((w) => w.id)).toEqual(['w_2000']);
   });
 
-  it('matched wave (any overlap) stays — id carries through', () => {
+  it('partially drained wave stays — id carries through', () => {
     const oldWave = wave({
-      id: 'w_old', returnAts: [1000, 1002], nextWaveAt: 1000,
+      id: 'w_old', memberIds: ['eventRow-1', 'eventRow-2'],
+      returnAts: [1000, 1002], nextWaveAt: 1000, committedAt: 900,
     });
-    // Same wave, partially drained — 1000 landed, 1002 still flying.
-    const tailing = [{
-      nextWaveAt: 1002, fleetCount: 1, returnAts: [1002], origins: ['1:1:1'],
-    }];
-    const { waves, droppedIds } = reconcileWaves([oldWave], tailing, 1100);
+    // Same wave, partially drained — eventRow-1 landed, eventRow-2 flying.
+    const { waves, droppedIds } = reconcileWaves(
+      [oldWave], [ret('eventRow-2', 1002)], 1100);
     expect(droppedIds).toEqual([]);
     expect(waves[0].id).toBe('w_old');
+  });
+
+  it('a member whose return time MOVED keeps its wave (return-speed outcome)', () => {
+    const oldWave = wave({
+      id: 'w_old', memberIds: ['eventRow-1', 'eventRow-2'],
+      returnAts: [1000, 1002], nextWaveAt: 1000, committedAt: 900,
+    });
+    // eventRow-1 rolled a faster return: far outside any grouping gap.
+    const { waves, droppedIds } = reconcileWaves(
+      [oldWave], [ret('eventRow-1', 100), ret('eventRow-2', 1002)], 500);
+    expect(droppedIds).toEqual([]);
+    expect(waves).toHaveLength(1);
+    expect(waves[0].id).toBe('w_old');
+    expect(waves[0].anchorAt).toBe(1000);
   });
 });

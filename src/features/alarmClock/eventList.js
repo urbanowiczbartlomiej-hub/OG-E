@@ -232,7 +232,7 @@ const clearCell = (cell) => {
  * @returns {string}
  */
 const waveTitle = (w, schedule, hint) => {
-  const baseAt = snapshot?.notifyState?.[w.id]?.baseAt ?? w.nextWaveAt;
+  const baseAt = snapshot?.notifyState?.[w.id]?.baseAt ?? w.anchorAt ?? w.nextWaveAt;
   const times = offsetsForSchedule(schedule).map((o) => clockHHMM(baseAt + o)).join(', ');
   return `Wave reminders at: ${times}\n${hint}`;
 };
@@ -348,7 +348,13 @@ const render = () => {
       // (raw game-attribute contract), not hoisted.
       if (row.getAttribute('data-mission-type') !== '15' ||
           row.getAttribute('data-return-flight') !== 'true') continue;
-      const w = snapshot.waves.find((x) => (x.returnAts || []).includes(arrivalAt));
+      // Membership is the row id (domain/waves.js) — an exact match, where
+      // the arrival time it used to key on could collide between two legs
+      // landing in the same second. Fall back to the time only for waves
+      // written by a build that predates member ids.
+      const w = snapshot.waves.find((x) => (x.memberIds || []).includes(row.id))
+        ?? snapshot.waves.find((x) => !(x.memberIds || []).length
+          && (x.returnAts || []).includes(arrivalAt));
       if (!w) continue;
       waveOf.set(row, w);
       const cur = anchor.get(w.id);

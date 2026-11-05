@@ -51,8 +51,6 @@
 // @see ../../sync/alarmClock.js   — gist IO + reconcile + preview mirror
 // @see ./eventList.js            — the event-list badge UI (API consumer)
 
-import { clusterWaves, DEFAULT_CLUSTER_GAP_SECONDS } from '../../domain/waves.js';
-/** @typedef {import('../../domain/waves.js').WaveCandidate} WaveCandidate */
 /** @typedef {import('../../domain/waves.js').Wave} Wave */
 /** @typedef {import('../../domain/adhoc.js').AdhocAlarmClock} AdhocAlarmClock */
 import { extractFleetSaveCandidates } from './fleetSaveScan.js';
@@ -105,8 +103,11 @@ const DEBOUNCE_MS = 1500;
  * DOM but holds no state and returns a fresh array, so it can be unit
  * tested against a happy-dom fixture (see the matching test).
  *
+ *   - `id` — the `eventRow-<n>` id. THE wave member key: stable for the
+ *     leg's whole life, so a member survives a mid-flight return-time
+ *     change (see `domain/waves.js`).
  *   - `returnAt` — `data-arrival-time` parsed as an integer (epoch s).
- *     Doubles as the wave-identity carrier (see `domain/waves.js`).
+ *     An attribute of the member, never its identity.
  *   - `origin` — `.coordsOrigin` text with brackets/whitespace stripped
  *     to a dense `"g:s:p"` (matches the coord normalisation badges uses).
  *
@@ -120,7 +121,7 @@ export const extractReturnEntries = (root = document) => {
     const arrivalAttr = row.getAttribute('data-arrival-time');
     const returnAt = arrivalAttr ? parseInt(arrivalAttr, 10) : NaN;
     const origin = denseCoords(row.querySelector(GAME.COORDS_ORIGIN)?.textContent);
-    out.push({ returnAt, origin });
+    out.push({ id: /** @type {HTMLElement} */ (row).id, returnAt, origin });
   }
   return out;
 };
@@ -162,8 +163,10 @@ export const extractPresentFleets = (root = document) => {
  * scans with the same signature need no gist round-trip (the reconcile
  * would be a no-op).
  *
- * The wave half uses `returnAts` because the reconcile matches on
- * return-time overlap. The present half (`id:arrivalAt` per leg) makes a
+ * The wave half is the raw return rows (`id:returnAt`), not clusters:
+ * membership is keyed on the row id, and a member's return time CAN change
+ * in flight (the expedition return-speed outcome), which must trigger a
+ * sync so the wave's observed fields refresh. The present half (`id:arrivalAt` per leg) makes a
  * fleet appearing / landing / being recalled — which moves the ad-hoc
  * cleanup — trigger a sync too. The fleet-save half (`capReadyIds`) is the
  * ONE term that depends on wall-clock `now`: a save first seen more than 3
@@ -174,14 +177,14 @@ export const extractPresentFleets = (root = document) => {
  * adds at most one extra sync per fleet-save. All three halves are sorted
  * so DOM ordering noise doesn't produce a spurious mismatch.
  *
- * @param {WaveCandidate[]} candidates
+ * @param {ReturnEntry[]} returns  Every expedition return row observed now.
  * @param {import('../../domain/adhoc.js').PresentFleet[]} present
  * @param {string[]} [capReadyIds]  FS ids now inside the 3-day window.
  * @returns {string}
  */
-export const signatureOf = (candidates, present, capReadyIds = []) =>
+export const signatureOf = (returns, present, capReadyIds = []) =>
   JSON.stringify({
-    w: candidates.map((c) => c.returnAts).sort((a, b) => (a[0] ?? 0) - (b[0] ?? 0)),
+    w: returns.map((e) => `${e.id}:${e.returnAt}`).sort(),
     p: present.map((f) => `${f.id}:${f.arrivalAt}`).sort(),
     f: [...capReadyIds].sort(),
   });
@@ -377,7 +380,7 @@ export const installAlarmClockProducer = (opts = {}) => {
     }
 
     const now = Math.floor(Date.now() / 1000);
-    const candidates = clusterWaves(extractReturnEntries(), { gapSeconds: DEFAULT_CLUSTER_GAP_SECONDS });
+    const returns = extractReturnEntries();
     const present = extractPresentFleets();
 
     // Fleet-save CANDIDATES: every own leg with its ship count. The ship +
@@ -396,7 +399,7 @@ export const installAlarmClockProducer = (opts = {}) => {
       ? fsCapReadyIds(fleetSaveCandidates, parseFsOffsets(config.fsOffsets ?? ''), now)
       : [];
 
-    const sig = signatureOf(candidates, present, capReadyIds);
+    const sig = signatureOf(returns, present, capReadyIds);
     if (sig === lastSig && !force) return;
 
     const adhocCmds = pending.filter((c) => c.kind === 'arm' || c.kind === 'disarm');
@@ -450,7 +453,7 @@ export const installAlarmClockProducer = (opts = {}) => {
       const res = await syncAlarmClock(
         config,
         {
-          waveCandidates: candidates, present, adhocMutate, waveMutate,
+          waveReturns: returns, present, adhocMutate, waveMutate,
           fleetSaveCandidates, fsCancelById, localFleetSave: localFs,
           guardianAcked, fleetReminders: readFleetReminders(),
         },

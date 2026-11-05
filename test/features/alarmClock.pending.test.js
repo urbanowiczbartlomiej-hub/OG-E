@@ -20,7 +20,8 @@ const cmds = (cmds) => cmds;
 
 /** @param {string} id @param {boolean} [cancelled] */
 const w = (id, cancelled) => ({
-  id, nextWaveAt: 1, fleetCount: 1, returnAts: [1], origins: [],
+  id, memberIds: [`eventRow-${id}`], anchorAt: 1,
+  nextWaveAt: 1, fleetCount: 1, returnAts: [1], origins: [],
   ...(cancelled ? { cancelled: true } : {}),
 });
 
