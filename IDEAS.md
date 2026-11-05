@@ -184,32 +184,22 @@ the kinds differently — see entry 7.
 
 ---
 
-## 7. Surface ntfy failures in game — and weight them by what they protect
+## 7. ntfy budget policy — measure before choosing the numbers
 
-**The gap.** When a push cannot be queued — the ntfy daily budget is spent, the
-token is wrong, the account is rate-limited, the network is down — OG-E today
-fails quietly. The reconciler throws, the sync round aborts, and the next one
-re-converges; nothing tells the player that the reminder they are counting on
-does not exist. The one visible symptom is a push that never arrives, which by
-construction arrives too late to act on.
+The visible half of this shipped: failures are recorded per kind
+(`state/ntfyHealth.js`), the dangerous kinds reconcile FIRST so the
+expendable one is what fails when the budget runs out, each kind is isolated
+so one failure no longer aborts the rest of the sync, and an in-game notice
+reports it — loud for fleet-save / ad-hoc / guardian, a muted line for
+expedition waves.
 
-OG-E already has the right precedent in the "AntiGame Origin is not installed"
-notice: a single, calm, in-game line that explains what is missing and what it
-costs. This wants the same shape.
+What is left is the quantitative half. We still do not know how a real day's
+250 messages actually divide between the kinds, so the ordering above is
+reasoned rather than measured. Worth doing before adding anything smarter
+(a per-kind cap, a "skip the wave series when the budget is nearly spent"
+rule, a budget readout in the dashboard):
 
-**The weighting is the real design content.** The kinds are not equal:
-
-- **Fleet-save** — a reminder that fails silently can cost the fleet. This
-  deserves a loud, in-game, stays-until-acknowledged notice, and it should be
-  the LAST kind we drop when the budget runs short.
-- **Ad-hoc** — the player armed it deliberately and we do not know what it
-  guards; assume it matters. Treat it like fleet-save.
-- **Expedition waves** — the costliest kind by volume (one wave = a full offset
-  series) and the cheapest to miss. This is the kind to shed first, and a
-  quiet line is enough.
-
-That ordering suggests the fix is not only a message but a BUDGET POLICY: when
-posts are being refused, spend what is left on fleet-save and ad-hoc and skip
-the wave series, rather than letting whichever kind reconciles first consume
-the remainder. Worth measuring the real daily post count per kind before
-choosing the numbers.
+- count posts per kind per day and surface the tally somewhere the player
+  can see it — today a spent budget is invisible until something fails;
+- with that number in hand, decide whether a reserve for fleet-save is worth
+  enforcing explicitly rather than relying on reconcile order alone.

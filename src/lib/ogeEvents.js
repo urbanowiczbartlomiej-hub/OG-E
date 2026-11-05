@@ -54,6 +54,16 @@ export const DAILY_STATE_CHANGED_EVENT = 'oge:dailyStateChanged';
  *  arms an upload of the `fleetRemindersPerUniverse` slot. */
 export const FLEET_REMINDER_CHANGED_EVENT = 'oge:fleetReminderChanged';
 
+/**
+ * Fired on `document` by the alarm-clock producer after every sync round
+ * that reached ntfy, successful or not. Carries no payload: the listener
+ * re-reads `state/ntfyHealth.js`, which is what the sync just updated.
+ * The in-game failure notice (`features/alarmClock/ntfyAlert.js`) repaints
+ * on it, so a reminder that could not be queued is reported the moment we
+ * learn it — and the notice clears itself the moment a later sync succeeds.
+ */
+export const ALARM_CLOCK_SYNCED_EVENT = 'oge:alarmClockSynced';
+
 // ── Fleet-courier protocol (defined in fleetProtocol.js; re-exported here so
 //    callers have one import surface for every event name) ──────────────────
 export { FD_CMD_EVENT, FD_RES_EVENT, FD_SEND_RESULT_EVENT } from './fleetProtocol.js';

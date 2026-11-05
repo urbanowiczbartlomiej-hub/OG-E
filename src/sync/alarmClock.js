@@ -72,6 +72,7 @@
 
 import { gh, ensureGist, getToken, getGistId } from './gist.js';
 import { chromeStore } from '../lib/storage.js';
+import { logger } from '../lib/logger.js';
 import { reconcileWaves, pruneNotifyState, isWaveCommitted } from '../domain/waves.js';
 import {
   reconcileAdhoc, pruneAdhocNotify, parseAdhocOffsets, adhocFireTimes,
@@ -561,7 +562,10 @@ const resolveNtfyToken = async (configToken) => {
  *   same round (the producer persists them to the store right after).
  * @param {number} now             Epoch SECONDS, injected by the caller.
  * @param {string} universeId      OGame server id; ntfy push title prefix.
- * @returns {Promise<{ ok: boolean, reason?: string, changed?: boolean, scheduled?: number, cancelled?: number, fleetSave?: FleetSaveAlarmClock[], landings?: LandedFleetSave[] }>}
+ * @returns {Promise<{ ok: boolean, reason?: string, changed?: boolean, scheduled?: number, cancelled?: number, fleetSave?: FleetSaveAlarmClock[], landings?: LandedFleetSave[], failedKinds?: Record<string, string> }>}
+ *   `failedKinds` maps each notification kind whose pushes could NOT be
+ *   queued this round to a short reason — the caller surfaces it in game
+ *   (see `state/ntfyHealth.js`). Empty when everything queued.
  *   `fleetSave` is the reconciled (locked) FS set for this scan — surfaced so
  *   the caller can republish it for passive consumers (the planet markers,
  *   which never import alarmClock). `landings` are the fleet-saves detected as
@@ -636,6 +640,8 @@ export const syncAlarmClock = async (config, dom, now, universeId) => {
   let fsNotify = pruneFsNotify(prevFsNotify, fleetSave);
   let cancelled = 0;
   let scheduled = 0;
+  /** @type {Record<string, string>} kind → why its pushes could not be queued */
+  let failedKinds = {};
 
   // Master switch gates every kind; absent ⇒ on (direct-caller back-compat).
   const master = config.masterEnabled !== false;
@@ -657,42 +663,43 @@ export const syncAlarmClock = async (config, dom, now, universeId) => {
     : [];
 
   if (ntfyToken && topic) {
-    // One queue poll, shared by both kinds — OGame reloads (and re-runs
-    // this producer) on every click, so halving the ntfy polls per sync
+    // One queue poll, shared by every kind — OGame reloads (and re-runs
+    // this producer) on every click, so cutting the ntfy polls per sync
     // meaningfully cuts request volume.
     const queue = await fetchScheduledMessages({ topic, token: ntfyToken, now });
 
-    // ── Expedition waves ───────────────────────────────────────────────
-    // Live waves ntfy should keep queued. Dismissed waves and — when wave
-    // alarmClock are off (master off, or auto-wave off) — ALL waves are
-    // excluded, so the reconciler sweeps their messages. Idempotent against
-    // ntfy's own queue, so an interrupted prior run just converges.
-    // Only COMMITTED waves are scheduled. A wave stays provisional while
-    // its membership is still moving — i.e. for the few minutes a send
-    // takes — and scheduling one then is what used to buy a reminder set
-    // for a half-sent wave and throw it away on the next scan (every POST
-    // counts against the ntfy daily budget; a cancellation refunds
-    // nothing). The domain seals the wave as soon as the send settles, or
-    // immediately if its anchor is near. See domain/waves.js.
-    const liveWaves = waveActive
-      ? waves
-          .filter((w) => !w.cancelled && isWaveCommitted(w))
-          .map((w) => ({ id: w.id, baseAt: baseAtFor(w) }))
-      : [];
-    const waveRes = await reconcileWaveQueue({
-      waves: liveWaves, topic, token: ntfyToken, now, universeId,
-      offsetsSec: offsetsForSchedule(config.schedule), template: config.templates?.wave, queue,
-    });
-
-    // Rebuild notifyState from the reconciler's authoritative id sets so
-    // the gist always mirrors what's actually on the queue.
-    notifyState = {};
-    for (const w of waves) {
-      const ids = (!waveActive || w.cancelled || !isWaveCommitted(w))
-        ? []
-        : (waveRes.idsByWave[w.id] ?? []);
-      notifyState[w.id] = { baseAt: baseAtFor(w), scheduledMessageIds: ids };
-    }
+    // KIND ORDER IS A SAFETY PROPERTY, not tidiness. Publishing can fail
+    // part-way through a sync — the account's daily message budget runs
+    // out, the token is refused, the network drops — and whatever has not
+    // been reconciled by then simply has no reminder. The kinds are not
+    // equal in what that costs: a missed expedition ping costs idle
+    // minutes, a missed fleet-save ping can cost the fleet. So the
+    // dangerous kinds are reconciled FIRST and expedition waves LAST, and
+    // each kind is isolated so one kind's failure cannot abort the others
+    // (which is exactly what the old waves-first order did).
+    /** @type {Record<string, string>} kind → short failure reason */
+    const ntfyFailures = {};
+    /**
+     * Run one kind's reconcile, recording a failure instead of aborting the
+     * sync. The kind's previous bookkeeping is left untouched on failure —
+     * it still holds the cancellation handles for whatever IS queued.
+     * @template T
+     * @param {string} kind
+     * @param {() => Promise<T>} run
+     * @param {T} fallback
+     * @returns {Promise<T>}
+     */
+    const perKind = async (kind, run, fallback) => {
+      try {
+        return await run();
+      } catch (err) {
+        ntfyFailures[kind] = err instanceof Error ? err.message : String(err);
+        logger.warn(`alarmClock: ntfy reconcile failed for ${kind}`, err);
+        return fallback;
+      }
+    };
+    /** @type {{ posted: number, cancelled: number }} */
+    const noRes = { posted: 0, cancelled: 0 };
 
     // ── Ad-hoc fleets ──────────────────────────────────────────────────
     // A multi-slot series per armed entry: the per-universe ad-hoc schedule
@@ -715,13 +722,13 @@ export const syncAlarmClock = async (config, dom, now, universeId) => {
           fireAts: adhocFireTimes(e.arrivalAt, adhocOffsets),
         }))
       : [];
-    const adhocRes = await reconcileAdhocQueue({
+    const adhocRes = await perKind('adhoc', () => reconcileAdhocQueue({
       entries: liveAdhoc, topic, token: ntfyToken, now, universeId,
       template: config.templates?.adhoc, queue,
-    });
+    }), { ...noRes, idsByEntry: /** @type {Record<string, string[]>} */ ({}) });
 
-    adhocNotify = {};
-    for (const e of adhoc) {
+    if (!ntfyFailures.adhoc) adhocNotify = {};
+    for (const e of ntfyFailures.adhoc ? [] : adhoc) {
       const ids = adhocActive ? (adhocRes.idsByEntry[e.id] ?? []) : [];
       adhocNotify[e.id] = { scheduledMessageIds: ids };
     }
@@ -734,13 +741,13 @@ export const syncAlarmClock = async (config, dom, now, universeId) => {
     // which is exactly the "auto-cancel post-landing pings once you're back
     // in-game" behaviour.
     const liveFs = fsActive ? fleetSave : [];
-    const fsRes = await reconcileFleetSaveQueue({
+    const fsRes = await perKind('fleetSave', () => reconcileFleetSaveQueue({
       entries: liveFs, topic, token: ntfyToken, now, universeId,
       template: config.templates?.fleetSave, queue,
-    });
+    }), { ...noRes, idsByEntry: /** @type {Record<string, string[]>} */ ({}) });
 
-    fsNotify = {};
-    for (const e of fleetSave) {
+    if (!ntfyFailures.fleetSave) fsNotify = {};
+    for (const e of ntfyFailures.fleetSave ? [] : fleetSave) {
       const ids = fsActive ? (fsRes.idsByEntry[e.id] ?? []) : [];
       fsNotify[e.id] = { scheduledMessageIds: ids };
     }
@@ -780,9 +787,41 @@ export const syncAlarmClock = async (config, dom, now, universeId) => {
       coords: e.bodyKey.split(':').slice(0, 3).join(':'),
       fireAt: Math.max(e.landedAt, guardianAcked[e.bodyKey] ?? 0) + guardianIntervalSec,
     }));
-    const guardianRes = await reconcileGuardianQueue({
+    const guardianRes = await perKind('guardian', () => reconcileGuardianQueue({
       entries: liveGuardian, topic, token: ntfyToken, now, universeId, queue,
-    });
+    }), { ...noRes, idsByEntry: /** @type {Record<string, string[]>} */ ({}) });
+
+    // ── Expedition waves ───────────────────────────────────────────────
+    // Live waves ntfy should keep queued. Dismissed waves and — when wave
+    // alarmClock are off (master off, or auto-wave off) — ALL waves are
+    // excluded, so the reconciler sweeps their messages. Idempotent against
+    // ntfy's own queue, so an interrupted prior run just converges.
+    // Only COMMITTED waves are scheduled. A wave stays provisional while
+    // its membership is still moving — i.e. for the few minutes a send
+    // takes — and scheduling one then is what used to buy a reminder set
+    // for a half-sent wave and throw it away on the next scan (every POST
+    // counts against the ntfy daily budget; a cancellation refunds
+    // nothing). The domain seals the wave as soon as the send settles, or
+    // immediately if its anchor is near. See domain/waves.js.
+    const liveWaves = waveActive
+      ? waves
+          .filter((w) => !w.cancelled && isWaveCommitted(w))
+          .map((w) => ({ id: w.id, baseAt: baseAtFor(w) }))
+      : [];
+    const waveRes = await perKind('wave', () => reconcileWaveQueue({
+      waves: liveWaves, topic, token: ntfyToken, now, universeId,
+      offsetsSec: offsetsForSchedule(config.schedule), template: config.templates?.wave, queue,
+    }), { ...noRes, idsByWave: /** @type {Record<string, string[]>} */ ({}) });
+
+    // Rebuild notifyState from the reconciler's authoritative id sets so
+    // the gist always mirrors what's actually on the queue.
+    if (!ntfyFailures.wave) notifyState = {};
+    for (const w of ntfyFailures.wave ? [] : waves) {
+      const ids = (!waveActive || w.cancelled || !isWaveCommitted(w))
+        ? []
+        : (waveRes.idsByWave[w.id] ?? []);
+      notifyState[w.id] = { baseAt: baseAtFor(w), scheduledMessageIds: ids };
+    }
 
     scheduled = waveRes.posted + adhocRes.posted + fsRes.posted + guardianRes.posted;
     cancelled = waveRes.cancelled + adhocRes.cancelled + fsRes.cancelled + guardianRes.cancelled;
@@ -790,6 +829,7 @@ export const syncAlarmClock = async (config, dom, now, universeId) => {
       // eslint-disable-next-line no-console
       console.log(`[oge] alarmClock reconciled: +${scheduled} queued, -${cancelled} cancelled`);
     }
+    failedKinds = ntfyFailures;
   }
 
   /** @type {AlarmClockState} */
@@ -807,5 +847,5 @@ export const syncAlarmClock = async (config, dom, now, universeId) => {
   const changed = !sameState(existing, next);
   if (changed) await writeAlarmClockState(universeId, next);
   await mirrorForPreview(universeId, next, ntfyToken);
-  return { ok: true, changed, scheduled, cancelled, fleetSave, landings };
+  return { ok: true, changed, scheduled, cancelled, fleetSave, landings, failedKinds };
 };

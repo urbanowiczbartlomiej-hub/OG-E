@@ -65,13 +65,16 @@ import { galaxyScanConfigStore } from '../../state/galaxyScanConfig.js';
 import { alarmClockConfigStore } from '../../state/alarmClockConfig.js';
 import { readFleetSaveEntries, writeFleetSaveEntries } from '../../state/fleetSaveSet.js';
 import { readFleetReminders, armFleetReminder, removeFleetReminder } from '../../state/fleetReminders.js';
+import { writeNtfyHealth } from '../../state/ntfyHealth.js';
 import { readFsSendHints } from '../../state/fsSendHints.js';
 import { syncAlarmClock, ALARM_CLOCK_NTFY_TOKEN_KEY, isValidNtfyToken } from '../../sync/alarmClock.js';
 import { parseUniverseId } from '../../lib/universeId.js';
 import { debounce } from '../../lib/debounce.js';
 import { safeLS, chromeStore } from '../../lib/storage.js';
 import { GAME } from '../../lib/gameDom.js';
-import { EVENT_BOX_LOADED_EVENT, FLEET_REMINDER_CHANGED_EVENT } from '../../lib/ogeEvents.js';
+import {
+  EVENT_BOX_LOADED_EVENT, FLEET_REMINDER_CHANGED_EVENT, ALARM_CLOCK_SYNCED_EVENT,
+} from '../../lib/ogeEvents.js';
 import { isFleetdispatchPage } from '../shared/eventBoxGate.js';
 import {
   readPending, writePending, pushPending, applyAdhocCmds, applyWaveCmds,
@@ -466,6 +469,11 @@ export const installAlarmClockProducer = (opts = {}) => {
       // state).
       if (!installed) return;
       if (res.ok) {
+        // What ntfy would NOT take this round, for the in-game notice. Written
+        // on EVERY successful sync — an empty map clears a stale alarm, so a
+        // transient failure heals by itself instead of nagging.
+        writeNtfyHealth(res.failedKinds ?? {}, now);
+        document.dispatchEvent(new CustomEvent(ALARM_CLOCK_SYNCED_EVENT));
         lastSig = sig;
         safeLS.set(sigKeyFor(universeId), sig);
         // Adopt the gist-reconciled FS set (a superset of the local pre-pass

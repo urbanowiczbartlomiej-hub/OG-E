@@ -9,10 +9,12 @@
 //
 // @see ./producer.js   — sync owner + arm/disarm/cancel API
 // @see ./eventList.js  — the badge UI (API consumer)
+// @see ./ntfyAlert.js  — the in-game notice when a push could NOT be queued
 
 import { installAlarmClockProducer } from './producer.js';
 import { installEventListAlarmClock } from './eventList.js';
 import { installGuardian } from './guardian.js';
+import { installNtfyAlert } from './ntfyAlert.js';
 
 /** @type {(() => void) | null} */
 let installed = null;
@@ -46,10 +48,15 @@ export const installAlarmClock = () => {
     dismiss: producer.guardianDismiss,
     ack: producer.guardianAck,
   });
+  // The failure notice. Independent of the three above — it only reads the
+  // health record the producer writes after each sync — but it belongs to
+  // this feature's install so it lives and dies with the alarm clock.
+  const alert = installNtfyAlert();
   installed = () => {
     ui.dispose();
     producer.dispose();
     guardian();
+    alert();
     installed = null;
   };
   return installed;
