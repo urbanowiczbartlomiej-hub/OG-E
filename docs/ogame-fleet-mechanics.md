@@ -220,9 +220,53 @@ Consequences for anything that tracks expeditions:
   grouping threshold cannot be made wide enough to absorb it without also
   merging things that are genuinely unrelated.
 
-Not measured: the DISTRIBUTION of the jump — how often an outcome moves the
-return at all, and by how much. We know the magnitude reaches double-digit
-minutes; we do not know the shape. Worth recording when someone has the data.
+**How often it happens (measured).** On one Discoverer account (s163-pl,
+687 expeditions, 2026-10-01…05, no expedition item active) **7.6 %** of
+expeditions came back **delayed** and **1.5 %** came back **early** — so roughly
+**one return in eleven moves**. In a wave of 15 expeditions that is ~1.1 delayed
+fleet per wave, which matches the player's own experience ("usually one or
+two"). The full outcome table is in
+[Expedition outcomes](#expedition-outcomes--measured-frequencies) below.
+
+Still not measured: the MAGNITUDE distribution of the jump. We know it reaches
+double-digit minutes; we do not know the shape.
+
+### Expedition outcomes — measured frequencies
+
+Source: one Discoverer-class account on s163-pl, from an OGame Tracker export
+(~65 800 expeditions in total). The two windows compare the same account with
+and without the bronze **Expedition Computer** item; *which* window had the item
+is inferred from its expiry date, not read from the game, so treat the column
+labels as very likely rather than certain.
+
+| Outcome | without item (1–5 Oct 2026, n = 687) | with item (24–30 Sep 2026, n = 1207) |
+|---|---:|---:|
+| Resources | 35.2 % | 40.8 % |
+| Ships found | 16.7 % | 20.6 % |
+| Dark Matter | 7.4 % | 7.6 % |
+| Nothing | 28.0 % | 21.0 % |
+| Delay (late return) | 7.6 % | 4.6 % |
+| Combat (pirates/aliens) | 2.0 % | 1.6 % |
+| Fleet lost | 0.3 % | 0.3 % |
+| Early return | 1.5 % | 2.3 % |
+
+What the comparison shows about the game:
+
+- **The Expedition Computer moves the odds, not the size of a find.** The
+  average resource find was the same in both windows (~70 M in 3:2:1 metal
+  units), and so was the average ship find (~28–29 M). The item shifts outcomes
+  from *nothing* / *delay* into *resources* / *ships*.
+- **An item that removes the delay does not necessarily remove the delay
+  outcome.** The "100 % delay reduction" item sets the extra delay time to zero,
+  so the fleet returns on schedule, but the expedition report may still say it
+  was delayed. Anything that counts delays from reports will over-count them
+  while such an item is active. (Reported by the player; not cross-checked
+  against event-list timestamps.)
+- **Ships found are budgeted on metal + crystal.** Over >60 000 expeditions,
+  the deuterium value of the ships found ran at ~8.2 % of their M+C value with a
+  Battlecruiser as the largest ship in the fleet, and ~9.2 % with a Destroyer or
+  Reaper. So the cap on a ship find appears to count M+C, and the deuterium
+  carried by the ships comes on top of it.
 
 ### Event rows: the event id and the fleet id are different things
 
@@ -453,6 +497,35 @@ abandoned at all**. So an account showing exactly ONE planet in the planet bar i
 always sitting on its starting planet, and the second planet an account ever owns
 is by definition a colony.
 
+**How a planet's field count is built up.** In order:
+
+1. the **natural roll** for the position. For position 8 a field-count chart
+   shared on the official forum gives **156–252, mean 204, σ ≈ 16**. That is
+   community data, not our own measurement;
+2. **diameter bonuses** (player class, lifeform tech). These enlarge the
+   diameter, and fields grow roughly with the **square** of the diameter
+   multiplier;
+3. the server's flat **bonus fields** (+30 on s163-pl), added as a constant;
+4. **items** that add fields;
+5. the **Terraformer**, which adds fields as it levels and itself occupies one
+   field per level;
+6. the Kaelesh lifeform's **Bio-Modifier**: **+2 fields per level**, active only
+   while that planet's lifeform is Kaelesh. Switch the lifeform away and the
+   fields disappear. Existing buildings stay, but nothing more can be built
+   while the planet is over capacity. (Wrong figure once used in a model:
+   "+200 per level".)
+
+Only step 1 is random. That is why a planet is re-rolled for its natural roll
+and everything else is stacked on afterwards.
+
+**Relocating a planet keeps its field count — always** (confirmed by the
+player). Only the **temperature** changes: it is set anew within the
+temperature range of the destination position, exactly as for a planet
+colonized there. The wrong belief, *"relocation can improve the size"*, is
+false. Rolling a large planet
+on a high-field position and relocating it to a cold one for deuterium is
+therefore a normal strategy.
+
 **A dispatched colonizer does not always become a colony.** The fleet may be
 recalled, the account may be at its colony cap, or some other event may stop the
 colony forming — in which case no size is ever recorded and the position was
@@ -519,3 +592,52 @@ Constants and the reduction live in
 [`src/domain/geometry.js`](../src/domain/geometry.js) (`GALAXY_STEP`,
 `SYSTEM_BASE`, `SYSTEM_STEP`, `GALAXY_IN_SYSTEMS`, `flightDistance`) — that is
 the ONE place coordinates become distance; never re-derive it per feature.
+
+## Flight time and fleet speed — from distance to seconds
+
+Flight time for one leg, in seconds:
+
+```
+t = round( ( 3500 / s · √(10 · d / v) + 10 ) / U )
+```
+
+- `d` — flight distance (section above);
+- `v` — the speed of the **slowest ship in the fleet**: a fleet always flies at
+  its slowest member, so a faster cargo ship gains nothing while a slower escort
+  is in it;
+- `s` — the speed setting as a fraction (`1.0` = 100 %, `0.9` = 90 %…);
+- `U` — the server's fleet speed factor for that mission type (peaceful, war or
+  holding). **Expeditions fly at the peaceful factor.**
+
+Checked against the game: a Reaper fleet at v ≈ 45 500 from position 15 to the
+expedition point (position 16, `d = 1005`) on a peaceful ×2 server gives 827 s
+= **13:47** each way, which is what the game shows. The fixed-speed RIP formula
+in [`src/domain/geometry.js`](../src/domain/geometry.js) (`niszczHours`) is the
+same equation with `v = 310`, `s = 1`, `U = 1`.
+
+**An expedition's round trip** is `t_out + hold + t_back`. The hold is the
+duration you choose at send, and it is **not divided by `U`**: with a 1 h hold
+the same Reaper fleet needs 87:34 on peaceful ×2, ~78:24 on ×3 and ~73:48 on ×4.
+The faster the server, the more the fixed hold dominates the cycle.
+
+### Speed bonuses add up on the ship's BASE speed
+
+```
+v = v_base · (1 + drive bonus + lifeform bonuses + class bonuses)
+```
+
+Every bonus is a percentage of the ship's **base** speed, summed. None of them
+multiplies a speed that already includes another bonus. Drive research gives
++10 % (Combustion), +20 % (Impulse) or +30 % (Hyperspace) of base speed per
+level, so a Reaper (base 7 000) gains +2 100 per Hyperspace Drive level.
+
+**The wrong intuition:** *"a lifeform speed bonus multiplies the final speed."*
+It does not, and the difference was measured. With a test fleet whose
+lifeform Telekinetic Drive bonus was +3.61 %, the additive model predicted a
+4:01 flight and the multiplicative one ~3:58. The game showed **4:01**. The same
+additive rule was confirmed for the Researcher alliance-class bonus, the
+lifeform Plasma Drive and the Large Cargo Overclock.
+
+**The Researcher alliance-class expedition speed bonus applies in BOTH
+directions**: the flight out and the flight home. (It was once assumed to apply
+only one way.)
