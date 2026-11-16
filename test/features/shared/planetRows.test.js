@@ -8,7 +8,9 @@
 // @ts-check
 
 import { describe, it, expect, afterEach } from 'vitest';
-import { parsePlanetRow, readPlanetRows } from '../../../src/features/shared/planetRows.js';
+import {
+  parsePlanetRow, readPlanetRows, readFreshPlanets, hasAbandonableSurplus,
+} from '../../../src/features/shared/planetRows.js';
 
 /**
  * Build one `.smallplanet` row the way OGame renders it.
@@ -111,5 +113,32 @@ describe('readPlanetRows', () => {
   it('reads empty for an existing but childless sidebar', () => {
     mount('');
     expect(readPlanetRows()).toEqual([]);
+  });
+});
+
+describe('readFreshPlanets (the give-up criterion)', () => {
+  it('returns every untouched planet below the floor, in document order', () => {
+    mount(
+      row({ id: 'planet-1', coords: '[1:1:1]', used: 120, max: 200 })
+      + row({ id: 'planet-2', coords: '[2:2:2]', used: 0, max: 180 })
+      + row({ id: 'planet-3', coords: '[3:3:3]', used: 0, max: 400 })
+      + row({ id: 'planet-4', coords: '[4:4:4]', used: 0, max: 150 }),
+    );
+    expect(readFreshPlanets({ belowFields: 320 }).map((p) => p.cp)).toEqual([2, 4]);
+  });
+
+  it('without a floor, any untouched planet qualifies', () => {
+    mount(row({ id: 'planet-1', used: 5 }) + row({ id: 'planet-2', used: 0, max: 400 }));
+    expect(readFreshPlanets().map((p) => p.cp)).toEqual([2]);
+  });
+
+  it('never offers the last planet', () => {
+    mount(row({ id: 'planet-1', used: 0, max: 150 }));
+    expect(hasAbandonableSurplus()).toBe(false);
+    expect(readFreshPlanets({ belowFields: 320 })).toEqual([]);
+  });
+
+  it('reads nothing when the sidebar is absent', () => {
+    expect(readFreshPlanets({ belowFields: 320 })).toEqual([]);
   });
 });

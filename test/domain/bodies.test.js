@@ -10,6 +10,7 @@ import {
   sortBodies,
   dedupeBodies,
   isCompleteBody,
+  withoutBodiesAt,
 } from '../../src/domain/bodies.js';
 
 /** @typedef {import('../../src/domain/bodies.js').Body} Body */
@@ -174,5 +175,21 @@ describe('isCompleteBody', () => {
   it('rejects null / undefined', () => {
     expect(isCompleteBody(null)).toBe(false);
     expect(isCompleteBody(undefined)).toBe(false);
+  });
+});
+
+describe('withoutBodiesAt', () => {
+  const b = (g, s, p, type = 1) => ({ cp: g * 1000 + s + p + type, name: 'x', galaxy: g, system: s, position: p, type });
+
+  it('drops planet and moon on a listed slot, keeps everything else', () => {
+    const bodies = [b(1, 10, 4), b(1, 10, 4, 3), b(1, 10, 7), b(2, 20, 4)];
+    expect(withoutBodiesAt(bodies, [{ galaxy: 1, system: 10, position: 4 }]))
+      .toEqual([b(1, 10, 7), b(2, 20, 4)]);
+  });
+
+  it('returns the list untouched when nothing is listed, and [] for no bodies', () => {
+    const bodies = [b(1, 1, 1)];
+    expect(withoutBodiesAt(bodies, [])).toBe(bodies);
+    expect(withoutBodiesAt(null, [{ galaxy: 1, system: 1, position: 1 }])).toEqual([]);
   });
 });

@@ -1,3 +1,8 @@
+// @vitest-environment happy-dom
+//
+// happy-dom: the pass reads #planetList (shared/territoryBodies) to leave out
+// a colony the abandon FAB is about to delete.
+//
 // Tests for the in-game Home-watch reader: a fresh galaxy sighting of one of
 // OUR systems must produce a persisted baseline plus an arrival log, and the
 // pass must stay quiet when it has nothing to say (mode off, inventory not
