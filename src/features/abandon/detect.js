@@ -1,7 +1,7 @@
 // @ts-check
 
 import { GAME } from '../../lib/gameDom.js';
-import { parsePlanetRow } from '../shared/planetRows.js';
+import { readFreshPlanets, hasAbandonableSurplus } from '../shared/planetRows.js';
 import { ingameComponentUrl } from '../../domain/ogameUrl.js';
 
 // Fresh-planet detection helpers — scan `#planetList` for a colony where
@@ -10,13 +10,7 @@ import { ingameComponentUrl } from '../../domain/ogameUrl.js';
 // module (`./colonyFab.js`) consumes these to decide whether to surface the
 // "new colony / abandon" button and where it navigates.
 //
-// # Why the criterion is strictly `used === 0`
-//
-// Triggering for any planet below `colonyMinFields` would produce false
-// positives: a colony with ~100 fields built (legitimately kept, mid-build)
-// falls under the threshold and would keep flashing. The signal the user
-// actually wants is "you just colonized here and haven't touched it yet" —
-// exactly `used === 0`; the moment one field is laid down the signal clears.
+// The give-up criterion itself lives in `shared/planetRows.readFreshPlanets`.
 
 /**
  * One planet-list row, as projected by `features/shared/planetRows.js`.
@@ -27,54 +21,21 @@ import { ingameComponentUrl } from '../../domain/ogameUrl.js';
  */
 
 
-/**
- * Does the account hold MORE than one planet — i.e. is any planet abandonable
- * at all?
- *
- * OGame forbids giving up your last planet: an account must always own at
- * least one. Early game that is exactly the case the abandon FAB got wrong —
- * the starting homeworld is usually small (well under the default 320-field
- * keep threshold) and has nothing built on it yet, so it reads as a textbook
- * "fresh colony, too small to keep" and the button offered to delete the only
- * planet the player has. The game would refuse it; the button must not propose
- * it in the first place.
- *
- * Counted off `#planetList` rows carrying a `planet-<n>` id — moon rows have no
- * such id, so a planet+moon account still reads as one planet. A list we cannot
- * read at all counts as zero and therefore also blocks: for an irreversible
- * action, "unsure" must fail closed.
- *
- * @returns {boolean}
- */
-export const hasAbandonableSurplus = () =>
-  document.querySelectorAll(GAME.SMALL_PLANET_ONLY).length > 1;
+/** Re-exported: the surplus rule lives with the row projection it counts. */
+export { hasAbandonableSurplus };
 
 /**
- * Scan `#planetList` and return the first row whose `usedFields` is exactly
- * zero (a freshly-colonized planet with nothing built). Document order — the
- * first hit matches the sidebar's visual order.
- *
- * Pass `belowFields` to additionally require the planet be SMALL (its `max`
- * below that threshold) — this lets the colony FAB decide "too small to keep"
- * straight from the planet-list tooltip, without first navigating to the
- * colony's overview.
+ * The first give-up candidate in `#planetList` (document order = the
+ * sidebar's visual order), or `null`. The criterion itself — fresh
+ * (`used === 0`), optionally below `belowFields`, never the last planet —
+ * is `shared/planetRows.readFreshPlanets`, shared with the Spyglass so the
+ * colony this FAB proposes to delete is never also proposed as "your
+ * neighbourhood".
  *
  * @param {{ belowFields?: number }} [opts]
  * @returns {PlanetRow | null}
  */
-export const findFirstFreshPlanet = ({ belowFields } = {}) => {
-  const rows = document.querySelectorAll(GAME.SMALL_PLANET_ONLY);
-  // Never offer the LAST planet (see {@link hasAbandonableSurplus}).
-  if (!hasAbandonableSurplus()) return null;
-  for (const row of rows) {
-    const p = parsePlanetRow(row);
-    if (!p) continue;
-    if (p.used !== 0) continue;
-    if (belowFields != null && p.max >= belowFields) continue;
-    return p;
-  }
-  return null;
-};
+export const findFirstFreshPlanet = (opts) => readFreshPlanets(opts)[0] ?? null;
 
 /**
  * Return the `cp` in `location.search` iff the URL says we're on the overview

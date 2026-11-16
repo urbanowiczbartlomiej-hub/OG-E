@@ -25,6 +25,7 @@ import {
 } from '../../domain/homeWatch.js';
 import { playersStore } from '../../state/players.js';
 import { getApiContext } from '../shared/apiContextStore.js';
+import { territoryBodies } from '../shared/territoryBodies.js';
 import { debounce } from '../../lib/debounce.js';
 import { logger } from '../../lib/logger.js';
 
@@ -51,7 +52,8 @@ export const runHomeWatchPass = async () => {
   if (!bodies || bodies.length === 0) return;
   running = true;
   try {
-    const systems = homeSystemKeys(bodies);
+    // Minus a colony we are about to abandon (shared/territoryBodies).
+    const systems = homeSystemKeys(territoryBodies());
     const state = await readHomeWatch();
     const ctx = getApiContext();
     const ownId = Number(ctx?.ownId) || null;

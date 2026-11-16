@@ -266,3 +266,21 @@ export const isCompleteBody = (b) =>
   Number.isFinite(b.system) &&
   Number.isFinite(b.position) &&
   (b.type === TARGET_PLANET || b.type === 3);
+
+/**
+ * The bodies NOT standing on any of `coords` (planet and moon alike — a slot
+ * is matched by `galaxy:system:position`, type-less). Used to take give-up
+ * candidates out of "our territory": a colony about to be abandoned must not
+ * seed home/patrol looks around itself. A system where we own another body
+ * keeps it, because that other body survives the filter.
+ *
+ * @param {Body[] | null | undefined} bodies
+ * @param {Array<{ galaxy: number, system: number, position: number }>} coords
+ * @returns {Body[]}
+ */
+export const withoutBodiesAt = (bodies, coords) => {
+  const list = bodies || [];
+  if (!coords.length) return list;
+  const drop = new Set(coords.map((c) => `${c.galaxy}:${c.system}:${c.position}`));
+  return list.filter((b) => !drop.has(`${b.galaxy}:${b.system}:${b.position}`));
+};

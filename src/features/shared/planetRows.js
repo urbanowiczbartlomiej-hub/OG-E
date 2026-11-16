@@ -82,3 +82,52 @@ export const readPlanetRows = () => {
   }
   return out;
 };
+
+/**
+ * Does the account hold MORE than one planet — i.e. is any planet abandonable
+ * at all?
+ *
+ * OGame forbids giving up your last planet: an account must always own at
+ * least one. Early game that is exactly the case the abandon FAB got wrong —
+ * the starting homeworld is usually small (well under the default 320-field
+ * keep threshold) and has nothing built on it yet, so it reads as a textbook
+ * "fresh colony, too small to keep" and the button offered to delete the only
+ * planet the player has. The game would refuse it; the button must not propose
+ * it in the first place.
+ *
+ * Counted off `#planetList` rows carrying a `planet-<n>` id — moon rows have no
+ * such id, so a planet+moon account still reads as one planet. A list we cannot
+ * read at all counts as zero and therefore also blocks: for an irreversible
+ * action, "unsure" must fail closed.
+ *
+ * @returns {boolean}
+ */
+export const hasAbandonableSurplus = () =>
+  document.querySelectorAll(GAME.SMALL_PLANET_ONLY).length > 1;
+
+/**
+ * Every planet-list row that is a GIVE-UP CANDIDATE: freshly colonized with
+ * nothing built (`used === 0`), optionally also SMALL (`max` below
+ * `belowFields`). Document order. Empty when the account has a single planet
+ * (see {@link hasAbandonableSurplus}).
+ *
+ * One criterion, two readers: the abandon FAB proposes the first of these for
+ * deletion, and the Spyglass leaves them out of "your own territory" — a
+ * colony the FAB is telling you to delete has no neighbourhood worth watching.
+ *
+ * # Why the criterion is strictly `used === 0`
+ *
+ * Triggering for any planet below `colonyMinFields` would produce false
+ * positives: a colony with ~100 fields built (legitimately kept, mid-build)
+ * falls under the threshold and would keep flashing. The signal the user
+ * actually wants is "you just colonized here and haven't touched it yet" —
+ * exactly `used === 0`; the moment one field is laid down the signal clears.
+ *
+ * @param {{ belowFields?: number }} [opts]
+ * @returns {PlanetRow[]}
+ */
+export const readFreshPlanets = ({ belowFields } = {}) => {
+  if (!hasAbandonableSurplus()) return [];
+  return readPlanetRows().filter((p) =>
+    p.used === 0 && (belowFields == null || p.max < belowFields));
+};

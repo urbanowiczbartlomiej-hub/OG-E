@@ -82,6 +82,7 @@ import { clock } from '../../lib/clock.js';
 import { parseUniverseId } from '../../lib/universeId.js';
 import { readSpySentMap, markSpySent } from '../../lib/spySentSession.js';
 import { readCurrentBody } from '../shared/currentBody.js';
+import { territoryBodies } from '../shared/territoryBodies.js';
 import {
   deriveSpy,
   renderSpy,
@@ -409,11 +410,12 @@ const captureEnv = () => {
   refreshHomeSnapshot();
 
   // ── Patrol territory (domain/patrol) — the hunting-grounds mode ──────────
-  // With a radius configured: the systems around every own body form the
-  // territory; its filtered occupants become extra strike candidates, and its
+  // With a radius configured: the systems around every own body (minus a
+  // colony the abandon FAB is proposing to delete — shared/territoryBodies)
+  // form the territory; its filtered occupants become extra strike candidates, and its
   // stale systems join the LOOK plan as patrol entries. All passive.
   const patrolSet = (cfg.patrolSystems || 0) > 0
-    ? patrolSystemKeys(bodiesStore.get().bodies, cfg.patrolSystems || 0, ctx?.server ?? {})
+    ? patrolSystemKeys(territoryBodies(), cfg.patrolSystems || 0, ctx?.server ?? {})
     : null;
   const occupants = patrolSet && patrolSet.size
     ? patrolOccupants(universePlanets, patrolSet, ctx?.ownId ?? null)
@@ -499,7 +501,7 @@ const captureEnv = () => {
       // same neighbours.
       ...((cfg.homeHours ?? 0) > 0
         ? buildHomeLookPlan({
-          systems: homeSystemKeys(bodiesStore.get().bodies),
+          systems: homeSystemKeys(territoryBodies()),
           scans: scansStore.get(),
           nowMs,
           staleMs: (cfg.homeHours ?? 0) * 3600_000,
