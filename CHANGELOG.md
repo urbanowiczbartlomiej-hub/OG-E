@@ -4,6 +4,17 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.69.1] — 2026-11-16
+
+### Fixed
+
+- **A new colony you are about to give up no longer asks you to scout its
+  neighbours.** Colonizing a planet too small to keep put two buttons up at
+  once: one to abandon it, and a Spyglass "Look · neighbours" for the very
+  system you were leaving. Such a colony is now left out of the neighbour
+  looks, the patrol radius and Home watch until you decide to keep it — the
+  moment you build anything on it, it counts as yours again.
+
 ## [1.69.0] — 2026-11-05
 
 ### Added
