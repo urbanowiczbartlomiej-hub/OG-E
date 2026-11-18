@@ -615,8 +615,52 @@ mean **203.9 ± 0.4** against 204.0 for the field-scale model, and skew −0.02
 **diameter²** (the field count) a sum-of-three. In practice: compute odds on
 fields, not on kilometres.
 
-Position ranges known so far: **P8 156–252**, **P1 96–172**, both as natural
-fields before any bonus.
+The field range of every position is in the table below.
+
+### Position table — fields, temperature, energy, deuterium
+
+Per-position parameters before any bonus, from a community reference table
+compiled on the Polish forum (2021-07-12). Every cell that can be checked
+independently was checked on transcription: each field σ equals
+`(max − min) / 6` (the sum-of-three model above), every temperature range is
+40 °C wide, and the satellite and deuterium columns are reproduced exactly by
+the two formulas below. P1 96–172 and P8 156–252 also match our own data.
+
+| Pos | Fields min | avg | max | σ | Max temp °C | Satellite energy | Deuterium factor | Mine bonus |
+|---:|---:|---:|---:|---:|---|---|---|---|
+| 1 | 96 | 134 | 172 | 12.67 | 220…260 | 60…66 | 0.56…0.40 | crystal +40 % |
+| 2 | 104 | 140 | 176 | 12.00 | 170…210 | 51…58 | 0.76…0.60 | crystal +30 % |
+| 3 | 112 | 147 | 182 | 11.67 | 120…160 | 43…50 | 0.96…0.80 | crystal +20 % |
+| 4 | 118 | 163 | 208 | 15.00 | 70…110 | 35…41 | 1.16…1.00 | — |
+| 5 | 133 | 182 | 232 | 16.50 | 60…100 | 33…40 | 1.20…1.04 | — |
+| 6 | 146 | 194 | 242 | 16.00 | 50…90 | 31…38 | 1.24…1.08 | metal +17 % |
+| 7 | 152 | 200 | 248 | 16.00 | 40…80 | 30…36 | 1.28…1.12 | metal +23 % |
+| 8 | 156 | 204 | 252 | 16.00 | 30…70 | 28…35 | 1.32…1.16 | metal +35 % |
+| 9 | 150 | 198 | 246 | 16.00 | 20…60 | 26…33 | 1.36…1.20 | metal +23 % |
+| 10 | 142 | 187 | 232 | 15.00 | 10…50 | 25…31 | 1.40…1.24 | metal +17 % |
+| 11 | 136 | 173 | 210 | 12.33 | 0…40 | 23…30 | 1.44…1.28 | — |
+| 12 | 125 | 156 | 186 | 10.17 | −10…30 | 21…28 | 1.48…1.32 | — |
+| 13 | 114 | 143 | 172 | 9.67 | −50…−10 | 15…21 | 1.64…1.48 | — |
+| 14 | 100 | 134 | 168 | 11.33 | −90…−50 | 8…15 | 1.80…1.64 | — |
+| 15 | 90 | 127 | 164 | 12.33 | −130…−90 | 1…8 | 1.96…1.80 | — |
+
+- **Fields** are natural (no class bonus, no server bonus). Class bonuses
+  multiply them by `m²` (see above): Researcher alone ×1.1025, Discoverer alone
+  ×1.21, both ×1.3225, before any Discoverer Enhancement.
+- **Max temp** is the planet's maximum temperature, drawn uniformly within the
+  40 °C band (σ 11.54). Satellite energy and the deuterium factor are given at
+  both ends of that band.
+- **Solar satellite energy** = `floor((140 + T) / 6)`, where `T` is the max
+  temperature.
+- **Deuterium production factor** = `(360 − T) / 250` (= `1.44 − 0.004·T`),
+  multiplying the synthesizer's base output. Cold outer positions produce up to
+  ~2× the deuterium of P1.
+- **Mine bonus** is the position bonus to base production: metal on P6–P10
+  (peak +35 % on P8), crystal on P1–P3.
+- Position 8 has both the widest field range and the metal peak. That is why it
+  is the standard position to roll big planets on, and relocation (field count
+  kept, temperature re-set) is how such a planet is moved somewhere cold for
+  deuterium.
 
 ## Planet identity — the `cp` counter
 
