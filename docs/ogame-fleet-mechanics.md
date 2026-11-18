@@ -499,13 +499,29 @@ is by definition a colony.
 
 **How a planet's field count is built up.** In order:
 
-1. the **natural roll** for the position. For position 8 a field-count chart
-   shared on the official forum gives **156–252, mean 204, σ ≈ 16**. That is
-   community data, not our own measurement;
-2. **diameter bonuses** (player class, lifeform tech). These enlarge the
-   diameter, and fields grow roughly with the **square** of the diameter
-   multiplier;
-3. the server's flat **bonus fields** (+30 on s163-pl), added as a constant;
+1. the **natural roll** for the position. For position 8 it is **156–252,
+   mean 204, σ = 16**, and its shape is NOT normal (see below);
+2. **diameter bonuses**, which multiply the planet's **diameter**, never its
+   field count:
+   - Discoverer player class: **+10 % diameter**. The Kaelesh lifeform tech
+     *Discoverer Enhancement* raises Discoverer class bonuses by a summed
+     percentage `E` (+0.2 % per level per planet, boosted by the lifeform tech
+     multipliers), so this term is `+10 % · (1 + E)`;
+   - Researcher alliance class: **+5 % diameter** (not boosted by `E`).
+
+   Fields grow with the **square** of the diameter, so
+
+   ```
+   m      = 1 + 0.10 · (1 + E) + 0.05      (diameter multiplier)
+   fields ≈ natural · m²                    (before steps 3–6)
+   ```
+
+   Example: `E = 53 %` gives `m = 1.203` and `m² = 1.447`, so a +20 %
+   diameter bonus means **+45 % fields**. The wrong model, *"the bonus
+   percentage is added to the field count"*, underestimates big rolls by
+   dozens of fields;
+3. the server's flat **bonus fields** (+30 on s163-pl), added as a constant
+   after the multiplier;
 4. **items** that add fields;
 5. the **Terraformer**, which adds fields as it levels and itself occupies one
    field per level;
@@ -516,7 +532,18 @@ is by definition a colony.
    "+200 per level".)
 
 Only step 1 is random. That is why a planet is re-rolled for its natural roll
-and everything else is stacked on afterwards.
+and everything else is stacked on afterwards. Because step 2 stretches the
+whole scale, a target "10 fields below the maximum" in final fields is only
+`10 / m²` ≈ 7 natural fields below 252 — much rarer than it sounds (next
+subsection).
+
+**Confirmed by the player** (the class percentages and how `E` applies) and
+**measured**: on one Discoverer + Researcher account on s163-pl, 1818 position-8
+colonizations (Apr–Nov 2026, `E` rising from ~47 % to ~53 %) back-solved through
+`(fields − 30) / m²` give a natural mean of **203.9** and σ **16.5** — the
+published 204 / 16, which were not used in the fit — and a monthly mean that
+stays flat while `E` grew. Under either wrong model the monthly mean would
+drift.
 
 **Relocating a planet keeps its field count — always** (confirmed by the
 player). Only the **temperature** changes: it is set anew within the
@@ -533,6 +560,43 @@ never actually taken. OG-E therefore treats a colonize send as a **hold, not a
 commitment**: if no colony is recorded within ~4h of dispatch (and after the
 fleet would have arrived), the slot returns to the candidate pool
 (`domain/colonizeDecisions.sentExpiresAt`).
+
+### The natural roll is a sum of three uniform draws, not a bell curve
+
+The position-8 roll behaves like the **sum of three independent uniform
+draws**, each about 32 fields wide (Irwin–Hall, n = 3, on 156–252). That
+distribution has exactly mean 204 and σ = 96/√36 = 16, hard bounds, and a
+**cubic** tail at each end:
+
+```
+P(natural ≥ x) ≈ (253 − x)³ / 202 800        near the top (x ≥ ~221)
+```
+
+(The 253 treats the drawn size as continuous on [156, 253), so a planet shown
+as 252 is any draw in [252, 253).) Each field closer to the maximum is therefore
+far harder than the last: relative odds 1 : 8 : 27 : 64 : 125 for 1, 2, 3, 4, 5
+fields from the edge.
+
+| Natural ≥ | One in (sum of 3) | One in (normal 204/16) |
+|---:|---:|---:|
+| 240 | ~90 | ~80 |
+| 245 | ~390 | ~190 |
+| 247 | ~940 | ~250 |
+| 250 | ~7 500 | ~450 |
+| 252 | ~203 000 | ~670 |
+
+**The wrong intuition:** *"the roll is normally distributed with mean 204 and
+σ 16"*. That describes the middle well, so it survives casual checks, but
+it overstates the top: 250 by ~17×, 252 by ~300×. The same three numbers
+(252 ≈ 200 000 tries, 250 ≈ 7 500, 247 ≤ 1 000) were posted independently
+on the Polish forum by a player who had studied the distribution, and they
+match the sum-of-three model almost exactly.
+
+Measured on the same 1818 colonizations: **excess kurtosis −0.41** (sum of
+three: −0.40; normal: 0), skew −0.02. Goodness of fit favours the sum of three
+(KS 0.022 vs 0.030 for the normal, χ² 12.2/10 bins vs 26.0/12). The highest
+natural roll in the set was ~249, and nothing reached 250. The normal model
+expected ~4 such rolls, the sum of three ~0.07.
 
 ## Planet identity — the `cp` counter
 
