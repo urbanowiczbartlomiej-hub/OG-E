@@ -509,7 +509,13 @@ is by definition a colony.
      multipliers), so this term is `+10 % · (1 + E)`;
    - Researcher alliance class: **+5 % diameter** (not boosted by `E`).
 
-   Fields grow with the **square** of the diameter, so
+   The game rolls a **diameter**, and the field count is derived from it:
+   **`fields = floor((diameter_km / 1000)²)`** before the server's bonus
+   fields. Checked on eight bonus-free planets of another server (position 1,
+   +30 bonus fields). Seven match to the field. Two of them, 152.87 → 182
+   and 141.99 → 171, show the game **truncates** rather than rounds. The
+   eighth had 19 extra fields from a level-3 Terraformer. Fields therefore
+   grow with the **square** of the diameter, so
 
    ```
    m      = 1 + 0.10 · (1 + E) + 0.05      (diameter multiplier)
@@ -524,7 +530,10 @@ is by definition a colony.
    after the multiplier;
 4. **items** that add fields;
 5. the **Terraformer**, which adds fields as it levels and itself occupies one
-   field per level;
+   field per level. Two measurements, level 3 = **+19** and level 14 = **+91**,
+   fit **+6 per level plus +1 on every even level**, i.e. `floor(6.5 · L)`.
+   The variant *"+1 on every odd level"* also gives 91 at level 14 but 20 at
+   level 3, so it is out. Hence level 15 = +97, not +98 (not yet observed);
 6. the Kaelesh lifeform's **Bio-Modifier**: **+2 fields per level**, active only
    while that planet's lifeform is Kaelesh. Switch the lifeform away and the
    fields disappear. Existing buildings stay, but nothing more can be built
@@ -564,7 +573,7 @@ fleet would have arrived), the slot returns to the candidate pool
 ### The natural roll is a sum of three uniform draws, not a bell curve
 
 The position-8 roll behaves like the **sum of three independent uniform
-draws**, each about 32 fields wide (Irwin–Hall, n = 3, on 156–252). That
+draws** on the **field scale**, each about 32 fields wide (Irwin–Hall, n = 3, on 156–252). That
 distribution has exactly mean 204 and σ = 96/√36 = 16, hard bounds, and a
 **cubic** tail at each end:
 
@@ -597,6 +606,17 @@ three: −0.40; normal: 0), skew −0.02. Goodness of fit favours the sum of thr
 (KS 0.022 vs 0.030 for the normal, χ² 12.2/10 bins vs 26.0/12). The highest
 natural roll in the set was ~249, and nothing reached 250. The normal model
 expected ~4 such rolls, the sum of three ~0.07.
+
+**On the field scale, not the diameter scale.** Since fields are diameter², a
+sum of three draws on the *diameter* would be a different distribution of
+fields: mean 201.4, skew +0.10. Simulated, it is rejected by the same data:
+mean **203.9 ± 0.4** against 204.0 for the field-scale model, and skew −0.02
+± 0.06 against +0.00. So the game draws a diameter in a way that makes
+**diameter²** (the field count) a sum-of-three. In practice: compute odds on
+fields, not on kilometres.
+
+Position ranges known so far: **P8 156–252**, **P1 96–172**, both as natural
+fields before any bonus.
 
 ## Planet identity — the `cp` counter
 
