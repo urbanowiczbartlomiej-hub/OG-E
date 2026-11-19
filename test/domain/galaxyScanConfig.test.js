@@ -158,3 +158,18 @@ describe('sanitizeGalaxyScanConfigForWire — colonyPassword is device-local', (
     expect(normalizeGalaxyScanConfig(wire).colonyPassword).toBe('');
   });
 });
+
+describe('normalizeGalaxyScanConfig — planet size bonus', () => {
+  it('defaults to "not read yet"', () => {
+    const cfg = normalizeGalaxyScanConfig(null);
+    expect(cfg.colonySizeBonus).toBe(0);
+    expect(cfg.colonyBonusReadAt).toBe(0);
+  });
+
+  it('keeps a read bonus, rounded to 2 decimals, and rejects garbage', () => {
+    expect(normalizeGalaxyScanConfig({ colonySizeBonus: 20.3691 }).colonySizeBonus).toBe(20.37);
+    expect(normalizeGalaxyScanConfig({ colonySizeBonus: '19,7' }).colonySizeBonus).toBe(19.7);
+    expect(normalizeGalaxyScanConfig({ colonySizeBonus: -5 }).colonySizeBonus).toBe(0);
+    expect(normalizeGalaxyScanConfig({ colonySizeBonus: 'abc' }).colonySizeBonus).toBe(0);
+  });
+});

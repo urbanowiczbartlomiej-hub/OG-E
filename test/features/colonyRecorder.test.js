@@ -49,6 +49,8 @@ import {
 } from '../../src/state/history.js';
 import { HISTORY_CP_INDEX_KEY_BASE } from '../../src/state/historyCpIndex.js';
 import { encodeCpRanges, cpRangesHas } from '../../src/domain/cpRanges.js';
+import { galaxyScanConfigStore } from '../../src/state/galaxyScanConfig.js';
+import { defaultGalaxyScanConfig } from '../../src/domain/galaxyScanConfig.js';
 
 /** @typedef {import('../../src/state/history.js').ColonyEntry} ColonyEntry */
 
@@ -183,6 +185,24 @@ describe('installColonyRecorder — synchronous path', () => {
     // range rather than an exact value, to stay robust under clock drift.
     expect(entry.timestamp).toBeGreaterThanOrEqual(before);
     expect(entry.timestamp).toBeLessThanOrEqual(Date.now());
+  });
+
+  it('stamps the planet size bonus once it has been read, never before', async () => {
+    // Not read yet: no `b` — a default 0 would mislabel the colony forever.
+    setupSidebarScene();
+    installColonyRecorder();
+    await flushMicrotasks();
+    expect(/** @type {ColonyEntry} */ (historyStore.get()[0]).b).toBeUndefined();
+
+    // Read: the bonus in force is stamped on the new colony.
+    historyStore.set([]);
+    _resetColonyRecorderForTest();
+    galaxyScanConfigStore.set({ ...galaxyScanConfigStore.get(), colonySizeBonus: 20.37, colonyBonusReadAt: 1 });
+    setupSidebarScene({ cp: 54321 });
+    installColonyRecorder();
+    await flushMicrotasks();
+    expect(/** @type {ColonyEntry} */ (historyStore.get()[0]).b).toBe(20.37);
+    galaxyScanConfigStore.set(defaultGalaxyScanConfig());
   });
 
   it('records off the overview page too — any ingame page renders the sidebar', async () => {

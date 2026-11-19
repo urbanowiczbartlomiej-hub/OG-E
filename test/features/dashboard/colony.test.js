@@ -62,7 +62,7 @@ describe('populatePositionFilter', () => {
     populatePositionFilter(sel, [entry(8), entry(15), entry(4), entry(8)]);
     const values = Array.from(sel.options).map((o) => o.value);
     expect(values).toEqual(['all', '4', '8', '15']);
-    expect(sel.options[1].textContent).toBe('Position 4');
+    expect(sel.options[1].textContent).toBe('P4');
   });
 
   it('drops old Position-N options on re-populate', () => {

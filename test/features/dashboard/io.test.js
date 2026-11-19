@@ -457,9 +457,17 @@ describe('export round-trips', () => {
     expect(downloads[0]).toBe('oge-s163-pl-colony-history.csv');
     const text = await blobs[0].text();
     const lines = text.trim().split('\n');
-    expect(lines[0]).toBe('CP,Coords,Position,Fields,Date');
+    expect(lines[0]).toBe('CP,Coords,Position,Fields,SizeBonusPct,Date');
     // timestamps are 1001/1002/1003 → newest (cp=3) first.
     expect(lines[1]).toContain('"3"');
     expect(lines[3]).toContain('"1"');
+  });
+
+  it('exportColonyCsv carries each colony size bonus, blank when unknown', async () => {
+    exportColonyCsv([{ ...colony(1), b: 20.37 }, colony(2)], UNI);
+    const lines = (await blobs[0].text()).trim().split('\n');
+    // newest first: cp=2 (no bonus) then cp=1 (20.37)
+    expect(lines[1].split(',')[4]).toBe('""');
+    expect(lines[2].split(',')[4]).toBe('"20.37"');
   });
 });

@@ -236,6 +236,12 @@ describe('parseServerData', () => {
     });
   });
 
+  it('reads the server bonus fields every planet gets', () => {
+    const xml = '<serverData timestamp="1700000000"><bonusFields>30</bonusFields></serverData>';
+    expect(parseServerData(xml).bonusFields).toBe(30);
+    expect(parseServerData('<serverData timestamp="1"></serverData>').bonusFields).toBeUndefined();
+  });
+
   it('returns {} for empty / non-string input', () => {
     expect(parseServerData('')).toEqual({});
     // @ts-expect-error — runtime guard.
