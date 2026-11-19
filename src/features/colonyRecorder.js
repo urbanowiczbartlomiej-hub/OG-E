@@ -144,6 +144,7 @@ import {
   whenColonizeDecisionsHydrated,
 } from '../state/colonizeDecisions.js';
 import { withDecision, DEC_MINE } from '../domain/colonizeDecisions.js';
+import { galaxyScanConfigStore, whenGalaxyScanConfigHydrated } from '../state/galaxyScanConfig.js';
 import { readPlanetRows } from './shared/planetRows.js';
 import { waitFor } from '../lib/dom.js';
 import { GAME } from '../lib/gameDom.js';
@@ -236,6 +237,14 @@ const tryCollect = async () => {
   }
 
   const timestamp = Date.now();
+  // Stamp the planet size bonus in force right now (one number: classes +
+  // Discoverer Enhancement, % of diameter — read from the game by
+  // features/lfBonusCapture) so the histogram can back-solve this colony's
+  // natural roll exactly, whatever the bonus becomes later. Only once it has
+  // been read: a default 0 would stamp a wrong bonus forever.
+  await whenGalaxyScanConfigHydrated();
+  const cfg = galaxyScanConfigStore.get();
+  const b = cfg.colonyBonusReadAt > 0 ? cfg.colonySizeBonus : undefined;
   historyStore.update((prev) => [
     ...prev,
     ...novel.map((r) => ({
@@ -244,6 +253,7 @@ const tryCollect = async () => {
       coords: r.coords,
       position: r.position,
       timestamp,
+      ...(b != null ? { b } : {}),
     })),
   ]);
 

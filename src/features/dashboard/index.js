@@ -50,6 +50,8 @@ import { parseSvg } from '../../lib/dom.js';
 import { EYE_GLYPH } from '../shared/buttonGlyphs.js';
 import { parseTargetPositions } from '../../domain/histogram.js';
 import { populatePositionFilter, renderColonyChart } from './colony.js';
+import { renderColonyModelChart, hasStampedBonus } from './colonyModel.js';
+import { normalizeGalaxyScanConfig, defaultGalaxyScanConfig } from '../../domain/galaxyScanConfig.js';
 import { renderFreeRegions, renderServerMap, selectCandidate, resetFreeSelection, highlightPin, _resetFreeStreakForTest } from './freeStreak.js';
 import { chipValue, setChipValue, wireChips, setChipsEnabled, toggleChipOn, setToggleChip, wireToggleChip, watchChip, allianceTagChip, countPill } from './chips.js';
 import { dangerColor01 } from '../../lib/dangerColor.js';
@@ -144,6 +146,9 @@ const SCOUT_PREFS_KEY = 'oge_colonyScoutPrefs';
  *  the `#posFilter` choice across reloads (restored once in renderAll after
  *  the Position-N options exist). Device-local like the other colony prefs. */
 const COLONY_POS_FILTER_KEY = 'oge_colonyPosFilter';
+/** Device-local Big Colony Hunting view prefs: Shown / Natural fields, model on/off. */
+const COLONY_MODE_KEY = 'oge_colonyHistMode';
+const COLONY_MODEL_KEY = 'oge_colonyHistModel';
 
 // Active Colonizations sub-tab ("histogram" = Big Colony Hunting, "scout" =
 // Galaxy Viewer) — device-local UI preference, so a reload reopens the view
@@ -275,7 +280,7 @@ let routesApi = null;
  * Colonizations tab's ⚙ Settings; the universe-selector change handler refreshes
  * it so its fields reload for the newly-selected server.
  *
- * @type {{ refresh: () => void } | null}
+ * @type {{ refresh: () => void, refreshIfIdle: () => void } | null}
  */
 let scanColonyConfigApi = null;
 
@@ -326,7 +331,7 @@ let apiIndex = null;
 /**
  * Grid bounds from the cached serverData, needed to enumerate fully-empty
  * systems in the synthetic scan map. `{}` until API data loads.
- * @type {{ galaxies?: number, systems?: number, donutGalaxy?: boolean, donutSystem?: boolean, domain?: string }}
+ * @type {{ galaxies?: number, systems?: number, donutGalaxy?: boolean, donutSystem?: boolean, domain?: string, bonusFields?: number }}
  */
 let apiBounds = {};
 /** Our own military-highscore points (from the API), for the map's threat intensity. @type {number|undefined} */
@@ -535,6 +540,12 @@ let presenceHistories = {};
 /** @type {HTMLElement} */ let statsEl;
 /** @type {HTMLElement} */ let chartEl;
 /** @type {HTMLElement} */ let countInfoEl;
+/** @type {HTMLElement | null} */ let colonyModelEl = null;
+/** @type {HTMLElement | null} */ let colonyModeChips = null;
+/** @type {HTMLButtonElement | null} */ let colonyModelToggle = null;
+/** @type {HTMLButtonElement | null} */ let colonySizeBonusBtn = null;
+/** Colonization config of the selected universe — the bonus behind the roll model. */
+let colonyCfg = defaultGalaxyScanConfig();
 /** @type {HTMLSelectElement} */ let posFilter;
 /** @type {HTMLSelectElement} */ let universeSelect;
 /** @type {HTMLElement | null} */ let importStatusEl;
@@ -804,6 +815,9 @@ const boot = async () => {
     if (keysToWatch.some((k) => k in changes)) {
       void loadAll().then(renderAll);
     }
+    // A bonus read in the game (lifeform bonuses page) lands in the config
+    // slot — reflect it in the settings editor unless the user is typing there.
+    if (galaxyScanConfigKeyFor(selectedUniverseId) in changes) scanColonyConfigApi?.refreshIfIdle();
   });
 };
 
@@ -934,6 +948,14 @@ const wireDom = () => {
   statsEl = /** @type {HTMLElement} */ (document.getElementById('statsContainer'));
   chartEl = /** @type {HTMLElement} */ (document.getElementById('chart'));
   countInfoEl = /** @type {HTMLElement} */ (document.getElementById('countInfo'));
+  colonyModelEl = document.getElementById('colonyModel');
+  colonyModeChips = document.getElementById('colonyModeChips');
+  colonyModelToggle = /** @type {HTMLButtonElement | null} */ (document.getElementById('colonyModelToggle'));
+  colonySizeBonusBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById('colonySizeBonusBtn'));
+  // Restore the Big Colony Hunting view prefs HERE, before the first render —
+  // restoring them later (with the listeners) lit the chips without redrawing.
+  setChipValue(colonyModeChips, safeLS.get(COLONY_MODE_KEY) || 'shown');
+  setToggleChip(colonyModelToggle, safeLS.get(COLONY_MODEL_KEY) === 'on');
   posFilter = /** @type {HTMLSelectElement} */ (document.getElementById('posFilter'));
   universeSelect = /** @type {HTMLSelectElement} */ (document.getElementById('universeSelect'));
   importStatusEl = document.getElementById('importStatus');
@@ -1792,6 +1814,7 @@ const loadAll = async () => {
     dangerProfiles = new Map();
     civilProfiles = new Map();
     routines = {};
+    colonyCfg = defaultGalaxyScanConfig();
     return;
   }
   const [h, s, p, op, api, tr, pr, ao, ac, bd, pl, ai, hw, sm] = await Promise.all([
@@ -1817,6 +1840,7 @@ const loadAll = async () => {
     : {};
   ownProfile = op;
   homeWatchState = hw;
+  colonyCfg = normalizeGalaxyScanConfig(await chromeStore.get(galaxyScanConfigKeyFor(selectedUniverseId)));
 
   // Build the API occupancy index (breadth layer) for the Colony Scout. Empty
   // when the in-game side hasn't populated the cache yet → Scout uses live
@@ -1836,6 +1860,7 @@ const loadAll = async () => {
       donutGalaxy: api.server ? api.server.data.donutGalaxy : undefined,
       donutSystem: api.server ? api.server.data.donutSystem : undefined,
       domain: api.server ? api.server.data.domain : undefined,
+      bonusFields: api.server ? api.server.data.bonusFields : undefined,
     };
     ownMilitary = api.military && op.id != null && api.military.ranks[String(op.id)]
       ? api.military.ranks[String(op.id)].score
@@ -1971,6 +1996,66 @@ const getFilter = () => posFilter?.value ?? 'all';
  *  first render (later renders must respect the user's live selection). */
 let posFilterRestored = false;
 
+/** Open the game's lifeform bonuses page in a small window (a normal page
+ *  load by the player — OG-E reads the bonus there and the dashboard updates
+ *  by itself; the player closes the window). Never fetched in the background
+ *  (AGENTS.md §4), and the window is never closed for the player. */
+const openLfBonuses = () => {
+  if (!/^s\d+-[a-z]+$/i.test(selectedUniverseId)) return;
+  window.open(
+    `https://${selectedUniverseId}.ogame.gameforge.com/game/index.php?page=ingame&component=lfbonuses`,
+    'oge-lfbonuses',
+    'popup,width=980,height=760',
+  );
+};
+
+/** Paint the chart header's size-bonus button: the value IS the button. */
+const paintSizeBonusBtn = () => {
+  if (!colonySizeBonusBtn) return;
+  const c = colonyCfg;
+  const read = c.colonyBonusReadAt > 0;
+  colonySizeBonusBtn.textContent = read ? `Size +${c.colonySizeBonus.toFixed(2)} %` : 'Size bonus · Read';
+  colonySizeBonusBtn.classList.toggle('warn', !read);
+  colonySizeBonusBtn.title = read
+    ? 'Planet size bonus (classes + Discoverer Enhancement), read '
+      + new Date(c.colonyBonusReadAt).toLocaleString() + ' — tap to read again'
+    : 'Opens the game’s Lifeform bonuses page; OG-E reads the planet size bonus there';
+};
+
+/**
+ * Paint the Big Colony Hunting chart: the plain bars for "All positions", the
+ * model view (Shown / Natural + expected overlay + pills) for one position.
+ *
+ * @param {ReadonlyArray<ColonyEntry>} entries
+ * @param {string} filterValue
+ * @returns {void}
+ */
+const renderColonyView = (entries, filterValue) => {
+  const pos = parseInt(filterValue, 10);
+  const single = filterValue !== 'all' && Number.isFinite(pos);
+  paintSizeBonusBtn();
+  const stamped = single && hasStampedBonus(entries);
+  setChipsEnabled(colonyModeChips, stamped, null, '');
+  if (colonyModelToggle) colonyModelToggle.disabled = !stamped;
+  if (!single || !colonyModelEl) {
+    if (colonyModelEl) colonyModelEl.textContent = '';
+    renderColonyChart({ statsEl, chartEl, countInfoEl, entries, filterLabel: filterValue });
+    return;
+  }
+  renderColonyModelChart({
+    statsEl,
+    chartEl,
+    countInfoEl,
+    modelEl: colonyModelEl,
+    entries,
+    position: pos,
+    mode: chipValue(colonyModeChips) === 'natural' ? 'natural' : 'shown',
+    showModel: toggleChipOn(colonyModelToggle),
+    // The server's flat bonus fields, from its public serverData (30 on most).
+    serverBonus: typeof apiBounds.bonusFields === 'number' ? apiBounds.bonusFields : 30,
+  });
+};
+
 /**
  * Re-render both the colony section and the galaxy section from the
  * current caches.
@@ -1996,13 +2081,7 @@ const renderAll = () => {
     ? history
     : history.filter((e) => e.position === parseInt(filterValue, 10));
 
-  renderColonyChart({
-    statsEl,
-    chartEl,
-    countInfoEl,
-    entries,
-    filterLabel: filterValue,
-  });
+  renderColonyView(entries, filterValue);
 
   // Analyzer block (Galaxy Viewer) — runs over the same `scans` data with the
   // current controls. Repainting on every renderAll keeps it in sync with
@@ -3700,6 +3779,20 @@ const wireListeners = () => {
     safeLS.set(COLONY_POS_FILTER_KEY, posFilter.value);
     renderAll();
   });
+
+  colonySizeBonusBtn?.addEventListener('click', openLfBonuses);
+
+  // Big Colony Hunting view prefs (device-local): Shown / Natural + Model.
+  wireChips(colonyModeChips, (v) => {
+    safeLS.set(COLONY_MODE_KEY, v);
+    renderAll();
+  });
+  if (colonyModelToggle) {
+    wireToggleChip(colonyModelToggle, (on) => {
+      safeLS.set(COLONY_MODEL_KEY, on ? 'on' : 'off');
+      renderAll();
+    });
+  }
 
   // Targets controls only repaint the Targets sub-tab (the candidate list is
   // already loaded; only the filter/limit we apply to it changed). Filter

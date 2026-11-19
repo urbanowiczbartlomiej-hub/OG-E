@@ -122,6 +122,7 @@
  * @property {boolean} [donutSystem]
  * @property {string} [domain]
  * @property {string} [name]
+ * @property {number} [bonusFields]  Flat bonus fields every planet gets (30 on most servers).
  */
 
 /**
@@ -400,6 +401,7 @@ export function parseServerData(xml) {
     donutSystem: elementText(xml, 'donutSystem') === '1',
     domain: elementText(xml, 'domain'),
     name: elementText(xml, 'name'),
+    bonusFields: elementText(xml, 'bonusFields') !== undefined ? Number(elementText(xml, 'bonusFields')) : undefined,
   };
 }
 

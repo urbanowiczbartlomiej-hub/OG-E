@@ -45,6 +45,14 @@
  *   reinstall while localStorage survives, and without a clock a deliberate
  *   password CLEAR would be indistinguishable from a wiped store — the backup
  *   would resurrect a password the user removed. Newest edit wins.
+ * @property {number} colonySizeBonus  Planet size bonus, % of diameter
+ *   (Discoverer class boosted by the Discoverer Enhancement, plus the
+ *   Researchers alliance) — one number, READ from the in-game lifeform bonuses
+ *   page (`features/lfBonusCapture.js`), never typed. Stamped on every new
+ *   colony (`ColonyEntry.b`). 0 = not read yet.
+ * @property {number} colonyBonusReadAt  Epoch-ms of the last read of
+ *   `colonySizeBonus` from the game (0 = never). New colonies are stamped
+ *   with the bonus only once it has been read.
  * @property {boolean} fsEnabled  Fleet-save auto-detection on/off (per-server:
  *   the "big fleet" cutoff is speed-dependent, so it lives here, not global).
  * @property {number} fsThreshold  Minimum total ships for a leg to count as a
@@ -79,6 +87,8 @@ export const defaultGalaxyScanConfig = () => ({
   colonyMinFields: 320,
   colonyPassword: '',
   colonyPasswordTs: 0,
+  colonySizeBonus: 0,
+  colonyBonusReadAt: 0,
   fsEnabled: false,
   fsThreshold: 100000,
   fsMinFlightSec: 600,
@@ -100,6 +110,19 @@ export const defaultGalaxyScanConfig = () => ({
 const coerceInt = (v, fallback) => {
   const n = Math.floor(Number(v));
   return Number.isFinite(n) && n >= 0 ? n : fallback;
+};
+
+/**
+ * Coerce a percentage (may be fractional, may arrive as "53,69") to a finite
+ * value in [0, 1000], rounded to 2 decimals; `fallback` for garbage.
+ *
+ * @param {unknown} v
+ * @param {number} fallback
+ * @returns {number}
+ */
+const coercePercent = (v, fallback) => {
+  const n = typeof v === 'string' ? Number(v.replace(',', '.')) : Number(v);
+  return Number.isFinite(n) && n >= 0 && n <= 1000 ? Math.round(n * 100) / 100 : fallback;
 };
 
 /**
@@ -132,6 +155,8 @@ export const normalizeGalaxyScanConfig = (raw) => {
     colonyPassword:
       typeof r.colonyPassword === 'string' ? r.colonyPassword : d.colonyPassword,
     colonyPasswordTs: coerceInt(r.colonyPasswordTs, d.colonyPasswordTs),
+    colonySizeBonus: coercePercent(r.colonySizeBonus, d.colonySizeBonus),
+    colonyBonusReadAt: coerceInt(r.colonyBonusReadAt, d.colonyBonusReadAt),
     // fs* are the fleet-save alarmClock knobs. Threshold / min-flight are
     // non-negative ints; offsets is a free-form duration-list string.
     fsEnabled: typeof r.fsEnabled === 'boolean' ? r.fsEnabled : d.fsEnabled,

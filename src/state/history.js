@@ -72,6 +72,12 @@ import { currentUniverseKey } from './universeKey.js';
  *   Slot number 1..15.
  * @property {number} timestamp
  *   ms since epoch of the FIRST observation. Never rewritten.
+ * @property {number} [b]
+ *   Planet size bonus (% of diameter: classes + Discoverer Enhancement) in
+ *   force when the colony was recorded — lets the histogram back-solve the
+ *   natural roll (`domain/planetRoll.js`). Absent on colonies recorded before
+ *   the bonus was read; a back-filled import or a peer can add it
+ *   (`sync/merge.mergeHistory`), never overwrite it.
  */
 
 /**

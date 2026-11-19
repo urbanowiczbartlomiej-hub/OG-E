@@ -253,6 +253,25 @@ export const initGalaxyScanConfigStore = () => {
 };
 
 /**
+ * Apply a game-side edit to the config and persist it NOW, stamping the
+ * whole-slot newest-wins clock — the game-origin counterpart of the
+ * dashboard editor's save (`features/dashboard/scanConfig.js`). Used when a
+ * feature reads a value off a page the player opened (e.g. the lifeform
+ * bonuses page → colony bonus). Writes the value before the clock so a sync
+ * can never see the new timestamp with the old value (same ordering argument
+ * as `stampDailyRunRoutesChanged`).
+ *
+ * @param {Partial<GalaxyScanConfig>} patch
+ * @returns {Promise<void>}
+ */
+export const applyGalaxyScanConfigPatch = async (patch) => {
+  const next = normalizeGalaxyScanConfig({ ...galaxyScanConfigStore.get(), ...patch });
+  galaxyScanConfigStore.set(next);
+  await chromeStore.set(currentKey(), next);
+  await chromeStore.set(currentUniverseKey(GALAXY_SCAN_CONFIG_TS_BASE, galaxyScanConfigTsKeyFor), Date.now());
+};
+
+/**
  * Tear down the persist wiring. Idempotent. Resets
  * {@link whenGalaxyScanConfigHydrated} to the pre-resolved sentinel, matching
  * the "no init has run" state (same convention as `state/targets.js`).

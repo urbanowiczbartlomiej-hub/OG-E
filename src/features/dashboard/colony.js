@@ -24,6 +24,7 @@ import {
   buildFieldBuckets,
   binFieldBuckets,
 } from '../../domain/histogram.js';
+import { sampleSpread } from '../../domain/planetRoll.js';
 
 /**
  * @typedef {import('../../state/history.js').ColonyEntry} ColonyEntry
@@ -114,7 +115,7 @@ export const populatePositionFilter = (selectEl, entries) => {
   for (const pos of sorted) {
     const opt = document.createElement('option');
     opt.value = String(pos);
-    opt.textContent = 'Position ' + pos;
+    opt.textContent = 'P' + pos;
     selectEl.appendChild(opt);
   }
 
@@ -175,37 +176,20 @@ export const renderColonyChart = (opts) => {
   }
 
   countInfoEl.textContent =
-    entries.length +
-    ' colonies recorded' +
-    (filterLabel !== 'all' ? ' (pos ' + filterLabel + ')' : '');
+    entries.length + ' colonies' + (filterLabel !== 'all' ? ' · P' + filterLabel : '');
 
   const stats = computeFieldStats(entries);
 
-  // Stat cards in the canonical order so users who scan the row by
-  // position (not label) see the same numbers in the same slots.
-  /** @type {Array<[string, number]>} */
-  const cards = [
-    ['Count', entries.length],
-    ['Min', stats.min],
-    ['Max', stats.max],
-    ['Average', stats.avg],
-    ['Median', stats.median],
-  ];
-  for (const [label, value] of cards) {
-    const card = document.createElement('div');
-    card.className = 'stat-card';
-
-    const valEl = document.createElement('div');
-    valEl.className = 'stat-value';
-    valEl.textContent = String(value);
-    card.appendChild(valEl);
-
-    const labEl = document.createElement('div');
-    labEl.className = 'stat-label';
-    labEl.textContent = label;
-    card.appendChild(labEl);
-
-    statsEl.appendChild(card);
+  // Stats as quiet pills under the chart (Best Colony Spots' legend row);
+  // the count is the #countInfo pill next to them.
+  for (const [label, value] of /** @type {Array<[string, number]>} */ ([
+    ['min', stats.min], ['max', stats.max], ['avg', stats.avg], ['median', stats.median],
+    ['σ', Number(sampleSpread(entries.map((e) => e.fields)).sd.toFixed(1))],
+  ])) {
+    const pill = document.createElement('span');
+    pill.className = 'fresh-chip';
+    pill.textContent = label + ' ' + value;
+    statsEl.appendChild(pill);
   }
 
   const buckets = buildFieldBuckets(entries);

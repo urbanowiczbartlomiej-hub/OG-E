@@ -288,8 +288,15 @@ export const mergeHistory = (local, remote) => {
   for (const h of local) byCp.set(h.cp, h);
   let changed = false;
   for (const h of remote) {
-    if (!byCp.has(h.cp)) {
+    const mine = byCp.get(h.cp);
+    if (!mine) {
       byCp.set(h.cp, h);
+      changed = true;
+    } else if (typeof mine.b !== 'number' && typeof h.b === 'number' && h.b >= 0) {
+      // Enrichment, never an overwrite: a colony recorded before its size
+      // bonus was known learns it from a peer (or a back-filled import).
+      // Local wins for every field it already has.
+      byCp.set(h.cp, { ...mine, b: h.b });
       changed = true;
     }
   }

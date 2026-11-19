@@ -53,29 +53,30 @@ const mk = (tag, css, text) => {
 };
 
 /**
- * A labelled config row: `<label> <control> <hint?>`.
+ * One command-block cell (Best Colony Spots' `.cmd-grid` idiom): a muted
+ * keyword caption, the control(s), optional unit. The sentence that explains
+ * it lives in the cell's title — labels stay keywords (CLAUDE.md UI rules).
  *
- * @param {string} labelText
- * @param {HTMLElement} control
- * @param {string} [hint]
+ * @param {string} caption
+ * @param {Array<HTMLElement | string>} parts  Controls; a string is a unit.
+ * @param {string} [title]
  * @returns {HTMLElement}
  */
-const row = (labelText, control, hint) => {
-  const r = mk('div');
-  r.className = 'cfg-row';
-  const lbl = mk('label', undefined, labelText);
-  lbl.className = 'cfg-label';
-  r.appendChild(lbl);
-  const field = mk('div');
-  field.className = 'cfg-field';
-  field.appendChild(control);
-  if (hint) {
-    const h = mk('span', undefined, hint);
-    h.className = 'cfg-hint';
-    field.appendChild(h);
+const cell = (caption, parts, title) => {
+  const c = mk('div');
+  c.className = 'cmd-cell';
+  if (title) c.title = title;
+  const cap = mk('span', undefined, caption);
+  cap.className = 'cmd-cap';
+  c.appendChild(cap);
+  for (const p of parts) {
+    if (typeof p === 'string') {
+      const u = mk('span', undefined, p);
+      u.className = 'cmd-unit';
+      c.appendChild(u);
+    } else c.appendChild(p);
   }
-  r.appendChild(field);
-  return r;
+  return c;
 };
 
 /**
@@ -108,28 +109,30 @@ const row = (labelText, control, hint) => {
  * @param {() => string} opts.getUniverseId
  * @param {string} opts.containerId   id of the (already-present) body element.
  * @param {(body: HTMLElement, setStatus: (msg: string, color?: string) => void) => EditorFields} opts.build
- * @returns {{ refresh: () => void }}
+ * @returns {{ refresh: () => void, refreshIfIdle: () => void }}
  */
 const installConfigEditor = ({ getUniverseId, containerId, build }) => {
   const body = document.getElementById(containerId);
-  if (!body) return { refresh: () => {} };
+  if (!body) return { refresh: () => {}, refreshIfIdle: () => {} };
   body.textContent = '';
 
-  const statusEl = mk('span', 'margin-left:12px;font-size:13px;');
-  statusEl.className = 'scanCfgStatus';
+  const statusEl = mk('span');
+  statusEl.className = 'scanCfgStatus cfg-status';
   /** @param {string} msg @param {string} [color] */
   const setStatus = (msg, color) => {
     statusEl.textContent = msg;
-    statusEl.style.color = color || '#888';
+    statusEl.style.color = color || '';
+    // The footnote row exists only while there is something to say.
+    controls.hidden = !msg;
   };
 
   const { fill, collect } = build(body, setStatus);
 
-  const resetBtn = /** @type {HTMLButtonElement} */ (mk('button', undefined, 'Reset to defaults'));
-  resetBtn.className = 'scanCfgReset';
-  const controls = mk('div', 'margin-top:10px;display:flex;align-items:center;gap:8px;');
-  controls.className = 'controls';
-  controls.appendChild(resetBtn);
+  // Footnote row of the command block: the autosave status, shown only while
+  // it has a message (the editor has no Reset — every field autosaves).
+  const controls = mk('div');
+  controls.className = 'cmd-cell cmd-wide';
+  controls.hidden = true;
   controls.appendChild(statusEl);
   body.appendChild(controls);
 
@@ -176,6 +179,8 @@ const installConfigEditor = ({ getUniverseId, containerId, build }) => {
     // a just-switched view).
     if (!body.contains(document.activeElement) && getUniverseId() === uni) fill(cfg);
     setStatus('Saved.', '#67c23a');
+    // A success note is a blink, not a permanent row.
+    setTimeout(() => { if (statusEl.textContent === 'Saved.') setStatus(''); }, 2000);
   };
 
   const autosave = createAutosave({ getUniverseId, save, delayMs: 500 });
@@ -205,29 +210,14 @@ const installConfigEditor = ({ getUniverseId, containerId, build }) => {
     if (t instanceof HTMLElement && t.closest('.toggle-chip')) autosave.schedule();
   });
 
-  // Reset is DESTRUCTIVE under autosave (defaults persist and sync out), so
-  // it takes two taps: the first arms, the second (within 3 s) applies.
-  /** @type {ReturnType<typeof setTimeout> | null} */
-  let resetTimer = null;
-  const disarmReset = () => {
-    if (resetTimer) clearTimeout(resetTimer);
-    resetTimer = null;
-    resetBtn.textContent = 'Reset to defaults';
+  return {
+    refresh: () => void refresh(),
+    // Repaint from storage after an edit made elsewhere (e.g. the bonus read
+    // in a game tab) — but never under a user who is typing in this editor.
+    refreshIfIdle: () => {
+      if (!body.contains(document.activeElement)) void refresh();
+    },
   };
-  resetBtn.addEventListener('click', () => {
-    if (!resetTimer) {
-      resetBtn.textContent = 'Sure? Tap again';
-      setStatus('Resets & saves defaults.', '#e6a23c');
-      resetTimer = setTimeout(() => { disarmReset(); setStatus(''); }, 3000);
-      return;
-    }
-    disarmReset();
-    fill(defaultGalaxyScanConfig());
-    setStatus('Defaults restored.', '#e6a23c');
-    autosave.schedule();
-  });
-
-  return { refresh: () => void refresh() };
 };
 
 /**
@@ -243,7 +233,7 @@ const buildColonizationFields = (body) => {
   const positionsInput = /** @type {HTMLInputElement} */ (mk('input'));
   positionsInput.type = 'text';
   positionsInput.id = 'scanCfgPositions';
-  positionsInput.size = 14;
+  positionsInput.className = 'gv-text gv-short';
   positionsInput.placeholder = 'e.g. 8,10-12,15';
   positionsInput.title =
     'Target positions (only these count as colonizable / drive the Scan + Colonize buttons). A list or range, e.g. 8,10-12,15.';
@@ -253,14 +243,14 @@ const buildColonizationFields = (body) => {
   const preferInput = /** @type {HTMLButtonElement} */ (mk('button'));
   preferInput.type = 'button';
   preferInput.className = 'toggle-chip';
-  preferInput.textContent = 'Enabled';
+  preferInput.textContent = 'Others first';
   preferInput.id = 'scanCfgPrefer';
   wireToggleChip(preferInput, () => {});
 
   const preferFarthestInput = /** @type {HTMLButtonElement} */ (mk('button'));
   preferFarthestInput.type = 'button';
   preferFarthestInput.className = 'toggle-chip';
-  preferFarthestInput.textContent = 'Enabled';
+  preferFarthestInput.textContent = 'Farthest first';
   preferFarthestInput.id = 'scanCfgPreferFarthest';
   wireToggleChip(preferFarthestInput, () => {});
   preferFarthestInput.title =
@@ -269,7 +259,8 @@ const buildColonizationFields = (body) => {
   const colonyMinGapInput = /** @type {HTMLInputElement} */ (mk('input'));
   colonyMinGapInput.type = 'text';
   colonyMinGapInput.id = 'scanCfgColonyMinGap';
-  colonyMinGapInput.size = 8;
+  colonyMinGapInput.className = 'gv-text gv-short';
+  colonyMinGapInput.inputMode = 'numeric';
   colonyMinGapInput.placeholder = 'e.g. 20';
   colonyMinGapInput.title =
     'Minimum seconds between two colony-ship arrivals — the Send-Col button waits out this gap to avoid stacking arrivals.';
@@ -277,7 +268,8 @@ const buildColonizationFields = (body) => {
   const colonyMinFieldsInput = /** @type {HTMLInputElement} */ (mk('input'));
   colonyMinFieldsInput.type = 'text';
   colonyMinFieldsInput.id = 'scanCfgColonyMinFields';
-  colonyMinFieldsInput.size = 8;
+  colonyMinFieldsInput.className = 'gv-text gv-short';
+  colonyMinFieldsInput.inputMode = 'numeric';
   colonyMinFieldsInput.placeholder = 'e.g. 200';
   colonyMinFieldsInput.title =
     'A fresh colony with fewer than this many fields is offered for abandon on its overview page.';
@@ -285,25 +277,33 @@ const buildColonizationFields = (body) => {
   const colonyPasswordInput = /** @type {HTMLInputElement} */ (mk('input'));
   colonyPasswordInput.type = 'password';
   colonyPasswordInput.id = 'scanCfgColonyPassword';
-  colonyPasswordInput.size = 14;
+  colonyPasswordInput.className = 'gv-text';
   colonyPasswordInput.title =
     'Account password, autofilled into the game’s give-up confirmation form during the abandon flow. '
     + 'Stays on THIS device only — never gist-synced and never written into export files; '
     + 'enter it once per device that runs the abandon flow. The game tab keeps a local backup '
     + 'that survives an extension reinstall.';
 
-  // Packed into the same responsive grid (1 → 2 → 3 columns) the rescan
-  // fields use, so both groups of the combined editor read as columns rather
-  // than one tall single-column stack.
-  const grid = mk('div');
-  grid.className = 'cfg-grid';
-  grid.appendChild(row('Target positions', positionsInput, 'list or range, e.g. 7-9, 15'));
-  grid.appendChild(row('Prefer neighbouring galaxies', preferInput, 'more predictable arrival times'));
-  grid.appendChild(row('Prefer farthest systems first', preferFarthestInput, 'better arrival spread; off = nearest first'));
-  grid.appendChild(row('Min gap between arrivals (sec)', colonyMinGapInput));
-  grid.appendChild(row('Min fields to keep colony', colonyMinFieldsInput));
-  grid.appendChild(row('Account password (for abandon)', colonyPasswordInput));
-  body.appendChild(grid);
+  // Typing filter: drop characters a field can never hold, as they are typed
+  // (numbers: digits only; positions: digits, commas, ranges, spaces).
+  /** @param {HTMLInputElement} input @param {RegExp} notAllowed */
+  const allowOnly = (input, notAllowed) => input.addEventListener('input', () => {
+    const clean = input.value.replace(notAllowed, '');
+    if (clean !== input.value) input.value = clean;
+  });
+  allowOnly(positionsInput, /[^\d,\- ]/g);
+  allowOnly(colonyMinGapInput, /\D/g);
+  allowOnly(colonyMinFieldsInput, /\D/g);
+
+  // Best Colony Spots' command block: two columns, stacking on phones.
+  // Each control carries a short visible note (like a unit) instead of a
+  // hover — touch has no hover (CLAUDE.md UI rules).
+  body.appendChild(cell('Positions', [positionsInput, 'to hunt (8, 10-12)']));
+  body.appendChild(cell('Galaxies', [preferInput, 'for closer arrival times']));
+  body.appendChild(cell('Arrival gap', [colonyMinGapInput, 's between arrivals']));
+  body.appendChild(cell('Systems', [preferFarthestInput, 'to keep the arrival gap']));
+  body.appendChild(cell('Keep from', [colonyMinFieldsInput, 'fields, else abandon']));
+  body.appendChild(cell('Password', [colonyPasswordInput, 'to confirm abandoning']));
 
   return {
     fill: (cfg) => {
@@ -346,7 +346,7 @@ const buildScanColonyFields = (body) => {
  * universe change.
  *
  * @param {{ getUniverseId: () => string }} opts
- * @returns {{ refresh: () => void }}
+ * @returns {{ refresh: () => void, refreshIfIdle: () => void }}
  */
 export const installScanColonyConfig = ({ getUniverseId }) =>
   installConfigEditor({

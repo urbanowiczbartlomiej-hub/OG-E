@@ -747,13 +747,14 @@ export const exportColonyCsv = (entries, universeId) => {
   if (typeof document === 'undefined') return;
 
   const sorted = [...entries].sort((a, b) => b.timestamp - a.timestamp);
-  const header = 'CP,Coords,Position,Fields,Date';
+  const header = 'CP,Coords,Position,Fields,SizeBonusPct,Date';
   const rows = sorted.map((e) =>
     [
       csvField(e.cp),
       csvField(e.coords),
       csvField(e.position),
       csvField(e.fields),
+      csvField(typeof e.b === 'number' ? e.b : ''),
       csvField(new Date(e.timestamp).toISOString()),
     ].join(','),
   );

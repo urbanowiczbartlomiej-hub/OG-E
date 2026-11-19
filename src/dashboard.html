@@ -220,6 +220,31 @@
 
   .empty { text-align: center; color: #666; padding: 60px; font-size: 16px; }
 
+  /* Colony roll model (features/dashboard/colonyModel.js): the expected
+     distribution as one thin continuous line with a faint shade, stretched
+     over the bar area (above the 40px + 4px label strip, 220px tall). */
+  .chart-model { position: absolute; left: 4px; bottom: 44px; width: calc(100% - 4px); height: 220px; pointer-events: none; overflow: visible; }
+  .chart-model-shade { fill: rgba(224, 180, 95, .07); }
+  .chart-model-line { fill: none; stroke: rgba(224, 180, 95, .9); stroke-width: 1.25; vector-effect: non-scaling-stroke; }
+  @media (max-width: 640px) { .chart-model { bottom: 76px; } }
+  /* Big Colony Hunting card: the chart sits in a .gv-card; stats + the
+     bonus prompt ride one row of .fresh-chip pills under it (BCS legend). */
+  #colonyChartCard .chart-container { margin-bottom: 0; }
+  .colony-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -4px 0 16px; }
+  .colony-legend .fresh-chip.dim { opacity: .5; }
+  .colony-legend .fresh-chip:empty, .colony-legend .colony-model:empty { display: none; }
+  .colony-stats, .colony-model { display: contents; }
+  .colony-model .chip-btn { cursor: pointer; font: inherit; font-size: 11px; }
+  .gv-card-head select.gv-select, .gv-config input.gv-text {
+    background: #0d1620; border: 1px solid #2a4a5a; color: #cfe;
+    padding: 4px 8px; border-radius: 6px; font-size: 12px; font-family: inherit;
+  }
+  .gv-config input.gv-text { width: 120px; }
+  .gv-config input.gv-text.gv-short { width: 76px; }
+  .gv-config input.gv-text:focus, .gv-card-head select.gv-select:focus { outline: none; border-color: #4a9eff; }
+  .gv-config .cfg-status { font-size: 11px; color: #66788a; }
+  .cmd-cell[hidden] { display: none; }
+
   /* ONE shared idiom for wide tables: the wrapper scrolls sideways, the
      page NEVER does (hoisted from the Spyglass players table). Applied to
      every ≥7-column table (players, dossier per-body, GV streak/candidate). */
@@ -642,6 +667,11 @@
     -webkit-tap-highlight-color: transparent;
   }
   .toggle-chip.on { border-color: #4a9eff; background: #17395d; color: #eaf4ff; }
+  /* A toggle-chip that asks for an action (e.g. the colony size bonus not read yet). */
+  .toggle-chip.warn { color: #e0b45f; border-color: #5a4a28; }
+  /* Inapplicable here (e.g. Model on "All" positions): greyed like a disabled
+     chip group, keeps its remembered on/off state for when it applies again. */
+  .toggle-chip:disabled { opacity: .4; cursor: default; pointer-events: none; }
   @media (hover: hover) {
     .chip-group button:hover { border-color: #4a9eff; color: #cfe4ff; }
     .toggle-chip:hover { border-color: #4a9eff; color: #cfe4ff; }
@@ -1523,25 +1553,32 @@
   </div>
 
   <div class="subtabpane active" data-subtab="histogram">
-    <p style="color:#888;font-size:13px;margin-bottom:16px;">
-      The field size of each of your new colonies. The in-game <strong>Colonization</strong> button sends
-      several colonize missions back-to-back with a minimum gap, so when a new colony turns out too small
-      there's time to abandon it just before the next one lands. Enter your account password in the settings
-      below and the in-game <strong>Abandon</strong> button removes an undersized colony in a couple of taps.
-    </p>
-    <div class="controls">
-      <label>Position filter:</label>
-      <select id="posFilter"><option value="all">All positions</option></select>
-      <button id="exportCsvBtn">Export CSV</button>
-      <span id="countInfo" style="color:#888;font-size:13px;margin-left:auto;"></span>
-    </div>
-    <div class="stats" id="statsContainer"></div>
-    <div class="chart-container"><div class="chart" id="chart"></div></div>
-    <div class="settings-panel settings-panel-open">
-      <h2 class="settings-open-title">⚙ Colonization &amp; abandon settings</h2>
-      <div class="settings-body">
-        <div id="colonizationConfigBody"></div>
+    <!-- Same visual language as Best Colony Spots (next sub-tab): ONE config
+         command block on top, then the chart card whose header carries its
+         own view controls, and quiet pills under the chart. -->
+    <p style="color:#888;font-size:13px;margin:0 0 12px;">Field sizes of your new colonies — and what the roll makes likely.</p>
+
+    <div class="gv-card gv-config cmd-grid" id="colonizationConfigBody"></div>
+
+    <div class="gv-card" id="colonyChartCard">
+      <div class="gv-card-head">
+        <span class="gv-card-title">System position</span>
+        <select id="posFilter" class="gv-select"><option value="all">All</option></select>
+        <div class="chip-group seg" id="colonyModeChips" data-value="shown">
+          <button type="button" data-value="shown" class="on" title="Fields as the game shows them">Shown</button>
+          <button type="button" data-value="natural" title="The roll before class bonuses and server fields">Natural</button>
+        </div>
+        <button type="button" class="toggle-chip" id="colonyModelToggle" style="margin-left:auto;" title="Expected distribution of the roll: a sum of three uniform draws (Bates / Irwin–Hall of order 3) over the position&#39;s field range — matches the game&#39;s data, unlike a normal curve at the top end">Model</button>
+        <button type="button" class="toggle-chip" id="colonySizeBonusBtn" style="font-variant-numeric:tabular-nums;">Size bonus · Read</button>
+        <button type="button" class="toggle-chip" id="exportCsvBtn" title="Download the colony history as CSV">CSV</button>
       </div>
+      <div class="chart-container"><div class="chart" id="chart"></div></div>
+    </div>
+    <!-- Stats ride UNDER the card, as Best Colony Spots' legend row does. -->
+    <div class="colony-legend">
+      <span id="countInfo" class="fresh-chip"></span>
+      <span id="statsContainer" class="colony-stats"></span>
+      <span id="colonyModel" class="colony-model"></span>
     </div>
   </div>
 

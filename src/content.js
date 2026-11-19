@@ -75,6 +75,7 @@ import { initPresenceLedgerStore } from './state/presenceLedger.js';
 import { installColonyRecorder } from './features/colonyRecorder.js';
 import { installPlanetBarCapture } from './features/planetBarCapture.js';
 import { installOwnProfile } from './features/ownProfile.js';
+import { installLfBonusCapture } from './features/lfBonusCapture.js';
 import { installBadges } from './features/badges/index.js';
 import { installSendExpedition } from './features/sendExpedition/index.js';
 import { installSendColony } from './features/sendColony/index.js';
@@ -257,6 +258,9 @@ const installDomFeatures = () => {
   // Colony Scout can score neighbours relative to us. Top-frame only (the
   // header bar lives there; one write per page load suffices).
   if (window.top === window.self) safeInstall('ownProfile', installOwnProfile);
+  // Lifeform bonuses page only: read the Discoverer bonus total + classes for
+  // the colony histogram's roll model. Passive (a page the player opened).
+  if (window.top === window.self) safeInstall('lfBonusCapture', installLfBonusCapture);
   safeInstall('badges', installBadges);
   safeInstall('eventMenuHighlight', installEventMenuHighlight);
   safeInstall('traderMenuHighlight', installTraderMenuHighlight);

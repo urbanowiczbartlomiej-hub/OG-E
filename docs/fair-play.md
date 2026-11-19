@@ -184,6 +184,26 @@ Two properties are deliberate and worth keeping:
   probers says so rather than reading as "no scans". A filter the player cannot
   see the effect of is a filter that lies to them.
 
+## Colony roll model + lifeform-bonus read — classification (GREEN)
+
+The Big Colony Hunting histogram's roll model (`domain/planetRoll.js`,
+`features/dashboard/colonyModel.js`) and the bonus it needs
+(`features/lfBonusCapture.js`), sorted into `AGENTS.md`'s buckets before
+any code was written:
+
+- **Roll model in the dashboard** — **Allowed** (§1.2 display). Arithmetic over
+  the colony history OG-E already records; the output is a chart and a table.
+- **Reading the Discoverer bonus** — **Allowed** (§4: "Reading data that's
+  already on a page the player themselves opened is not a background call").
+  The capture runs only on the lifeform bonuses page the player opened, reads
+  one total and two page meta tags, and sends nothing.
+- **The dashboard's `Read` button** — **Allowed**, by construction: it only
+  OPENS that game page in a new tab (a normal page load by the player). It
+  deliberately does NOT fetch the page in the background — a request fired from
+  a click in the dashboard, outside a game page load, would be a forbidden
+  background call (§4) and would show the player as active. The value is
+  read-only in the dashboard: it can only come from that page.
+
 ## What OG-E never does (all grep-verified)
 
 - No origination of a game **request**, and no modification of one beyond the

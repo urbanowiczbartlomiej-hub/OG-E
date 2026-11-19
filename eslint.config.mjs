@@ -42,6 +42,22 @@ const crossFeatureZones = featureNames.map((name) => ({
     'Put shared logic in features/shared or lib/.',
 }));
 
+// Paths the developer excludes from git LOCALLY (`.git/info/exclude` — per
+// clone, never committed) are personal scratch, not project source: lint
+// should skip them just as git does. Directory entries ("foo/") become "foo/**".
+const localGitExcludes = (() => {
+  try {
+    return fs.readFileSync('.git/info/exclude', 'utf8')
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith('#') && !l.startsWith('!'))
+      .map((p) => p.replace(/^\//, ''))
+      .map((p) => (p.endsWith('/') ? `${p}**` : p));
+  } catch {
+    return [];
+  }
+})();
+
 export default [
   {
     // Generated/vendored output and tooling caches are never linted. `.claude/`
@@ -51,7 +67,7 @@ export default [
     // `site/dist/**` to wygenerowany output strony (m.in. VERBATIM kopie plików
     // z `src/` pod `assets/src/…` na potrzeby żywego FAB-a) — lintowanie go
     // dublowałoby błędy z oryginałów i zależałoby od tego, czy ktoś zbudował stronę.
-    ignores: ['dist/**', 'site/dist/**', 'node_modules/**', 'coverage/**', '**/*.min.js', '.claude/**'],
+    ignores: ['dist/**', 'site/dist/**', 'node_modules/**', 'coverage/**', '**/*.min.js', '.claude/**', ...localGitExcludes],
   },
 
   js.configs.recommended,
