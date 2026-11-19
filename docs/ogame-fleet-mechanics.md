@@ -525,7 +525,9 @@ is by definition a colony.
    Example: `E = 53 %` gives `m = 1.203` and `m² = 1.447`, so a +20 %
    diameter bonus means **+45 % fields**. The wrong model, *"the bonus
    percentage is added to the field count"*, underestimates big rolls by
-   dozens of fields;
+   dozens of fields. The game shows the Discoverer part directly: on the
+   *Lifeform bonuses* page the Discoverer class section lists "planet size"
+   as base 10 % and "with bonus" 10 % × (1 + E), next to the class total E;
 3. the server's flat **bonus fields** (+30 on s163-pl), added as a constant
    after the multiplier;
 4. **items** that add fields;
@@ -614,6 +616,15 @@ mean **203.9 ± 0.4** against 204.0 for the field-scale model, and skew −0.02
 ± 0.06 against +0.00. So the game draws a diameter in a way that makes
 **diameter²** (the field count) a sum-of-three. In practice: compute odds on
 fields, not on kilometres.
+
+**The bonus multiplies the REAL-valued roll, not a whole number.** With one
+fixed bonus (+20.37 % diameter, ×1.44889 fields) on 514 colonizations, 29 of
+the 97 distinct field counts seen (281, 288, 291, 294, …) cannot come from
+`floor(N × 1.44889) + 30` for any whole N — consecutive whole rolls skip about
+every third value. Only a fractional roll produces them, so the game computes
+`floor(S × m²)` on the continuous draw S and truncates once, at the end.
+The practical top is `floor(252 × m²) + bonus fields` (395 at ×1.44889); the
+sliver of a "252" draw above 252 could add one more field, at ~1 in 3 million.
 
 The field range of every position is in the table below.
 
