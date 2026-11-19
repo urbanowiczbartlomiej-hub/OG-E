@@ -4,6 +4,41 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.70.0] — 2026-11-19
+
+### Added
+
+- **The colony chart now shows what to expect.** Pick a position and switch on
+  `Model`: a thin line shows how many colonies of each size the game's roll
+  should give you, so you can see how lucky (or not) your hunting has been.
+  With only a few colonies the line is drawn for 50, so you see the shape your
+  results are growing into.
+- **Shown / Natural.** `Natural` takes your class and lifeform bonuses and the
+  server's bonus fields back out of every colony, so big-planet hunts compare
+  like with like, whatever your bonus was when you colonized.
+- **Your planet size bonus, read from the game.** The `Size` button in the
+  chart header opens the game's Lifeform bonuses page in a small window; OG-E
+  reads your bonus there (nothing is sent to the game) and records it with
+  every new colony. The CSV export and cloud sync carry it too.
+- **Spread at a glance.** Under the chart: count, min, max, average, median,
+  σ and kurtosis next to the model's.
+
+### Changed
+
+- **Big Colony Hunting looks like Best Colony Spots**: one compact settings
+  card with a short note next to each field, and the chart's controls in the
+  chart's own header. The Reset button is gone — every field saves itself.
+
+### Fixed
+
+- **A new colony you are about to give up no longer asks you to scout its
+  neighbours.** Colonizing a planet too small to keep put two buttons up at
+  once: one to abandon it, and a Spyglass "Look · neighbours" for the very
+  system you were leaving. Such a colony is now left out of the neighbour
+  looks, the patrol radius and Home watch until you decide to keep it — the
+  moment you build anything on it, it counts as yours again. (Prepared as
+  1.69.1, which never reached the stores.)
+
 ## [1.69.1] — 2026-11-16
 
 ### Fixed
