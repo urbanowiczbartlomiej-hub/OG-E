@@ -179,6 +179,7 @@ describe('isCompleteBody', () => {
 });
 
 describe('withoutBodiesAt', () => {
+  /** @param {number} g @param {number} s @param {number} p @param {number} [type] */
   const b = (g, s, p, type = 1) => ({ cp: g * 1000 + s + p + type, name: 'x', galaxy: g, system: s, position: p, type });
 
   it('drops planet and moon on a listed slot, keeps everything else', () => {
