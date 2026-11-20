@@ -4,6 +4,23 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.71.0] — 2026-11-20
+
+### Added
+
+- **Tap any bar of the colony chart to see how hard that size is.** Pick a
+  position and tap a bar — an empty one too — to see how many colonies you
+  have there, how many the model expects, and the odds that your next colony
+  lands exactly there, or at least / at most that big. The odds use your
+  current planet size bonus, and the card says which one.
+
+### Fixed
+
+- **The Natural view no longer draws a false saw-tooth.** Bars alternated
+  between tall and short because converting fields back to the natural roll
+  gave some sizes one value and others two. Each colony is now spread over the
+  range it can come from, so the bars show only real variation.
+
 ## [1.70.0] — 2026-11-19
 
 ### Added
