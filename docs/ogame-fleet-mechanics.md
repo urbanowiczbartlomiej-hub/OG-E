@@ -626,6 +626,20 @@ every third value. Only a fractional roll produces them, so the game computes
 The practical top is `floor(252 × m²) + bonus fields` (395 at ×1.44889); the
 sliver of a "252" draw above 252 could add one more field, at ~1 in 3 million.
 
+**Not a sum of three WHOLE numbers.** A natural reading of "sum of three
+draws" is three whole numbers (e.g. 52–84 each) added up. On a second sample
+(569 colonizations at one fixed +20.37 %), 194 of them show a field count that
+such a whole-number roll could never produce, so that variant is ruled out.
+A mean of three whole draws (steps of ⅓ field) and a continuous draw fit the
+data almost equally well (log-likelihood −2565.0 vs −2564.1); the game showing
+diameters in whole kilometres (a step of ~0.03 field) is effectively
+continuous. Parity carries no signal: 50.8 % of those counts are even.
+
+**Histogram noise, for scale.** With ~2 000 colonizations spread over ~90
+one-field bars, a bar holds ~22 colonies and swings ±5 (±20 %) by chance alone;
+measured, the bars' dispersion against the model is 1.00 — pure noise. Halving
+that wobble takes four times the colonizations.
+
 The field range of every position is in the table below.
 
 ### Position table — fields, temperature, energy, deuterium
