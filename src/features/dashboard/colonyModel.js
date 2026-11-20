@@ -21,6 +21,9 @@ import {
   entryMultiplier,
   naturalFields,
   expectedCurve,
+  naturalInterval,
+  spreadOverBars,
+  barChance,
   sampleSpread,
   ROLL_KURTOSIS,
   KURTOSIS_MIN_N,
@@ -55,6 +58,12 @@ const el = (tag, cls, text) => {
   return e;
 };
 
+/** @param {number} v */
+const fmtInt = (v) => (Number.isFinite(v) ? Math.round(v).toLocaleString('en-US').replace(/,/g, ' ') : '∞');
+
+/** One document-level "click elsewhere closes the card" listener for the page. */
+let outsideCloseWired = false;
+
 /**
  * Does this position's view have anything to model? (Drives the Natural chip.)
  *
@@ -76,6 +85,8 @@ export const hasStampedBonus = (entries) => entries.some((e) => entryMultiplier(
  *   mode: 'shown' | 'natural',
  *   showModel: boolean,
  *   serverBonus: number,
+ *   todayK: number | null,
+ *   todayBonus: number | null,
  * }} o
  * @returns {void}
  */
@@ -151,7 +162,17 @@ export const renderColonyModelChart = (o) => {
   /** @type {Array<{ start: number, end: number, count: number }>} */
   const bins = [];
   for (let s = lo; s <= hi; s += w) bins.push({ start: s, end: Math.min(s + w - 1, hi), count: 0 });
-  for (const v of values) bins[Math.min(bins.length - 1, Math.floor((v - lo) / w))].count++;
+  if (mode === 'natural') {
+    // Spread each colony over the natural interval it can come from — counting
+    // it at one natural field draws a false saw-tooth (domain spreadOverBars).
+    const spread = spreadOverBars(
+      entries.map((e) => /** @type {[number, number]} */ (naturalInterval(e, serverBonus))),
+      lo, w, bins.length,
+    );
+    spread.forEach((c, i) => { bins[i].count = c; });
+  } else {
+    for (const v of values) bins[Math.min(bins.length - 1, Math.floor((v - lo) / w))].count++;
+  }
 
   /** @type {Map<number, number> | undefined} */
   let byK;
@@ -166,14 +187,18 @@ export const renderColonyModelChart = (o) => {
     : null;
   const scale = Math.max(1, ...bins.map((b) => b.count), ...(curve ? curve.map((p) => p.y) : []));
 
-  for (const bin of bins) {
+  for (const [i, bin] of bins.entries()) {
     const label = bin.start === bin.end ? String(bin.start) : `${bin.start}-${bin.end}`;
     const group = el('div', 'bar-group');
-    group.appendChild(el('div', 'bar-count', bin.count ? String(bin.count) : ''));
+    group.dataset.i = String(i);
+    // Natural counts are fractional (spread colonies): label the rounded value.
+    const shownCount = Math.round(bin.count);
+    group.appendChild(el('div', 'bar-count', shownCount ? String(shownCount) : ''));
     const bar = el('div', 'bar');
-    bar.style.height = (bin.count ? Math.max(Math.round((bin.count / scale) * BAR_AREA_PX), MIN_BAR_PX) : 0) + 'px';
-    if (!bin.count) bar.style.minHeight = '0';
-    bar.title = `${label}: ${bin.count}x`;
+    const visible = bin.count >= 0.05;
+    bar.style.height = (visible ? Math.max(Math.round((bin.count / scale) * BAR_AREA_PX), MIN_BAR_PX) : 0) + 'px';
+    if (!visible) bar.style.minHeight = '0';
+    bar.title = `${label}: ${Number.isInteger(bin.count) ? bin.count : bin.count.toFixed(1)}x`;
     group.appendChild(bar);
     group.appendChild(el('div', 'bar-label', label));
     chartEl.appendChild(group);
@@ -201,5 +226,81 @@ export const renderColonyModelChart = (o) => {
     svg.appendChild(shade);
     svg.appendChild(line);
     chartEl.appendChild(svg);
+  }
+  // ── Tap a bar (empty ones too) → a pinned card: mine, expected, and how hard
+  // that size is for the NEXT colony at today's bonus. Same card as the Best
+  // Colony Spots strips (.region-pop): floats over the chart on desktop, sits
+  // inline under it on touch. Click the same bar or anywhere else to close.
+  const holder = /** @type {HTMLElement} */ (chartEl.parentElement);
+  holder.querySelector('.colony-pop')?.remove();
+  const pop = el('div', 'region-pop pinned colony-pop');
+  holder.appendChild(pop);
+  chartEl.classList.add('clickable');
+  /** @type {HTMLElement | null} */
+  let selected = null;
+  const close = () => {
+    pop.style.display = 'none';
+    selected?.classList.remove('sel');
+    selected = null;
+  };
+  /** @param {string} label @param {string} value */
+  const row = (label, value) => {
+    const r = el('div', 'rp-row');
+    r.appendChild(el('span', 'rp-k', label));
+    r.appendChild(el('span', undefined, value));
+    pop.appendChild(r);
+  };
+  /** @param {number} p */
+  const oneIn = (p) => (p > 0 ? `1 in ${fmtInt(1 / p)}` : 'not reachable');
+  chartEl.onclick = (ev) => {
+    const target = ev.target instanceof Element ? ev.target : null;
+    const group = /** @type {HTMLElement | null} */ (target?.closest('.bar-group') ?? null);
+    if (!group || group === selected) { close(); return; }
+    const i = Number(group.dataset.i);
+    const bin = bins[i];
+    selected?.classList.remove('sel');
+    selected = group;
+    group.classList.add('sel');
+    pop.textContent = '';
+    const label = bin.start === bin.end ? String(bin.start) : `${bin.start}–${bin.end}`;
+    pop.appendChild(el('div', 'rp-head', mode === 'natural' ? `Natural ${label}` : `${label} fields`));
+    row('Mine', String(Math.round(bin.count)));
+    if (modelled) {
+      // Expected for the colonies actually on screen (not the 50-colony target).
+      const exp = mode === 'natural'
+        ? n * barChance({ start: bin.start, end: bin.end, min, max, k: null }).inBar
+        : [...(byK ?? new Map())].reduce((s, [k, c]) => s + c * barChance({ start: bin.start, end: bin.end, min, max, k, serverBonus }).inBar, 0);
+      row('Expected', exp.toFixed(1));
+    }
+    const k = mode === 'natural' ? null : o.todayK;
+    if (mode === 'natural' || k != null) {
+      const ch = barChance({ start: bin.start, end: bin.end, min, max, k, serverBonus });
+      row('Next colony', oneIn(ch.inBar));
+      // The tail on the bar's own side: right of the middle "or more", left
+      // of it "or less" (whichever tail is the smaller one).
+      if (ch.atMost < ch.atLeast) row('This or less', oneIn(ch.atMost));
+      else row('This or more', oneIn(ch.atLeast));
+      // Shown fields: the odds are for TODAY's bonus. Say so — a colony you
+      // rolled with a smaller bonus can sit where today's odds read "not
+      // reachable", and that is not a contradiction.
+      if (k != null && o.todayBonus != null) {
+        pop.appendChild(el('div', 'rp-foot', `Odds at today's size bonus +${o.todayBonus.toFixed(2)} %`));
+      }
+    }
+    // Desktop: float above the bar, kept inside the chart. Touch: CSS makes it
+    // an inline block under the chart and ignores these coordinates.
+    pop.style.display = 'block';
+    const x = group.offsetLeft + group.offsetWidth / 2;
+    const left = Math.max(0, Math.min(x - pop.offsetWidth / 2, holder.clientWidth - pop.offsetWidth));
+    pop.style.left = `${left}px`;
+  };
+  if (!outsideCloseWired) {
+    outsideCloseWired = true;
+    document.addEventListener('click', (ev) => {
+      const t = ev.target instanceof Element ? ev.target : null;
+      if (t?.closest('#chart, .colony-pop')) return;
+      document.querySelectorAll('.colony-pop').forEach((p) => { /** @type {HTMLElement} */ (p).style.display = 'none'; });
+      document.querySelectorAll('#chart .bar-group.sel').forEach((g) => g.classList.remove('sel'));
+    });
   }
 };

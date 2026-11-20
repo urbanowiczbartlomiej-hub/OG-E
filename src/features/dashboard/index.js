@@ -51,6 +51,7 @@ import { EYE_GLYPH } from '../shared/buttonGlyphs.js';
 import { parseTargetPositions } from '../../domain/histogram.js';
 import { populatePositionFilter, renderColonyChart } from './colony.js';
 import { renderColonyModelChart, hasStampedBonus } from './colonyModel.js';
+import { fieldMultiplier } from '../../domain/planetRoll.js';
 import { normalizeGalaxyScanConfig, defaultGalaxyScanConfig } from '../../domain/galaxyScanConfig.js';
 import { renderFreeRegions, renderServerMap, selectCandidate, resetFreeSelection, highlightPin, _resetFreeStreakForTest } from './freeStreak.js';
 import { chipValue, setChipValue, wireChips, setChipsEnabled, toggleChipOn, setToggleChip, wireToggleChip, watchChip, allianceTagChip, countPill } from './chips.js';
@@ -2039,6 +2040,10 @@ const renderColonyView = (entries, filterValue) => {
   if (colonyModelToggle) colonyModelToggle.disabled = !stamped;
   if (!single || !colonyModelEl) {
     if (colonyModelEl) colonyModelEl.textContent = '';
+    // Bar cards belong to the single-position view only.
+    chartEl.onclick = null;
+    chartEl.classList.remove('clickable');
+    chartEl.parentElement?.querySelector('.colony-pop')?.remove();
     renderColonyChart({ statsEl, chartEl, countInfoEl, entries, filterLabel: filterValue });
     return;
   }
@@ -2053,6 +2058,9 @@ const renderColonyView = (entries, filterValue) => {
     showModel: toggleChipOn(colonyModelToggle),
     // The server's flat bonus fields, from its public serverData (30 on most).
     serverBonus: typeof apiBounds.bonusFields === 'number' ? apiBounds.bonusFields : 30,
+    // Today's field multiplier — the next colony gets it (bar card odds).
+    todayK: colonyCfg.colonyBonusReadAt > 0 ? fieldMultiplier(colonyCfg.colonySizeBonus) : null,
+    todayBonus: colonyCfg.colonyBonusReadAt > 0 ? colonyCfg.colonySizeBonus : null,
   });
 };
 

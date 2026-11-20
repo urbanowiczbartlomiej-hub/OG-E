@@ -229,7 +229,17 @@
   @media (max-width: 640px) { .chart-model { bottom: 76px; } }
   /* Big Colony Hunting card: the chart sits in a .gv-card; stats + the
      bonus prompt ride one row of .fresh-chip pills under it (BCS legend). */
-  #colonyChartCard .chart-container { margin-bottom: 0; }
+  #colonyChartCard .chart-container { margin-bottom: 0; position: relative; }
+  /* Bars are tappable in the single-position view (empty ones too): a faint
+     column highlight on hover, a firmer one for the bar whose card is open. */
+  #chart.clickable .bar-group { cursor: pointer; border-radius: 3px; }
+  #chart.clickable .bar-group:hover { background: rgba(74, 158, 255, .07); }
+  #chart.clickable .bar-group.sel { background: rgba(74, 158, 255, .16); }
+  /* The bar card (.region-pop): floats at the top of the chart on desktop
+     (left set per bar in JS); the coarse-pointer rule makes it inline. */
+  .region-pop.colony-pop { top: 6px; bottom: auto; pointer-events: auto; }
+  .region-pop.colony-pop .rp-row { margin: 2px 0; flex-wrap: nowrap; }
+  .region-pop.colony-pop .rp-k { color: #8a9db0; min-width: 84px; }
   .colony-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -4px 0 16px; }
   .colony-legend .fresh-chip.dim { opacity: .5; }
   .colony-legend .fresh-chip:empty, .colony-legend .colony-model:empty { display: none; }

@@ -104,6 +104,51 @@ export const naturalFields = (entry, serverBonus) => {
 };
 
 /**
+ * The natural-roll interval one colony can come from: shown = floor(S·k) + bonus
+ * ⇒ S ∈ [(shown − bonus) / k, (shown − bonus + 1) / k). `null` without a
+ * stamped size bonus.
+ *
+ * @param {{ fields: number, b?: number }} entry
+ * @param {number} serverBonus
+ * @returns {[number, number] | null}
+ */
+export const naturalInterval = (entry, serverBonus) => {
+  const k = entryMultiplier(entry);
+  if (k == null) return null;
+  return [(entry.fields - serverBonus) / k, (entry.fields - serverBonus + 1) / k];
+};
+
+/**
+ * Natural-field histogram without the back-solve comb. A shown value covers
+ * 1/k natural fields (0.69 at ×1.449), so whole natural fields receive one or
+ * two shown values in turn; counting each colony at a single natural field
+ * draws a false saw-tooth. Instead each colony is spread over its interval,
+ * in proportion to the overlap with every bar (uniform within the interval —
+ * the density barely changes across 0.7 field).
+ *
+ * @param {Array<[number, number]>} intervals  One per colony.
+ * @param {number} lo     Field value where bar 0 starts.
+ * @param {number} w      Fields per bar.
+ * @param {number} bars   Number of bars.
+ * @returns {number[]}    Fractional count per bar (sums to the colony count).
+ */
+export const spreadOverBars = (intervals, lo, w, bars) => {
+  const out = new Array(bars).fill(0);
+  for (const [a, b] of intervals) {
+    const len = b - a;
+    if (!(len > 0)) continue;
+    const first = Math.max(0, Math.floor((a - lo) / w));
+    const last = Math.min(bars - 1, Math.floor((b - lo) / w));
+    for (let i = first; i <= last; i++) {
+      const s = lo + i * w;
+      const overlap = Math.min(b, s + w) - Math.max(a, s);
+      if (overlap > 0) out[i] += overlap / len;
+    }
+  }
+  return out;
+};
+
+/**
  * The model as a CONTINUOUS curve over the histogram: at each sample point,
  * the number of colonies a bar of width `w` centred there should hold.
  * x is in bar units (bar i spans [i, i+1), its centre is i + 0.5), so the
@@ -171,3 +216,43 @@ export const sampleSpread = (values) => {
   const kurtosis = sd > 0 ? values.reduce((s, v) => s + ((v - mean) / sd) ** 4, 0) / n - 3 : NaN;
   return { sd, kurtosis };
 };
+
+/**
+ * How hard is one bar of the histogram for the NEXT colony?
+ *
+ * `k` null = the bar is in natural fields; otherwise in shown fields at field
+ * multiplier `k` (today's bonus — the one the next colony gets) plus the
+ * server's bonus fields.
+ *
+ * @param {object} a
+ * @param {number} a.start      First field value of the bar.
+ * @param {number} a.end        Last field value of the bar.
+ * @param {number} a.min        Position's natural minimum.
+ * @param {number} a.max        Position's natural maximum.
+ * @param {number | null} a.k   Field multiplier, or null for natural fields.
+ * @param {number} [a.serverBonus]
+ * @returns {{ inBar: number, atLeast: number, atMost: number }}  Per-colony
+ *   probabilities: in the bar, at least its start, at most its end.
+ */
+export const barChance = ({ start, end, min, max, k, serverBonus = 0 }) => {
+  /** @param {number} v */
+  const toS = (v) => (k == null ? v : (v - serverBonus) / k);
+  const lo = toS(start);
+  const hi = toS(end + 1);
+  return {
+    inBar: Math.max(0, rollCdf(hi, min, max) - rollCdf(lo, min, max)),
+    atLeast: Math.max(0, 1 - rollCdf(lo, min, max)),
+    atMost: Math.max(0, rollCdf(hi, min, max)),
+  };
+};
+
+/**
+ * Tries needed to have probability `q` of at least one hit, at `p` per try.
+ * Infinity when p is 0.
+ *
+ * @param {number} p
+ * @param {number} q
+ * @returns {number}
+ */
+export const triesFor = (p, q) =>
+  p > 0 ? (p >= 1 ? 1 : Math.ceil(Math.log(1 - q) / Math.log(1 - p))) : Infinity;
