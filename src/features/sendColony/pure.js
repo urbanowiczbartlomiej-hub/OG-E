@@ -50,6 +50,7 @@ import {
 import {
   COL_MAX_SYSTEM,
   COL_MAX_GALAXY,
+  galaxyCountOf,
 } from '../../domain/rules.js';
 import { countFreeTargetSlots } from '../../domain/apiOccupancy.js';
 import { FAB_MODULES } from '../shared/fabModules.js';
@@ -165,6 +166,8 @@ export const BG_SEND_BUSY = BG_SEND_READY;
  * @param {Set<string> | null} [freed]  recyclable coords (freedCoords): a
  *   past-window abandoned re-roll or a never-landed send — override stale
  *   scan/API occupancy so they re-enter the pool.
+ * @param {number} [maxGalaxy]  the server's galaxy count (`galaxyCountOf`);
+ *   default {@link COL_MAX_GALAXY}.
  * @returns {{ galaxy: number, system: number, position: number } | null}
  */
 export const findNextColonizeTarget = (
@@ -178,6 +181,7 @@ export const findNextColonizeTarget = (
   index = null,
   rejected = null,
   freed = null,
+  maxGalaxy = COL_MAX_GALAXY,
 ) => {
   if (targets.length === 0) return null;
 
@@ -185,7 +189,7 @@ export const findNextColonizeTarget = (
     registry.filter((r) => (r.arrivalAt || 0) > now).map((r) => r.coords),
   );
 
-  let order = buildGalaxyOrder(home.galaxy, COL_MAX_GALAXY);
+  let order = buildGalaxyOrder(home.galaxy, maxGalaxy);
   if (preferOther && order.length > 1) {
     order = [...order.slice(1), order[0]];
   }
@@ -615,6 +619,7 @@ export const derive = (env) => {
         index,
         rejected,
         freed,
+        galaxyCountOf(env.serverDims),
       );
       if (global) {
         candidate = {
@@ -642,6 +647,7 @@ export const derive = (env) => {
       index,
       rejected,
       freed,
+      galaxyCountOf(env.serverDims),
     );
     if (global) {
       candidate = {

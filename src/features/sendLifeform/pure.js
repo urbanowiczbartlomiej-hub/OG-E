@@ -150,10 +150,11 @@ export const isSystemLfStale = (scan, now) => {
  * @param {GalaxyScans} scans
  * @param {SystemCoords} from   starting point (current view or home).
  * @param {number} now          epoch-ms.
+ * @param {number} [maxGalaxy]  the server's galaxy count; default COL_MAX_GALAXY.
  * @returns {SystemCoords | null}
  */
-export const findNextLfSystem = (scans, from, now) => {
-  const galaxyOrder = buildGalaxyOrder(from.galaxy, COL_MAX_GALAXY);
+export const findNextLfSystem = (scans, from, now, maxGalaxy = COL_MAX_GALAXY) => {
+  const galaxyOrder = buildGalaxyOrder(from.galaxy, maxGalaxy);
 
   for (let gi = 0; gi < galaxyOrder.length; gi++) {
     const g = galaxyOrder[gi];
@@ -222,11 +223,12 @@ export const countLfSentSince = (scans, since) => {
  *
  * @param {GalaxyScans} scans
  * @param {number} now
+ * @param {number} [maxGalaxy]  the server's galaxy count; default COL_MAX_GALAXY.
  * @returns {number}
  */
-export const countLfRemaining = (scans, now) => {
+export const countLfRemaining = (scans, now, maxGalaxy = COL_MAX_GALAXY) => {
   let remaining = 0;
-  for (let g = 1; g <= COL_MAX_GALAXY; g++) {
+  for (let g = 1; g <= maxGalaxy; g++) {
     for (let s = 1; s <= COL_MAX_SYSTEM; s++) {
       const key = /** @type {`${number}:${number}`} */ (`${g}:${s}`);
       if (isSystemLfStale(scans[key], now)) remaining++;
@@ -325,6 +327,7 @@ export const buildLfResearchUrl = (href) => ingameComponentUrl(href, 'lfresearch
  * @property {string} search                `location.search` (with leading `?`).
  * @property {GalaxyScans} scans
  * @property {number} now                   epoch-ms.
+ * @property {number} [galaxies]            the server's galaxy count (absent → COL_MAX_GALAXY).
  * @property {SystemCoords | null} home     active-planet coords, or null.
  * @property {SystemCoords | null} view     galaxy-view coords, or null (off galaxy).
  * @property {boolean} hasDiscoverBtn       is `#discoverSystemBtn` present in the DOM?
@@ -347,7 +350,7 @@ export const buildLfResearchUrl = (href) => ingameComponentUrl(href, 'lfresearch
  * @returns {LfContext}
  */
 export const derive = (env) => {
-  const scansRemaining = countLfRemaining(env.scans, env.now);
+  const scansRemaining = countLfRemaining(env.scans, env.now, env.galaxies);
 
   // Non-blocking cap signal. Reaching `max` no longer gates anything — the
   // user keeps discovering past the cap on purpose (the game just overshoots,
@@ -387,7 +390,7 @@ export const derive = (env) => {
 
   // Viewed system is fresh (or unknown view) — find the nearest stale one.
   const anchor = env.view ?? env.home;
-  const target = anchor ? findNextLfSystem(env.scans, anchor, env.now) : null;
+  const target = anchor ? findNextLfSystem(env.scans, anchor, env.now, env.galaxies) : null;
   if (target) {
     return { kind: 'navigate', target, cooldown: env.cooldown, scansRemaining, cap };
   }

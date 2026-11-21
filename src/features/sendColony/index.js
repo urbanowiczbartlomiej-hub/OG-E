@@ -124,7 +124,7 @@ import {
   readHomePlanet,
   parseCurrentGalaxyView,
 } from './domHelpers.js';
-import { SHIP_COLONY, TARGET_PLANET } from '../../domain/rules.js';
+import { SHIP_COLONY, TARGET_PLANET, galaxyCountOf } from '../../domain/rules.js';
 import { OWNER_COL } from '../../domain/fleetOwnership.js';
 import {
   CHECK_TARGET_RESULT_EVENT,
@@ -696,6 +696,7 @@ const onSendClick = async () => {
         getApiContext()?.index ?? null,
         blockingCoords(colonizeDecisionsStore.get(), Date.now()),
         freedCoords(colonizeDecisionsStore.get(), Date.now()),
+        galaxyCountOf(getApiContext()?.server),
       )
     : null;
   if (!candidate) {

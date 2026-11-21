@@ -43,6 +43,8 @@ import { FAB_MODULES } from '../shared/fabModules.js';
 import { installFabSettingsLifecycle } from '../shared/fabSettingsLifecycle.js';
 import { SYSTEM_DISCOVERY_RESULT_EVENT } from '../../lib/ogeEvents.js';
 import { clock } from '../../lib/clock.js';
+import { galaxyCountOf } from '../../domain/rules.js';
+import { getApiContext } from '../shared/apiContextStore.js';
 import {
   derive,
   render,
@@ -130,6 +132,7 @@ const captureEnv = () => {
     search: location.search,
     scans,
     now: Date.now(),
+    galaxies: galaxyCountOf(getApiContext()?.server),
     home: readHomePlanet(),
     view: parseCurrentGalaxyView(),
     hasDiscoverBtn: hasDiscoverButton(),

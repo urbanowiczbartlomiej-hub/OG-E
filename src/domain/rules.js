@@ -29,6 +29,21 @@ export const COL_MAX_SYSTEM = 499;
  */
 export const COL_MAX_GALAXY = 7;
 
+/**
+ * The server's real galaxy count (serverData `galaxies`, from the API
+ * context), falling back to {@link COL_MAX_GALAXY} only while that is not
+ * known yet. Servers differ — merged 2026 universes have 9 — and a wrong
+ * count makes the far edge look like a neighbour (galaxy 7 → 1 on a 9-galaxy
+ * donut is three hops, not one).
+ *
+ * @param {{ galaxies?: number } | null | undefined} dims
+ * @returns {number}
+ */
+export const galaxyCountOf = (dims) => {
+  const n = Number(dims?.galaxies);
+  return Number.isInteger(n) && n > 0 ? n : COL_MAX_GALAXY;
+};
+
 /** Lowest valid planet position within a system. */
 export const MIN_POSITION = 1;
 
