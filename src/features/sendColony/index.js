@@ -348,6 +348,27 @@ const showTransient = (p) => {
 };
 
 /**
+ * Drop a held failure label before the button paints a NEW definite state.
+ *
+ * The hold exists so the 1 Hz ticker can't clobber an error after ~0.5 s — but
+ * it is purely time-based, so it also outlived the tap that ACKNOWLEDGED it:
+ * tap again on a held 'Stale', walk to a fresh ready target, and the next tick
+ * re-painted the DEAD slot's 'Stale' over the live 'Send' / 'Wait Ns' label
+ * until the old deadline passed. The user saw the previous failure flash back
+ * for a second or two on a target that is perfectly fine.
+ *
+ * So: any tap that actually proceeds clears the hold. From there the click path
+ * paints the real state itself (Wait… / Send / Sent) or arms a NEW transient
+ * for its own failure.
+ *
+ * @returns {void}
+ */
+const clearTransient = () => {
+  transientPaint = null;
+  transientUntil = 0;
+};
+
+/**
  * Reflect the combined readiness gate — eventbox fresh AND api context
  * settled — onto the shared Button's visual disable (grey fill + swallowed
  * taps). This feature owns the whole `setDisabled` writer instead of passing
@@ -499,6 +520,51 @@ const refresh = () => {
 // ─── Click handlers ───────────────────────────────────────────────────
 
 /**
+ * Durably record a courier refusal that is ABOUT THE SLOT, so the picker stops
+ * proposing it — the same decisions {@link onCheckTargetResult} writes, but
+ * driven by the courier's own verdict instead of by the game's XHR.
+ *
+ * Why both: the reactor only fires when the game actually ISSUES a checkTarget
+ * carrying our colony ship. It does not always. The game deduplicates
+ * checkTarget for unchanged coords, so a second attempt on a slot already
+ * checked in this page view fires no XHR at all; select() also has a 500 ms
+ * re-entry fallback that resolves with no detail at all. In those cases the
+ * courier still returns a target-shaped reason (it read the verdict from its
+ * own race), the button still painted 'Reserved' / 'Stale' — and nothing was
+ * written, so the very same dead coords came back at the top of the picker on
+ * the next pass. On a fresh universe, where candidates come from the API
+ * breadth layer and there is no scan entry to downgrade either, the decision
+ * log is the ONLY thing that blocks them: a missed write means the whole
+ * Reserved series repeats from the start on the next send.
+ *
+ * Only slot-shaped reasons are recorded. noShip / allFleets / timeout /
+ * tokenStale / notReady / selectFailed / noFleet2 / foreign are about US or the
+ * page, and must never blacklist a perfectly good target.
+ *
+ * Monotonic: mergeDecision makes a duplicate write from the reactor a no-op, so
+ * the two paths cannot fight.
+ *
+ * @param {string | undefined} reason  courier SelectResult reason.
+ * @param {Coords} c  the candidate the courier refused.
+ * @returns {void}
+ */
+const recordCourierRefusal = (reason, c) => {
+  const now = Date.now();
+  if (reason === 'reserved') {
+    // Planet-move / in-flight colonization hold — temporary, expires on its own.
+    recordDecision(c.galaxy, c.system, c.position, {
+      s: DEC_RESERVED,
+      ts: now,
+      aa: now + RESERVE_HOLD_MS,
+    });
+  } else if (reason === 'generic' || reason === 'mission') {
+    // Any other target-side refusal (vacation, strong player, bashing limit,
+    // colonize absent from the orders map) — the slot is not usable right now.
+    recordDecision(c.galaxy, c.system, c.position, { s: DEC_TAKEN, ts: now });
+  }
+};
+
+/**
  * Build the send-zone paint for a courier select() failure. reserved/stale
  * slots are ALSO recorded in scansStore by onCheckTargetResult (it fires
  * from the game's checkTarget that the courier triggered), so the next tap
@@ -553,6 +619,11 @@ const onSendClick = async () => {
   // set (the false 'No targets' verdict) or on an unhydrated min-gap /
   // decision log (the premature-wave dispatch). Mirrors dailyRun.
   if (!eventBoxReady || !apiCtxReady || !storesReady) return;
+  // The tap acknowledges whatever failure label is being held — from here this
+  // handler paints the real state (Wait… / Send / Sent) or arms a fresh
+  // transient. Without this the OLD label kept flashing back over the new one
+  // until its time-based deadline passed. See clearTransient.
+  clearTransient();
   const s = courierStep();
 
   // Tap 2 — dispatch the armed colonize, gated by the min-gap.
@@ -671,8 +742,10 @@ const onSendClick = async () => {
         location.href = bareFleetdispatchUrl();
         return;
       }
-      // Dead again — onCheckTargetResult marked this slot too, so the next
-      // tap retargets to whatever is still free.
+      // Dead again — record the refusal ourselves so the next tap retargets to
+      // whatever is still free even when no checkTarget ever reached the
+      // reactor (see recordCourierRefusal).
+      recordCourierRefusal(r.reason, candidate);
       showTransient(colErrorPaint(r.reason, candidate));
       return;
     }
@@ -721,6 +794,7 @@ const onSendClick = async () => {
       location.href = bareFleetdispatchUrl();
       return;
     }
+    recordCourierRefusal(r.reason, candidate);
     showTransient(colErrorPaint(r.reason, candidate));
     return;
   }
@@ -767,13 +841,32 @@ const extractErrorCode = (detail) => {
  */
 const recordDecision = (galaxy, system, position, decision) => {
   const key = /** @type {`${number}:${number}:${number}`} */ (`${galaxy}:${system}:${position}`);
-  // A freed (past-window) 'abandoned' entry is TERMINAL and would hold off the
-  // incoming (often non-terminal `sent`) via mergeDecision — clear it first so a
-  // re-colonization of the re-rolled slot records cleanly.
-  colonizeDecisionsStore.update((prev) =>
-    withDecision(clearFreedAbandoned(prev, key, Date.now()), key, decision),
-  );
-  void flushColonizeDecisionsStore();
+  // Wait for the store's own hydrate before touching it. Writing earlier is
+  // not merely racy, it is self-erasing: the write lands in the still-empty
+  // initial map, the flush pushes THAT map onto the storage key (dropping
+  // every decision the key already held), and the in-flight hydrate then
+  // resolves with the value it read before all this and `set`s it back — so
+  // the decision we just recorded is gone, permanently.
+  //
+  // It is not a theoretical window either: the game fires its own checkTarget
+  // for the pre-filled target ~244 ms into a fleetdispatch page load (see
+  // docs/ogame-fleet-mechanics.md), i.e. typically before chrome.storage has
+  // answered. A slot refused in THAT request was the one that never stuck —
+  // the same coords kept reappearing at the head of every colonize run while
+  // everything recorded later in the page view behaved. Same race class as
+  // colonyRecorder's `whenColonizeDecisionsHydrated` gate.
+  //
+  // Fire-and-forget: callers are synchronous event handlers, and ordering
+  // between two decisions is irrelevant (the merge is monotonic per coord).
+  void whenColonizeDecisionsHydrated().then(() => {
+    // A freed (past-window) 'abandoned' entry is TERMINAL and would hold off the
+    // incoming (often non-terminal `sent`) via mergeDecision — clear it first so a
+    // re-colonization of the re-rolled slot records cleanly.
+    colonizeDecisionsStore.update((prev) =>
+      withDecision(clearFreedAbandoned(prev, key, Date.now()), key, decision),
+    );
+    return flushColonizeDecisionsStore();
+  });
 };
 
 /**
@@ -986,6 +1079,9 @@ const onSendHold = () => {
 
   recordDecision(c.galaxy, c.system, c.position, { s: DEC_TAKEN, ts: Date.now() });
 
+  // Same acknowledgement as a tap: a held 'Stale'/'Reserved' must not paint
+  // back over the post-skip state.
+  clearTransient();
   colReady = false;
   colTarget = null;
   refresh();

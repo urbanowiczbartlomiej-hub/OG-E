@@ -113,9 +113,12 @@
 
 /* global document */
 
-import { historyStore, initHistoryStore } from '../state/history.js';
+import { historyStore, initHistoryStore, whenHistoryHydrated } from '../state/history.js';
 import { readLfDiscoverySlot, writeLfDiscoverySlot, scansStore } from '../state/scans.js';
-import { colonizeDecisionsStore } from '../state/colonizeDecisions.js';
+import {
+  colonizeDecisionsStore,
+  whenColonizeDecisionsHydrated,
+} from '../state/colonizeDecisions.js';
 import { settingsStore } from '../state/settings.js';
 import { dailyRunRoutesStore, dailyRunRoutesKeyFor, dailyRunRoutesTsKeyFor } from '../state/dailyRunRoutes.js';
 import {
@@ -368,6 +371,33 @@ const bumpApplying = (key) => applyDepth.set(key, (applyDepth.get(key) || 0) + 1
 const dropApplying = (key) => applyDepth.set(key, Math.max(0, (applyDepth.get(key) || 0) - 1));
 /** @param {string} key @returns {boolean} */
 const isApplyingFromSync = (key) => (applyDepth.get(key) || 0) > 0;
+
+/**
+ * Run `fn` with the upload-arm suppressor held.
+ *
+ * {@link downloadAndMerge} holds that suppressor only across the SYNCHRONOUS
+ * prefix of a slot's `writeLocal` — deliberately, so a USER write landing
+ * during the awaited persistence tail still arms an upload. A slot that waits
+ * for its store's hydrate before touching it therefore notifies subscribers
+ * from inside that tail, where the suppressor is already down: remote-origin
+ * data would arm a fresh upload, and every round that adopted something would
+ * end by scheduling a PATCH of what it had just pulled. Wrapping the store
+ * mutation itself keeps the window exactly as narrow as the synchronous
+ * notification (createStore notifies inside set/update), without swallowing a
+ * concurrent user write.
+ *
+ * @template T
+ * @param {() => T} fn
+ * @returns {T}
+ */
+const withUploadArmSuppressed = (fn) => {
+  suppressUploadArm = true;
+  try {
+    return fn();
+  } finally {
+    suppressUploadArm = false;
+  }
+};
 
 /** Suppressor key for the bespoke (non-registry) settings write-back. */
 const APPLY_SETTINGS = 'settings';
@@ -975,8 +1005,18 @@ const SYNC_SLOTS = [
   },
   {
     payloadKey: 'colonyHistoryPerUniverse',
-    readLocal: () => historyStore.get(),
-    writeLocal: (merged) => historyStore.set(merged),
+    // Hydration-gated on BOTH sides — see the decisions slot below for the
+    // full story. Reading an unhydrated `[]` would upload an empty history
+    // over a populated gist; writing the result of that merge back would then
+    // persist the amputated array over the local one.
+    readLocal: async () => {
+      await whenHistoryHydrated();
+      return historyStore.get();
+    },
+    writeLocal: async (merged) => {
+      await whenHistoryHydrated();
+      withUploadArmSuppressed(() => historyStore.set(merged));
+    },
     merge: mergeHistory,
     hasData: (merged) => merged.length > 0,
   },
@@ -1007,8 +1047,29 @@ const SYNC_SLOTS = [
   },
   {
     payloadKey: 'colonizeDecisionsPerUniverse',
-    readLocal: () => colonizeDecisionsStore.get(),
-    writeLocal: (merged) => colonizeDecisionsStore.set(merged),
+    // BOTH sides wait for the store's own hydrate. Without that gate a sync
+    // round that beat the chrome.storage load silently DELETED decisions:
+    // `readLocal` returned the still-empty initial map, so the merge produced
+    // the remote slot alone, and `writeLocal`'s `set` pushed that through the
+    // write-through straight onto the storage key — wiping every decision the
+    // previous page view had recorded but not yet uploaded. The symptom was a
+    // colonize run re-proposing the exact coords it had just skipped: a whole
+    // Reserved series coming back, sometimes minus the one or two entries that
+    // had made it into the gist. (The upload direction lost them too: an empty
+    // local slot contributes nothing, so the gist never learned them either.)
+    //
+    // Union merge + `update` rather than `set` on the way back, so a decision
+    // recorded by the button WHILE the round was in flight survives as well.
+    readLocal: async () => {
+      await whenColonizeDecisionsHydrated();
+      return colonizeDecisionsStore.get();
+    },
+    writeLocal: async (merged) => {
+      await whenColonizeDecisionsHydrated();
+      withUploadArmSuppressed(() =>
+        colonizeDecisionsStore.update((cur) => mergeColonizeDecisions(cur, merged).merged),
+      );
+    },
     merge: mergeColonizeDecisions,
     hasData: decisionsSlotHasData,
     remoteDefault: {},
