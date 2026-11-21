@@ -4,6 +4,23 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.71.1] — 2026-11-21
+
+### Fixed
+
+- **The Colonize button stops offering slots it has already been refused.**
+  A position the game turns down (`Reserved`, or any other refusal about the
+  target) is now remembered reliably, so the next run starts past it instead of
+  walking the same string of dead coordinates again. Three things were losing
+  those notes: a refusal the game answered without re-asking about the target,
+  a note written while the saved list was still loading, and a cloud-sync round
+  that arrived first and overwrote the list with what the cloud knew.
+- **No more stale error flashing back onto a good target.** After tapping past
+  a `Stale` or `Reserved` slot, the previous error label no longer re-appears
+  for a second or two over the freshly armed send.
+- **Colony history gets the same protection** against a sync round that lands
+  before the local list has loaded.
+
 ## [1.71.0] — 2026-11-20
 
 ### Added
