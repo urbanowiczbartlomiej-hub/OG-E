@@ -102,6 +102,46 @@ assigns the bare global (`token = newtoken`), and the page declares
 `var token = "…"` **twice** in its inline scripts. Both are the same global —
 there is no shadowing to exploit or worry about.
 
+## checkTarget — when the game fires it, and when it does NOT
+
+Diagnosed 2026-11-21 while chasing a colonize button that kept re-proposing
+slots the server had already refused. The verdict for a target is only ever as
+fresh as the last `action=checkTarget` the GAME chose to make — and it skips
+more of them than you would expect.
+
+It fires:
+
+- on a coord change in the target inputs (the game debounces keystrokes, but
+  any settled new coordinate triple gets one);
+- on the fleet1 → fleet2 transition, for the target fleet1 is holding;
+- **once during page initialisation**, for the target the page came up
+  pre-filled with — about 244 ms in, i.e. before `DOMContentLoaded` and well
+  before anything a content script loads asynchronously can be ready. The
+  measured timeline is in the token section above; the point here is that the
+  page's FIRST verdict arrives unprompted, for a target nobody typed.
+
+It does NOT fire:
+
+- for **unchanged** coordinates. Re-applying the same target the page already
+  checked (a back-button re-entry, a retry on the same slot, re-typing what is
+  already in the box) produces no request and therefore no new verdict. Waiting
+  on one is waiting forever — the response you want was already spent on the
+  first attempt.
+
+Consequence for anything that reads those verdicts: a refusal is visible exactly
+once, in the response to the one request that happened to carry it. There is no
+way to ask again for the same coords, and no way to make the game ask.
+
+### 140016 "reserved" dominates a young universe
+
+On a server opened days earlier (observed 2026-11), `140016` was by far the
+most common refusal when aiming at empty positions — enough that a run would
+walk through a long string of them before finding a free slot, and the next run
+would hit a fresh string of new ones. It is a temporary hold (see the refusal
+table below), not an occupied slot: the position reads empty in the galaxy view
+and in the API, which is exactly why it keeps getting proposed. The rate falls
+off as the colonization rush settles.
+
 ## Fleetdispatch hydrates in TWO stages — `fleetDispatcher` first, its ship list later
 
 `window.fleetDispatcher` is constructed early: by `DOMContentLoaded` the object
