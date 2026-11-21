@@ -774,6 +774,13 @@ one step), and the game always flies the wrapped shortest path — so a naive
 `Math.abs` delta hides exactly the closest aggressors. The server's own donut
 flags say whether each axis wraps.
 
+**The galaxy count is per server, so the wrap point is too.** Older universes
+have 7 galaxies; the universes formed by the November 2026 merge have 9
+(serverData `galaxies`). A wrap computed on the wrong count turns the far edge
+into a neighbour: on a 9-galaxy donut galaxy 7's neighbours are 6 and 8, and
+galaxy 1 is three hops away — on a 7-galaxy one it would be the next galaxy.
+Read the count from serverData; never assume one.
+
 **The comparison that is easy to get wrong:** one galaxy hop costs 20000, which
 equals `2700 + 95 × 183` — so **"1 galaxy away" is FARTHER than 182 systems away
 inside your own galaxy**, and almost exactly as far as "200 systems" (21700).
