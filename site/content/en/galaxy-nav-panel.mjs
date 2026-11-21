@@ -10,32 +10,32 @@ export default {
 
   name: 'Galaxy navigation buttons',
   oneLiner:
-    "Big, thumb-reachable arrows and galaxy/system inputs below the table — because the native header is about 16px tall on a phone.",
+    'Big, thumb-friendly galaxy and system buttons — instead of the tiny native ones.',
   order: 1,
 
   idea: [
-    "The galaxy view is a desktop-first layout: switching galaxy/system, the arrows, and the Start / phalanx / spy / discovery buttons in the header render at roughly 16px tall on a phone — practically impossible to hit without zooming. The OG-E panel mirrors those same controls again, **below the system table**, with ~50px touch targets: galaxy and system steppers on the left/right, a \"Start\" button in the middle, and the rarer Phalanx/Spy/Discovery buttons tucked under a collapsible lid.",
-    'The panel re-implements nothing — it **clicks the same native buttons and fields** that live in the header. The galaxy/system step nudges the native arrows (wrap-around and deuterium cost stay the game\'s own rules), and "Start" fills the native inputs and clicks the native submit. If a button is disabled in the header (e.g. phalanx unavailable on this body), the panel shows the same.',
+    'The native galaxy and system arrows and the Phalanx / Spy / Discovery buttons are tiny, especially on a phone. OG-E replaces them with a **big panel**: **−/+** for galaxy and system, **Start** in the middle, and the less-used Phalanx / Spy / Discovery can be folded away.',
+    'The panel sits **below the table** (default) or **above it** — the **BTM / TOP / BOTH** switch in the foldable row; BOTH also keeps the game\'s native header.',
   ],
 
   value: [
-    "Without this panel, browsing several systems on a phone means constant pinch-zooming to hit a microscopic arrow, then panning back to the table. The panel keeps navigation within thumb's reach, right where you're already looking.",
+    'You browse the Galaxy with your thumb, without zooming in every time you want to change the system.',
   ],
 
   fairplay: {
     summary: [
-      "The panel **adds no action that wasn't already in the header** — every button clicks the same native element you would press yourself. The request count to the game is identical to navigating by hand.",
-      "Button state (enabled/disabled) is **copied from the header**, not recomputed — so it can never show anything the native UI isn't already saying.",
+      'Every panel button **clicks the same native game element** you would click yourself — navigation stays under the game\'s rules.',
+      'If a button is disabled in the game (e.g. no Sensor Phalanx), it is disabled in the panel too.',
     ],
   },
 
   details: [
-    'The same "Readability" switch in OG-E Settings (Display) turns this panel on and off.',
-    "A separate, always-on fix: arrow keys inside a phalanx/spy/discovery dialog sometimes lose focus and hop a system twice instead of once — the panel corrects this independently of everything else.",
+    'Works together with "Readability" in OG-E Settings (on by default).',
+    'Arrow keys in the Phalanx / Spy / Discovery windows move exactly one system.',
   ],
 
   screenshots: [
-    { id: 'panel', caption: 'The navigation panel below the system table: galaxy/system steppers and the Start / Phalanx / Spy / Discovery buttons.' },
+    { id: 'panel', caption: 'The panel in the TOP position: galaxy and system −/+, Start, and Phalanx / Spy / Discovery.' },
   ],
 
   codeRefs: [

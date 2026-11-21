@@ -13,35 +13,32 @@ export default {
 
   name: 'Mapa pozycji i zasięg',
   oneLiner:
-    'Wszystkie ciała obserwowanych graczy i Twoje własne na jednej siatce galaktyk — plus pierścienie wokół tych, którzy dolecą do Ciebie w mniej niż osiem godzin.',
+    'Planety obserwowanych graczy i Twoje na jednej mapie — z zaznaczeniem tych, z których da się do Ciebie dolecieć w mniej niż 8 godzin.',
   order: 6,
 
   idea: [
-    'Siatka to serwer widziany z góry: wiersze to galaktyki, w poziomie idą układy, a pionowo wewnątrz wiersza — pozycja w układzie. Kropka to ciało; rośnie razem z zagrożeniem gracza, a kolor przypisujesz sam, żeby rozpoznawać swoich stałych klientów. Twoje planety są białe. Najechanie (na dotyku pierwsze tapnięcie) podaje nazwę, koordynaty i szacowany czas lotu do Twojej najbliższej planety.',
-    'Chip `who can reach you` liczy dla każdego cudzego ciała najkrótszy dystans do **dowolnej** Twojej planety — z zawinięciem mapy zgodnie z zasadami serwera — i przelicza go na czas lotu **najwolniejszym możliwym atakującym**. Pierścień oznacza więc: ten gracz dosięga Cię w ciągu ośmiu godzin nawet swoją najcięższą, najwolniejszą flotą. Próg jest celowo pesymistyczny, bo szybsza flota przyleci wcześniej.',
+    'Karta **Positions map** to serwer z góry: wiersze to galaktyki, w poziomie układy. Kropka to planeta — im groźniejszy gracz, tym większa. Twoje planety są białe. Tapnięcie pokazuje nazwę i współrzędne, drugie otwiera dossier gracza.',
+    'Przełącznik **who can reach you (≤8 h)** zaznacza planety, z których da się dolecieć do dowolnej Twojej planety w **8 godzin nawet najwolniejszą flotą**, i pokazuje czas lotu.',
   ],
 
   value: [
-    '„Kto jest groźny" i „kto jest groźny **dla mnie**" to dwa różne pytania. Gracz z drugiego końca serwera z potworną flotą jest problemem teoretycznym; średniak trzy układy dalej jest problemem praktycznym. Mapa odpowiada na to geometrią, którą widać w sekundę — przydaje się i przy planowaniu fleet-save\'a, i przy wyborze celu, i przy decyzji, gdzie stawiać kolejną kolonię.',
+    'Groźny gracz na drugim końcu serwera to problem teoretyczny. Średniak trzy układy dalej — praktyczny. Mapa pokazuje to w sekundę: przy fleet-save, wyborze celu i nowej kolonii.',
   ],
 
   fairplay: {
     summary: [
-      'Pozycje ciał pochodzą z **publicznej mapy serwera** — tego samego pliku, z którego korzystają narzędzia społeczności. Mapa jest więc kompletna od pierwszego uruchomienia i nie wymaga ani jednego skanu. Czasy lotu to arytmetyka na jawnych zasadach gry.',
-      'Mapa **niczego nie wysyła i nikogo nie zaczepia** — to rysunek na danych, które i tak są publiczne, plus Twoje własne koordynaty z gry. Nie ma tu żadnej akcji w grze, nawet pośredniej.',
+      'Pozycje pochodzą z **publicznej mapy serwera**, a czasy lotu to arytmetyka na zasadach gry. Mapa niczego nie wysyła.',
     ],
   },
 
   details: [
-    'Na mapie są tylko Twoje ciała i gracze z listy obserwowanych — nie cały serwer, żeby rysunek pozostał czytelny.',
-    'Oko przy chipie ukrywa gracza z mapy, nie przestając go obserwować; krzyżyk kończy obserwację całkowicie.',
-    'Chip z kolorem to jedyne miejsce, w którym ustawiasz barwę gracza — ta sama trafia potem na karty listy obserwowanych.',
-    'Na dotyku pierwsze tapnięcie opisuje ciało, drugie otwiera dossier właściciela.',
+    'Na mapie są tylko planety — Twoje i obserwowanych graczy (bez księżyców).',
+    'Chip gracza: kolor, ukrycie z mapy (oko) albo koniec obserwacji (krzyżyk). Chip **You** ukrywa Twoje planety.',
   ],
 
   screenshots: [
-    { id: 'positions', caption: 'Mapa pozycji: wiersze galaktyk, kropka na każde ciało, rozmiar rośnie z zagrożeniem, Twoje planety na biało.' },
-    { id: 'chips', caption: 'Chipy graczy pod mapą i przełącznik „kto Cię dosięgnie w ≤8 h" — kolor, ukrywanie, wejście do dossier.' },
+    { id: 'positions', caption: 'Mapa pozycji: kropka na każdą planetę, rozmiar rośnie z zagrożeniem, Twoje planety na biało.' },
+    { id: 'chips', caption: 'Chipy graczy i przełącznik „who can reach you (≤8 h)".' },
   ],
 
   codeRefs: [

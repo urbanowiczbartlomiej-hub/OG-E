@@ -10,34 +10,35 @@ export default {
 
   name: 'Sync między urządzeniami',
   oneLiner:
-    'Twoje zebrane dane (skany galaktyki, historia kolonii) wędrują między komputerem a telefonem przez Twój własny prywatny GitHub gist.',
+    'Komputer i telefon widzą te same dane OG-E — przez Twój własny, prywatny gist na GitHubie.',
   flagship: true,
   order: 5,
 
   idea: [
-    'Podłączasz w Ustawieniach **własny token GitHub** (klasyczny PAT z jednym uprawnieniem `gist`), a OG-E trzyma Twoje lokalnie zebrane dane w **prywatnym giście, który należy do Ciebie**. Każde urządzenie wysyła i pobiera przez `api.github.com` — nigdzie indziej.',
-    'Łączenie stron jest **przyrostowe i lokalne-najpierw**: przy pobraniu zdalne wpisy są dokładane do lokalnych (nowszy skan wygrywa), nic nie jest hurtowo nadpisywane. Wysyłka jest zdławiona 15-sekundowym oknem, żeby seria skanów przy przewijaniu galaktyki złożyła się w jeden upload zamiast kilkunastu.',
+    'W zakładce **Sync** w Dashboardzie włączasz **Sync across devices** i wklejasz swój **token GitHub** (wystarczy uprawnienie `gist`). Od tej pory OG-E trzyma kopię danych w **Twoim prywatnym giście** i dogrywa ją na każdym urządzeniu.',
+    'Synchronizuje się to, czego nie da się odtworzyć: historia kolonii, wywiad Spyglassa, lista obserwowanych, trasy Daily Run i ustawienia. Skany Galaktyki i lista graczy liczą się na każdym urządzeniu od nowa z publicznego API.',
+    'Dane się **łączą**: listy (kolonie, raporty) uzupełniają się wzajemnie, a ustawienia i trasy bierze się w całości z nowszej wersji.',
   ],
 
   value: [
-    'Grasz na kilku urządzeniach, a wiedza zebrana normalną grą — klasyfikacje skanów, obserwacje kolonii — rozjeżdża się między nimi. Sync sprawia, że każde urządzenie po starcie widzi ten sam, scalony, aktualny obraz, bez ręcznego przenoszenia.',
+    'Grasz na komputerze i na telefonie? Bez syncu każde urządzenie wie co innego. Z nim — wszędzie widzisz to samo, bez ręcznego przenoszenia.',
   ],
 
   fairplay: {
     summary: [
-      'Sync **nigdy nie kontaktuje się z serwerem gry**. Cały ruch idzie do usługi, którą kontrolujesz (Twój gist na GitHubie), poza pasmem gry. To pozycja OG-E w regulaminie: czytamy tylko strony gry wyrenderowane w Twojej przeglądarce, a Twoje dane synchronizują się osobnym kanałem.',
-      'Jest **całkowicie opt-in**: bez wklejonego przez Ciebie tokena nic nie wychodzi na zewnątrz. Token ma najmniejsze możliwe uprawnienie (`gist`) i mieszka lokalnie. Synchronizowane są tylko Twoje własne dane zebrane grą — nie ma śledzenia gry w tle.',
+      'Sync **nigdy nie łączy się z serwerem gry** — rozmawia tylko z GitHubem, z gistem, który należy do Ciebie.',
+      'Jest **opcjonalny** i domyślnie wyłączony: bez Twojego tokena nic nie wychodzi z przeglądarki. Synchronizowane są wyłącznie Twoje własne dane zebrane w czasie gry.',
     ],
   },
 
   details: [
-    'Sekrety (token GitHub, token ntfy) nigdy nie trafiają do synchronizowanego pliku ani eksportu.',
-    'Przy błędach limitu GitHuba (403/429) moduł wchodzi w backoff i nie bije bez sensu w API — mieści się w budżecie 5000 żądań/h.',
+    '**Stored on this device** pokazuje, ile danych jest na tym urządzeniu dla każdego serwera i kiedy była ostatnia synchronizacja.',
+    'Skończyłeś grę na serwerze? **Abandon** pobiera archiwum i usuwa dane z tego urządzenia (kopia w giście zostaje).',
+    '**Alliance share (Spyglass)** to osobna, opcjonalna wymiana wywiadu z sojusznikami.',
   ],
 
   screenshots: [
-    { id: 'settings', caption: 'Pole tokena GitHub w Ustawieniach OG-E — sync jest opt-in.' },
-    { id: 'merge', caption: 'Dwa urządzenia po scaleniu widzą ten sam, aktualny obraz danych.' },
+    { id: 'settings', caption: 'Zakładka Sync: token GitHub, „Sync now" i podsumowanie danych serwera na tym urządzeniu.' },
   ],
 
   codeRefs: [

@@ -8,39 +8,37 @@ export default {
   category: 'spyglass',
   locale: 'en',
 
-  name: 'Danger ranking',
+  name: 'Threat ranking (Danger)',
   oneLiner:
-    'The whole server in one table, sorted from the most dangerous down: a 0–100 number and a one-word archetype tell you who not to poke and who you can hit.',
+    'The whole server in one table, most dangerous first: a 0–100 number tells you whom not to mess with and whom you can attack.',
   flagship: true,
   order: 2,
 
   idea: [
-    'The `Players` table is the entire server ordered by the `Danger` column. That number does not measure "how many points someone has" but **how many of those points can fly at you**: military points include defence, and defence does not attack — so OG-E splits them into a mobile and an immobile part, judges hull quality (the cost of a single ship) and compares the result against the whole server. On top of that it adds predator signals: destruction percentage, bandit tier, colony spread (how much of the server he actually reaches) and alliance class.',
-    'Next to the number stands an **archetype** — one word instead of a table: `Apex hunter`, `Bandit raider`, `Fleeter`, `Cargo swarm`, `Fortress`, `Turtle`, `Economist`, `Declawed bandit`, `Friendly`. The `Fleet` column shows `≤`, because it is a **ceiling, not a measurement** — only a complete set of your own reports brings it down to an exact number and the `≤` sign disappears.',
+    'The **Players** table sorts the server by the **Danger** column. The number does not measure points but **how much of them can fly at you**: defence does not attack, so OG-E separates it from the fleet, checks whether the fleet is cargo or warships, and adds signs of aggression (destruction, bandit, colony spread, alliance class).',
+    'The **Fleet** column shows **≤** — an upper bound, not a measurement. Once you have scanned all of a player\'s bodies, the sign goes away and the exact number stays.',
   ],
 
   value: [
-    'The highscore lies in both directions: a turtle with a mountain of defence points looks scarier than a fleeter who would actually wipe you out, and a vault with no fleet looks like a predator. One column separates those cases, so picking a target and judging risk is a glance rather than an investigation — and you have it for the whole server before sending your first probe.',
+    'The highscore misleads: a player with a mountain of defence looks more dangerous than the one who can actually destroy your fleet. Danger tells them apart — for the whole server, before your first probe.',
   ],
 
   fairplay: {
     summary: [
-      'The whole table is **arithmetic over the public server statistics files** — the same ones community tools use. Nothing here is stolen: these are numbers everyone sees in the highscore, only arranged into an answer to "who is dangerous". The files have a freshness deadline and are read while you happen to be visiting the game, not on a cycle.',
-      'The table **sends nothing** and contains no in-game action — the `+ watch` star only adds a player to your own note. Data from alliance mates (if you enable sharing) is **view-only**: by design it feeds neither the `Danger` number nor the scan plan.',
+      'It is **arithmetic on the server\'s public statistics** — the same ones community tools use.',
+      'The table sends nothing. **+ watch** only adds the player to your own watch list.',
     ],
   },
 
   details: [
-    'Zero ships is always `Danger 0`; your own alliance and buddies are 0 as well. Anyone with something to fly has at least 8.',
-    'The cost of a single hull splits the fleet into classes: below ~20k resources — `civilian` (cargos, probes), 20–100k — `combat`, above that — `capitals`, or `defence?` if your scans have not confirmed it yet.',
-    'Aggressor bonuses (bandit, range, warrior class) **do not stack without limit** — they fill up the headroom to 100. That way a peaceful giant never becomes an "apex".',
-    '`Apex hunter` requires at least two of six signals, including **at least one aggressive one** (destruction, range, colony placement) — fleet size alone is not enough.',
-    'Filters: hide inactive, watch list only, a military-points range, `top 50 / 100 / 200 / all`. Searching by name also finds filtered-out players and shows why they were hidden.',
+    'Anyone with at least one ship scores at least 8. Your alliance and buddies are marked `friendly`.',
+    'The account type (e.g. `fleet-heavy`, `defence only`, `miner`) and the reasons behind the score are in the player\'s dossier.',
+    'Filters: top 50 / 100 / 200 / all, **watch list**, **miners**, hide inactive, a military points range (type e.g. `15M` or `2.5b`). The search finds players by name, alliance and tag.',
   ],
 
   screenshots: [
-    { id: 'players', caption: 'The player ranking sorted by the Danger column — the archetype next to the number, then the fleet ceiling, military points and hull class.' },
-    { id: 'breakdown', caption: 'The score breakdown inside the dossier: where the number came from and which signals raised it.' },
+    { id: 'players', caption: 'The player ranking sorted by Danger — next to it the fleet upper bound, military points and ship type.' },
+    { id: 'breakdown', caption: 'The score breakdown in the dossier: where the number comes from.' },
   ],
 
   codeRefs: [

@@ -9,28 +9,27 @@ export default {
   category: 'other',
   locale: 'pl',
 
-  name: 'Bez białego rozbłysku',
+  name: 'Bez białego błysku',
   oneLiner:
-    'Gasi biały błysk między jednym przeładowaniem strony a drugim — dotkliwy na ciemnym motywie, zwłaszcza wieczorem, zwłaszcza na Firefoksie mobilnym.',
+    'Gasi biały błysk przy każdym przeładowaniu strony gry — szczególnie męczący wieczorem i na telefonie.',
   order: 3,
 
   idea: [
-    'OGame przeładowuje całą stronę przy niemal każdej akcji — kliknięciu planety, zmianie zakładki, wysyłce misji. Domyślne białe tło przeglądarki, malowane między zamknięciem starej strony a pierwszym renderem nowej, na ciemnym motywie wygląda jak błysk światła w oczy. OG-E wstrzykuje czarne tło, zanim przeglądarka zdąży cokolwiek namalować, i zdejmuje je ~300 ms po pełnym załadowaniu — kiedy właściwe tło gry/AGR już przejęło ekran.',
+    'OGame przeładowuje stronę niemal przy każdym kliknięciu. Na chwilę przed narysowaniem gry przeglądarka maluje białe tło — na ciemnym motywie to błysk w oczy. OG-E podkłada czarne tło na ten moment i zdejmuje je, gdy gra się załaduje.',
   ],
 
   value: [
-    'Kilkadziesiąt przeładowań dziennie to kilkadziesiąt białych błysków, jeśli grasz z ciemnym motywem — męczące dla oczu, szczególnie wieczorem albo na telefonie. Ta poprawka jest niewidoczna, gdy działa: po prostu nie ma już błysku.',
+    'Kilkadziesiąt przeładowań dziennie to kilkadziesiąt błysków mniej. Działa zawsze — nie trzeba nic włączać.',
   ],
 
   fairplay: {
     summary: [
-      'To wyłącznie **jeden tymczasowy styl CSS** na czas przeładowania strony — nic nie jest ukrywane na dłużej niż do pierwszego pełnego renderu, a treść gry pod spodem nie jest w żaden sposób zmieniana.',
-      'Zero logiki poza tym — brak zależności, brak zapytań, brak stanu do zapisania.',
+      'To jeden **tymczasowy styl tła** na czas ładowania strony. Nic w grze nie jest zmieniane ani ukrywane.',
     ],
   },
 
   screenshots: [
-    { id: 'compare', caption: 'Przeładowanie strony z i bez wstrzykniętego czarnego tła.' },
+    { id: 'compare', caption: 'Przeładowanie strony z OG-E i bez niego.' },
   ],
 
   codeRefs: [

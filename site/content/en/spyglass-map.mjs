@@ -8,37 +8,34 @@ export default {
   category: 'spyglass',
   locale: 'en',
 
-  name: 'Position map and range',
+  name: 'Position map and reach',
   oneLiner:
-    'Every body of every watched player plus your own on a single galaxy grid — with rings around those who can reach you in under eight hours.',
+    'Your planets and those of watched players on one map — marking the ones from which you can be reached in under 8 hours.',
   order: 6,
 
   idea: [
-    'The grid is the server seen from above: rows are galaxies, systems run horizontally, and vertically within a row — the position inside a system. A dot is a body; it grows with the player\'s danger, and you assign the colour yourself so you can recognise your regulars. Your planets are white. Hovering (on touch, the first tap) gives the name, coordinates and estimated flight time to your nearest planet.',
-    'The `who can reach you` chip computes, for every foreign body, the shortest distance to **any** of your planets — with map wrap-around per the server rules — and converts it into flight time for the **slowest possible attacker**. So a ring means: this player reaches you within eight hours even with his heaviest, slowest fleet. The threshold is deliberately pessimistic, because a faster fleet arrives sooner.',
+    'The **Positions map** card is the server from above: rows are galaxies, systems run across. A dot is a planet — the more dangerous the player, the bigger it is. Your planets are white. A tap shows the name and coordinates, a second one opens the player\'s dossier.',
+    'The **who can reach you (≤8 h)** toggle marks planets from which any of your planets can be reached within **8 hours even with the slowest fleet**, and shows the flight time.',
   ],
 
   value: [
-    '"Who is dangerous" and "who is dangerous **to me**" are two different questions. A player at the far end of the server with a monstrous fleet is a theoretical problem; an average one three systems away is a practical problem. The map answers that with geometry you read in a second — useful for planning a fleet-save, for picking a target, and for deciding where to put your next colony.',
+    'A dangerous player on the far side of the server is a theoretical problem. An average one three systems away is a practical one. The map shows it in a second: for fleet-saves, picking targets and placing a new colony.',
   ],
 
   fairplay: {
     summary: [
-      'Body positions come from the **public server map** — the same file community tools use. The map is therefore complete from the first run and needs not a single scan. Flight times are arithmetic over the game\'s published rules.',
-      'The map **sends nothing and pokes nobody** — it is a drawing over data that is public anyway, plus your own coordinates from the game. There is no in-game action here, not even an indirect one.',
+      'Positions come from the **server\'s public map**, and flight times are arithmetic on the game\'s rules. The map sends nothing.',
     ],
   },
 
   details: [
-    'The map holds only your bodies and players from the watch list — not the whole server, so the drawing stays readable.',
-    'The eye next to a chip hides a player from the map without unwatching him; the cross ends the watch entirely.',
-    'The colour chip is the one place where you set a player\'s colour — the same one then shows up on his watch-list card.',
-    'On touch, the first tap describes the body, the second opens the owner\'s dossier.',
+    'The map shows planets only — yours and watched players\' (no moons).',
+    'Player chip: colour, hide from map (eye) or stop watching (cross). The **You** chip hides your own planets.',
   ],
 
   screenshots: [
-    { id: 'positions', caption: 'The position map: galaxy rows, a dot per body, size growing with danger, your planets in white.' },
-    { id: 'chips', caption: 'Player chips under the map and the "who can reach you in ≤8 h" toggle — colour, hiding, entry to the dossier.' },
+    { id: 'positions', caption: 'The position map: a dot per planet, size grows with threat, your planets in white.' },
+    { id: 'chips', caption: 'Player chips and the "who can reach you (≤8 h)" toggle.' },
   ],
 
   codeRefs: [

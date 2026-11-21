@@ -14,44 +14,42 @@ export default {
   category: 'spyglass',
   locale: 'pl',
 
-  name: 'Straż domowa (Home watch)',
+  name: 'Sąsiedzi (Your neighbours)',
   oneLiner:
-    'Pilnuje systemów, w których mieszkasz: mówi, kto się właśnie wprowadził obok Ciebie i który sąsiad ma już flotę w kilku Twoich systemach naraz.',
+    'Mówi, kto właśnie wprowadził się do układów, w których masz planety — i kto siedzi już obok Ciebie w kilku miejscach naraz.',
   flagship: true,
   order: 6,
 
   idea: [
-    'Każde Twoje własne spojrzenie na galaktykę jest porównywane z poprzednim — i jeśli w systemie, w którym trzymasz planetę albo księżyc, pojawił się ktoś nowy, dostajesz o tym jedną informację. Systemy własne wchodzą do planu „Look" przycisku Spy na **własnym tempie** (domyślnie raz na 24 h, `0` = wyłączone): sąsiad się nie „rusza", ktoś musi się dopiero skolonizować, więc sprawdzanie co godzinę nic nie przyśpiesza.',
-    'Karta nie pokazuje adresów, tylko **aktorów**. Jeden wiersz na sąsiada: kolor = jego `Danger`, `×N` = w ilu Twoich systemach już siedzi. To ta druga liczba jest eskalacją, o której łatwo zapomnieć — konto z flotą w trzech Twoich systemach może samo wejść na księżyc w trzech miejscach, bez czasu lotu, który dałoby się zaplanować. Osobno wypisywane są **sojusze, których członkowie razem sięgają dalej niż każdy z nich osobno**: dwóch ludzi z jednego tagu w jednym Twoim systemie to nie eskalacja (zasięg ten sam co jednego), ale czterech Twoich systemów pokrytych wspólnie — już tak.',
+    'Przy każdym Twoim spojrzeniu na Galaktykę OG-E porównuje układ z tym, co widział poprzednio. Gdy w układzie z Twoją planetą lub księżycem pojawi się ktoś nowy, w Spyglassie zapala się **Your neighbours** z licznikiem nowych sąsiadów.',
+    'Jeden wiersz na sąsiada, kolor to jego **Danger**. Jeśli gracz siedzi w kilku Twoich układach, wiersz pokazuje **×N** — i to jest najważniejsze: kto jest w trzech Twoich układach, może uderzyć w trzy miejsca prawie bez czasu lotu.',
+    'Przycisk Spyglass sam podsuwa Twoje układy do obejrzenia — domyślnie raz na dobę — a po obchodzie pokazuje **Home**, jeśli są nowi sąsiedzi.',
   ],
 
   value: [
-    'Sąsiedztwo to jedyna rzecz, której nie widzisz w highscore: hunter jeden system od Twojego księżyca nie ma żadnego czasu lotu i widzi Twoje ciała w galaktyce, ilekroć ją otworzy. Straż domowa zamienia to w jedno zdanie w odpowiednim momencie — „ten fleet-save, który latasz od miesięcy, przestał być bezpieczny" — zamiast w rzecz, o której dowiadujesz się z raportu po stracie floty.',
+    'Groźny sąsiad tuż obok Twojego księżyca nie pojawia się w żadnym rankingu. Dowiesz się o nim, zanim stracisz flotę, a nie z raportu wojennego.',
   ],
 
   fairplay: {
     summary: [
-      'Obserwacja to **Twoje własne otwarcie widoku galaktyki** — nic nie jest inicjowane w tle, nie ma timera, nie ma odpytywania serwera. Cała funkcja to porównanie tego, co OG-E i tak zapisał z Twoich przeglądów: kto był w systemie wtedy, kto jest teraz. Nie ma tu żadnej akcji w grze i nigdy nie proponuje ataku — ta karta odpowiada wyłącznie na pytanie obronne.',
-      'Nic nie „patrzy" za Ciebie: jeśli nie otworzysz gry, nie dowiesz się o niczym, i tak ma być. Nie ma powiadomienia na telefon, dźwięku ani odczytu wrogich flot poza kartą gry. Baseline (pamięć „kto tu był") jest **lokalny dla urządzenia** i nie jest wysyłany ani współdzielony.',
-      'Twój sojusz i lista przyjaciół są **wykluczani z definicji** — to towarzystwo, nie ekspozycja. Flaga NEW gaśnie sama dobę po tym, jak ją przeczytasz; nie ma nic do klikania i nic do „potwierdzania".',
+      'Nowych sąsiadów OG-E wykrywa wyłącznie z **Twojego własnego przeglądania Galaktyki**; listę uzupełnia publiczne API OGame. Nic nie jest sprawdzane w tle.',
+      'Funkcja tylko informuje — nie ma w niej żadnej akcji w grze. Twój sojusz i przyjaciele nie są liczeni jako zagrożenie.',
     ],
   },
 
   details: [
-    'Pole `Home` w ustawieniach Spyglassa to godziny (`0` = wyłączone). Domyślnie 24 h — osobno od `Re-look`, który dotyczy obserwowanych graczy.',
-    'Pierwsze spojrzenie na system **nie produkuje przybyć** — tylko zapisuje stan wyjściowy. Inaczej pierwszy dzień działania funkcji wysypałby kilkanaście „nowych" sąsiadów i nauczyłby Cię ignorować alert.',
-    'Odejścia nie są raportowane: sąsiad, który się wyprowadził, to dobra wiadomość, a widok galaktyki nie odróżnia „porzucone" od „patrzyłem w złym momencie".',
-    'Ten sam gracz w **kolejnym** Twoim systemie to nowa wiadomość (rośnie `×N`). Druga planeta w systemie, w którym już jest, nie — w środku już był.',
-    'Przycisk Spy kieruje Cię do dashboardu **dopiero po domknięciu obejścia wszystkich własnych systemów** i tylko gdy jest co czytać. Jedno tapnięcie, potem sygnał sam znika.',
+    'Częstotliwość ustawiasz polem **Neighbours** w ustawieniach Spyglassa (w godzinach, `0` = wyłączone).',
+    'Pierwsze spojrzenie na układ tylko zapamiętuje stan — nie zasypie Cię „nowymi" sąsiadami pierwszego dnia.',
+    'Oznaczenie NEW gaśnie dobę po tym, jak je zobaczysz (najpóźniej po 7 dniach).',
   ],
 
   screenshots: [
-    { id: 'card', caption: 'Karta Straży domowej na zakładce Spyglass — nowe przybycie, wiersze per sąsiad i linia koalicji sojuszu.' },
+    { id: 'card', caption: 'Panel „Your neighbours" w Spyglassie — nowe przybycia i sąsiedzi obecni w kilku Twoich układach.' },
   ],
 
   demo: {
     id: 'home-watch',
-    caption: 'Prawdziwy komponent OG-E wyrenderowany na zmyślonych danych (nicki, tagi i koordynaty nie należą do nikogo). Kolor krawędzi wiersza = Danger, `×N` = w ilu Twoich systemach ten gracz siedzi, zapalony tag = sojusz, który razem sięga dalej niż każdy z jego członków osobno.',
+    caption: 'Prawdziwy komponent OG-E na zmyślonych danych. Kolor krawędzi = Danger, `×N` = w ilu Twoich układach siedzi ten gracz.',
   },
 
   codeRefs: [

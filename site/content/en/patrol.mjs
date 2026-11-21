@@ -10,33 +10,33 @@ export default {
 
   name: 'Patrol',
   oneLiner:
-    'A card on the Spy tab watching your grounds: what is catchable to strike right now, and whether your observation coverage is healthy.',
+    'Guards the area around your planets: shows who nearby is worth checking right now, and how long ago you looked.',
   order: 7,
 
   idea: [
-    "Patrol treats your colonies as a **coverage lattice** and looks at every system within ±a few systems of your bodies (same galaxy, honouring the map wrap). The card answers two questions: **what is catchable right now** in the grounds (the strike list — the same signals the Spy OG-E button flags) and **whether coverage is healthy** (how many systems have a fresh, stale, or no look).",
-    'A neighbour on the strike list is promoted onto the watch-list with one tap (patrol → star → snipe). The card only shows while a patrol radius is set — at zero there is no UI at all.',
+    'You set a radius, e.g. **± 3 systems** around your planets (in the same galaxy). The **Patrol** card in Spyglass then shows two things: **moon opportunities** nearby (per the **Moon strike** setting) and how many occupied systems have a **fresh, stale or no** look.',
+    'The Spyglass button walks you around that area (label **patrol (N)**). An interesting neighbour goes onto your watch list with one tap (**+ watch**).',
   ],
 
   value: [
-    "The watch-list is the sniper's tool — one player, worked over. Patrol is the territorial predator's: the prey is whoever nearby slips (a returning fleet-save on a forgetful neighbour's moon), not a name hunted for months. The card shows whether the grounds are actually being walked.",
+    'The watch list is for hunting one specific player. Patrol is for guarding your own turf — the prey is anyone nearby who slips up.',
   ],
 
   fairplay: {
     summary: [
-      "Everything stays **passive and propose-only**. Patrol looks are your own galaxy browsing (undetectable), and a strike is still one deliberate tap per probe — OG-E sends nothing itself, it initiates a native click in the game's galaxy view.",
-      'The card is computed **from data OG-E already holds** — your scans and the public API read while a game tab is open. The grounds are a finite set of systems, so recording is bounded by nature. The card sends nothing; it only shows intel and has no "send-all" control.',
+      'Patrol **only suggests**. Looks are your own Galaxy browsing, and a probe flies only after your tap — through the native fleet form.',
+      'The card uses only data OG-E already has: your own looks and the public OGame API. There is no "send to everyone" button.',
     ],
   },
 
   details: [
-    'The patrol radius (in systems) is one knob, set on the Spy tab; 0 = patrol off.',
-    'Noise filters strip out self, vacation/banned/admin, buddies, your own alliance, and noob-protected players.',
+    'Set the radius in the Spyglass settings (**Patrol ± N sys**); `0` = off (the default).',
+    'A look counts as fresh according to the **Re-look** setting.',
+    'Skipped: players in vacation mode, banned, admins, under newbie protection, your alliance and buddies.',
   ],
 
   screenshots: [
-    { id: 'card', caption: 'The Patrol card on the Spy tab with the strike list and coverage summary.' },
-    { id: 'watch', caption: 'Promoting a neighbour onto the watch-list with a single "star" tap.' },
+    { id: 'card', caption: 'The Patrol card: opportunities nearby and the state of your looks (fresh / stale / none).' },
   ],
 
   codeRefs: [

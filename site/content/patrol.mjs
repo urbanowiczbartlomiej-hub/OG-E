@@ -10,33 +10,33 @@ export default {
 
   name: 'Patrol',
   oneLiner:
-    'Karta na zakładce Szpieguj pilnująca Twojego rewiru: co jest teraz w zasięgu do uderzenia i czy pokrycie obserwacją jest zdrowe.',
+    'Pilnuje okolicy Twoich planet: pokazuje, kogo w pobliżu warto teraz sprawdzić, i jak dawno ją oglądałeś.',
   order: 7,
 
   idea: [
-    'Patrol traktuje Twoje kolonie jak **kratę pokrycia** i patrzy na wszystkie układy w promieniu ±kilku systemów od Twoich ciał (w tej samej galaktyce, z zawinięciem mapy). Karta odpowiada na dwa pytania: **co jest teraz do złapania** w rewirze (lista uderzeń — te same sygnały, które oznacza szpiegowski Przycisk OG-E) oraz **czy pokrycie jest zdrowe** (ile układów ma świeży, przeterminowany albo żaden podgląd).',
-    'Sąsiada z listy uderzeń jednym tapnięciem awansujesz na listę obserwowanych (patrol → gwiazdka → snajperka). Kartę widać tylko, gdy promień patrolu jest ustawiony — przy zerze nie ma żadnego UI.',
+    'Ustawiasz promień, np. **± 3 układy** od Twoich planet (w tej samej galaktyce). Karta **Patrol** w Spyglassie pokazuje wtedy dwie rzeczy: **okazje na księżycach** w okolicy (wg ustawienia **Moon strike**) i ile zamieszkanych układów ma **świeży, stary albo żaden** podgląd.',
+    'Przycisk Spyglass prowadzi Cię po tej okolicy (etykieta **patrol (N)**). Ciekawego sąsiada jednym tapnięciem dodajesz do obserwowanych (**+ watch**).',
   ],
 
   value: [
-    'Lista obserwowanych to narzędzie snajpera — jeden gracz, rozpracowany. Patrol jest narzędziem drapieżnika terytorialnego: łupem jest ktokolwiek w pobliżu, kto się zagapi (wracający fleet-save na księżycu zapominalskiego sąsiada), a nie nazwisko tropione miesiącami. Karta pokazuje, czy rewir jest realnie obchodzony.',
+    'Lista obserwowanych to polowanie na konkretnego gracza. Patrol to pilnowanie własnego terenu — łupem jest każdy w pobliżu, kto się zagapi.',
   ],
 
   fairplay: {
     summary: [
-      'Wszystko zostaje **pasywne i tylko-proponujące**. Podglądy patrolu to Twoje własne przeglądanie galaktyki (niewykrywalne), a uderzenie to wciąż jedno świadome tapnięcie na sondę — OG-E nic nie wysyła samo, inicjuje natywne kliknięcie w widoku galaktyki gry.',
-      'Karta liczy się **z danych, które OG-E już ma** — z Twoich skanów i publicznego API czytanego przy otwartej karcie gry. Rewir to skończony zbiór układów, więc zapis jest z natury ograniczony. Karta niczego nie wysyła; sama pokazuje intel i nie ma przycisku „wyślij wszystko".',
+      'Patrol **tylko podpowiada**. Podglądy to Twoje własne przeglądanie Galaktyki, a sonda leci dopiero po Twoim tapnięciu — natywnym formularzem floty.',
+      'Karta korzysta wyłącznie z danych, które OG-E już ma: z Twoich podglądów i z publicznego API OGame. Nie ma przycisku „wyślij do wszystkich".',
     ],
   },
 
   details: [
-    'Promień patrolu (w systemach) to jedno pokrętło, ustawiane na zakładce Szpieguj; 0 = patrol wyłączony.',
-    'Filtry szumu odsiewają siebie, urlop/ban/admina, buddy, własny sojusz i graczy pod ochroną nowicjusza.',
+    'Promień ustawiasz w ustawieniach Spyglassa (**Patrol ± N sys**); `0` = wyłączony (domyślnie).',
+    'Podgląd uznaje się za świeży wg ustawienia **Re-look**.',
+    'Pomijani są: gracze w trybie urlopowym, zbanowani, administratorzy, pod ochroną nowicjusza, Twój sojusz i przyjaciele.',
   ],
 
   screenshots: [
-    { id: 'card', caption: 'Karta Patrol na zakładce Szpieguj z listą uderzeń i podsumowaniem pokrycia.' },
-    { id: 'watch', caption: 'Awans sąsiada na listę obserwowanych jednym tapnięciem „gwiazdka".' },
+    { id: 'card', caption: 'Karta Patrol: okazje w okolicy i stan podglądów (świeże / stare / brak).' },
   ],
 
   codeRefs: [

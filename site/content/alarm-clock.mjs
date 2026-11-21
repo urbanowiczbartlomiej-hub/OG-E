@@ -14,37 +14,39 @@ export default {
 
   name: 'Budzik (alarm clock)',
   oneLiner:
-    'Przypomnienie, które sam ustawiasz na powrót floty — dzwoni na telefonie o czasie, który wyznacza Twoja własna wysyłka.',
+    'Telefon zadzwoni, gdy wraca Twój fleet-save albo fala ekspedycji — o czasie, który wynika z Twojej własnej wysyłki.',
   flagship: true,
   order: 3,
 
   idea: [
-    'Na liście zdarzeń gry każdy wiersz floty dostaje mały, klikalny znacznik w komórce z czasem przylotu. Tapasz go, żeby **uzbroić przypomnienie** względem tego lotu (np. na moment powrotu fleet-save), a drugie tapnięcie je zdejmuje. Fale powracających ekspedycji są rozpoznawane i sterowane jako całość — jeden znacznik na całą serię.',
-    'Push jest **wstawiany do kolejki ntfy.sh** (usługi powiadomień, którą sam konfigurujesz tokenem w Ustawieniach) z czasem doręczenia wyliczonym z Twojej wysyłki. To ntfy trzyma i doręcza wiadomość o wyznaczonej godzinie — OG-E po ustawieniu przypomnienia niczego nie pilnuje.',
+    'Budzik planuje powiadomienia na telefon przez **ntfy.sh** — bezpłatną aplikację do powiadomień. Potrzebne są dwa tokeny: **ntfy** (zakładka **Alarm clock** w Dashboardzie) i **GitHub** (zakładka **Sync**) — w Twoim prywatnym giście budzik trzyma listę przypomnień. Potem włączasz **Enable alarm clock** i subskrybujesz swój temat na telefonie.',
+    'Trzy rodzaje przypomnień, każdy włączasz osobno: **Fleet-save** (wykrywany sam — duża flota w długim locie), **Expeditions** (cała fala powrotów jako jedna seria) i **Ad-hoc** (dzwonek ustawiony ręcznie na dowolny lot z listy zdarzeń). Dla każdego wybierasz, kiedy ma dzwonić względem lądowania.',
+    'Zaplanowane przypomnienia dzwonią także przy zamkniętej grze. Wszystkie widzisz w podzakładce **Reminders set**.',
   ],
 
   value: [
-    'Powrót floty czy koniec fleet-save trafia często w środek nocy albo w środek dnia pracy. Zamiast liczyć w głowie i wracać co chwilę, ustawiasz jedno przypomnienie i telefon odezwie się dokładnie wtedy, gdy flota ląduje.',
+    'Fleet-save wraca o 3 w nocy albo w środku pracy. Zamiast liczyć w głowie i wracać do gry „na wszelki wypadek", ustawiasz to raz — telefon odezwie się wtedy, gdy flota ląduje.',
   ],
 
   fairplay: {
     borderline: true,
     summary: [
-      'Mówimy o tym **wprost: to nasza jedyna świadomie graniczna funkcja**. Dlatego trzymamy ją po bezpiecznej stronie i zawężamy mocniej, niż wymagają reguły.',
-      'To **przypomnienie ustawiane przez gracza dla jednej konkretnej wysyłki** — nie automat reagujący na zdarzenia w grze. Czas dzwonka wynika z Twojej własnej akcji (Twojej wysyłki), a nie z monitorowania serwera.',
-      'Jest **presence-gated**: uzbrajane tylko wtedy, gdy jesteś obecny w grze. OG-E nie obserwuje gry w Twoim imieniu, gdy Cię nie ma — nie przeładowuje strony, nie czyta listy zdarzeń pod kątem wrogich flot, nie ma dźwięku, migającego tytułu karty ani powiadomień systemowych.',
-      'Czas przylotu OG-E czyta **pasywnie z listy zdarzeń, którą gra i tak wyświetla** — bez ruchu do serwera gry. Sam push idzie przez ntfy.sh, usługę skonfigurowaną przez Ciebie, poza serwerem gry.',
+      'Mówimy wprost: **to nasza jedyna funkcja na granicy zasad**, dlatego trzymamy ją wąsko.',
+      'To **budzik na czas, który już znasz** z własnej wysyłki — nie strażnik gry. Nie obserwuje wrogich flot i nie przeładowuje strony. Przypomnienia planuje tylko wtedy, gdy sam masz otwartą grę.',
+      'Czas lądowania OG-E czyta z listy zdarzeń, którą gra i tak pokazuje. Powiadomienie wysyła ntfy.sh, a listę przypomnień przechowuje Twój gist — usługi, które sam konfigurujesz. Serwer gry nie ma z tym nic wspólnego.',
     ],
   },
 
   details: [
-    'Fleet-save jest wykrywany i planowany automatycznie; slot można anulować tylko w jego oknie anulowania tuż przed doręczeniem.',
-    'Konfiguracja i tokeny — w panelu Ustawień OG-E; bez tokena ntfy budzik nie wysyła nic na zewnątrz.',
+    'Fleet-save to domyślnie flota od 100 000 statków w locie dłuższym niż 10 minut — oba progi zmienisz w ustawieniach.',
+    '**Landed-fleet reminder** dzwoni (domyślnie 20 min po lądowaniu), jeśli fleet-save po wylądowaniu wciąż stoi na planecie.',
+    'ntfy planuje najwyżej 3 dni do przodu. Dalszy fleet-save czy falę OG-E zaplanuje przy kolejnym wejściu do gry; ad-hoc dalej niż 3 dni się nie da.',
+    'Gdy przypomnienia nie da się zaplanować (np. wyczerpany dzienny limit ntfy), w grze pojawia się wyraźny komunikat.',
   ],
 
   screenshots: [
-    { id: 'badge', caption: 'Klikalny znacznik budzika w komórce z czasem przylotu na liście zdarzeń.' },
-    { id: 'wave', caption: 'Fala powracających ekspedycji sterowana jako jedna seria.' },
+    { id: 'reminders', caption: 'Reminders set — zaplanowane dzwonki: fala ekspedycji, lot ad-hoc i fleet-save.' },
+    { id: 'fleetsave', caption: 'Ustawienia fleet-save: od ilu statków flota liczy się jako FS, kiedy dzwonić, treść powiadomienia i Landed-fleet reminder.' },
   ],
 
   codeRefs: [

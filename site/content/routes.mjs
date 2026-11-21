@@ -9,35 +9,34 @@ export default {
   category: 'dashboard',
   locale: 'pl',
 
-  name: 'Trasy (routes)',
+  name: 'Daily Run — trasy',
   oneLiner:
-    'Edytor codziennych tras mikro-flot w Dashboardzie — definiujesz raz, skąd, dokąd i czym, a Daily Run prowadzi Cię po nich w grze.',
+    'Raz definiujesz codzienne trasy małych flot w Dashboardzie — potem w grze przycisk Daily Run prowadzi Cię po nich tapnięciami.',
   order: 4,
 
   idea: [
-    'W Dashboardzie budujesz **trasy transportowe** per uniwersum. Trasa to jedno lub więcej **ciał źródłowych** (planety i/lub księżyce) dzielących wspólną, uporządkowaną listę **celów**, jedną **flotę** (statek + liczba) i **misję**. Trasę można wstrzymać przełącznikiem bez kasowania.',
-    'Źródła i cele na własnych ciałach wybierasz z listy Twoich planet i księżyców (przechwyconych w grze), więc współrzędnej nie da się przekręcić; cele zewnętrzne wpisujesz ręcznie. Te same klucze per-universe czyta w grze funkcja Daily Run, która prowadzi Cię potem po tej trasie.',
+    'W zakładce **Daily Run** w Dashboardzie budujesz **trasy**: skąd (jedna lub kilka Twoich planet/księżyców), czym (statki i liczba), z jaką misją i dokąd — lista celów w ustalonej kolejności.',
+    'Własne planety i księżyce wybierasz z listy, cudze współrzędne wpisujesz ręcznie. Trasę można **wstrzymać** bez kasowania. Twoje ciało, którego już nie ma (np. porzucona kolonia), świeci się na czerwono — usuniesz je jednym kliknięciem.',
   ],
 
   value: [
-    'Codzienny fleet-save z wieloma ciałami to żmudny obchód. Zdefiniowanie tras raz w czytelnym edytorze sprawia, że codzienna rutyna sprowadza się do klikania przez gotowy plan zamiast wpisywania współrzędnych od nowa każdego dnia.',
+    'Codzienne rozsyłanie surowców czy sond z wielu planet to żmudne wpisywanie współrzędnych. Tu ustawiasz to raz, a w grze już tylko tapiesz.',
   ],
 
   fairplay: {
     summary: [
-      'To **czysty edytor konfiguracji** — zapisuje Twoje trasy do lokalnego magazynu rozszerzenia. Nie kontaktuje się z serwerem gry, niczego nie wysyła i nie planuje żadnej wysyłki w tle.',
-      'Cele na własnych ciałach pochodzą z **listy Twoich planet, którą gra i tak pokazuje**. Sama wysyłka dzieje się dopiero później, w funkcji Daily Run, i zawsze przez natywne kliknięcie po Twoim tapnięciu.',
+      'To **tylko edytor ustawień** — zapisuje trasy w rozszerzeniu, nie łączy się z grą i niczego sam nie wysyła.',
+      'Wysyłka dzieje się później w grze, przyciskiem Daily Run, zawsze po Twoim tapnięciu i natywnym formularzem floty.',
     ],
   },
 
   details: [
-    'Cele na własnych ciałach, których brakuje w przechwyconym spisie, są oznaczane jako „przeterminowane" i usuwalne jednym kliknięciem; cele zewnętrzne nigdy nie przeterminowują.',
-    'Zapis jest zdławiony (debounce) i wypychany przy przełączeniu uniwersum oraz zamknięciu karty, żeby nie zgubić ostatniej edycji.',
+    '**⚙ Settings** ustala, co robi „Send All": misja (Stacjonuj / Transport), statki i surowce (Most / All). Cel zbiórki ustawiasz w grze, przytrzymując strefę Send All na przycisku.',
+    'Trasy synchronizują się między urządzeniami razem z resztą danych.',
   ],
 
   screenshots: [
-    { id: 'editor', caption: 'Edytor tras w Dashboardzie: źródła, lista celów, flota i misja.' },
-    { id: 'stale', caption: 'Cel oznaczony jako „przeterminowany", usuwalny jednym kliknięciem.' },
+    { id: 'editor', caption: 'Dwie trasy: aktywna i wstrzymana. Czerwony cel [7:77:7] już nie istnieje — do usunięcia.' },
   ],
 
   codeRefs: [

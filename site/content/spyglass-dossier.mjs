@@ -16,36 +16,34 @@ export default {
 
   name: 'Dossier gracza',
   oneLiner:
-    'Rozwinięty wiersz gracza: jedno zdanie werdyktu, rozbicie oceny zagrożenia i tabela wszystkich jego ciał z wiekiem skanu, obroną, flotą i historią łupu.',
+    'Wszystko o jednym graczu: werdykt w jednym zdaniu, skąd ocena zagrożenia i tabela jego planet i księżyców z obroną, flotą i surowcami.',
   order: 4,
 
   idea: [
-    'Lewa kolumna to **osąd**. Nagłówek w rodzaju `loaded · heavily defended · loot ~16.27B · scan 25h old` streszcza sytuację, a pod nim jedno zdanie mówi, co z tym zrobić. Dalej idzie rozbicie oceny zagrożenia i najciekawsza arytmetyka: publiczne punkty wojskowe **minus** obrona i flota, które widziały Twoje raporty, dają **resztę, której nigdzie nie widać** — czyli flotę w powietrzu, zwykle na fleet-savie. Dopóki nie masz kompletu ciał, ta liczba jest oznaczona jako wstępna.',
-    'Prawa kolumna to **dowody**: wiersz na każde ciało (księżyc wcięty pod planetą) z wiekiem Twojego skanu, ostatnią interakcją, obroną, widoczną flotą oraz średnim i szczytowym łupem, jaki tam kiedykolwiek zastałeś. Gwiazdka oznacza ciało z największą widoczną flotą, znacznik skarbca — planetę-matkę. Chipy w nagłówku mówią, ile planet i księżyców masz już zeskanowanych i czego brakuje do kompletu.',
+    'Po lewej **werdykt** — np. `loaded · heavily defended · loot ~16.27B · scan 25h old` — i jedno zdanie, co z tym zrobić. Niżej rozbicie oceny i ciekawa liczba: punkty wojskowe **minus** to, co widziały Twoje raporty, daje flotę, której nigdzie nie ma — zwykle jest w locie, na fleet-save.',
+    'Po prawej **tabela ciał**: dla każdej planety i księżyca wiek skanu, ostatnia aktywność, obrona, flota oraz średnie i najwyższe surowce, jakie tam zastałeś (**loot avg**, **peak**).',
   ],
 
   value: [
-    'To miejsce, w którym podejmujesz decyzję: uderzać czy odpuścić, a jeśli uderzać, to w które ciało. Zamiast przeklikiwać dwadzieścia raportów z różnych tygodni i liczyć w głowie, dostajesz jedną tabelę z historią — widać nie tylko ile tam dziś leży, ale też ile *zwykle* leży i gdzie ten gracz naprawdę trzyma majątek.',
+    'Tu decydujesz: atakować czy odpuścić, a jeśli atakować — to gdzie. Zamiast dwudziestu raportów szpiegowskich z różnych tygodni masz jedną tabelę z historią.',
   ],
 
   fairplay: {
     summary: [
-      'Wszystkie twarde liczby — obrona, flota, surowce, łup — pochodzą **wyłącznie z raportów szpiegowskich, które sam otworzyłeś**. Dossier ich nie zdobywa: pamięta je i porządkuje, żebyś nie musiał trzymać notatnika. Reszta to arytmetyka na publicznych punktach i na Twoim własnym przeglądaniu galaktyki.',
-      'Dossier jest **czytelnią**: nie ma w nim przycisku wysyłki. Wszystko, co można z niego „odpalić", to oznaczenie ciała jako wymagającego odświeżenia — samą sondę wysyłasz świadomie, z gry.',
+      'Obrona, flota i surowce pochodzą **tylko z raportów szpiegowskich, które sam otworzyłeś**. Dossier je pamięta i porządkuje, nic nie zdobywa samo.',
+      'Dossier nie ma przycisku wysyłki — sondę wysyłasz świadomie z gry.',
     ],
   },
 
   details: [
-    'Łup to **najlepsza jedna planeta** z najświeższego raportu, przeliczona przez procent grabieży — nigdy suma całego imperium, bo w jednym nalocie i tak zabierzesz tylko z jednego ciała.',
-    'Werdykty, jakie może postawić: `RAID NOW`, `loaded · fleet risk`, `loaded · heavily defended`, `skip — empty`, `scan first`, `can\'t hit`, `friendly`.',
-    '`Civil baseline` porównuje gracza z medianą serwera „ile statków ma budowniczy o takiej gospodarce"; nadwyżka to sufit floty bojowej. Świadomie **nie wchodzi** do oceny zagrożenia — to osobna, ostrożniejsza wskazówka.',
-    'Komplet skanów (planety **i** księżyce) zamienia szacunek floty w dokładną liczbę i zdejmuje znak `≤` w rankingu.',
-    'Przełącznik `Watch via galaxy | probes` oraz przełącznik pojedynczego ciała pozwalają wyciąć z planu skanów to, czego nie chcesz dotykać sondami.',
+    'Łup w werdykcie to **najbogatsza jedna planeta** przeliczona przez procent łupu — bo jeden atak zabiera z jednego ciała.',
+    'Werdykty: `RAID NOW`, `loaded · fleet risk`, `loaded · heavily defended`, `skip — empty`, `scan first`, `can\'t hit` (poza Twoim zasięgiem ataku), `friendly`.',
+    '**Watch via** (galaxy / probes) i przełącznik sond przy każdym ciele decydują, gdzie wolno wysyłać sondy.',
   ],
 
   screenshots: [
-    { id: 'report', caption: 'Pełne dossier: po lewej werdykt, rozbicie zagrożenia i rytm gracza, po prawej tabela wszystkich jego ciał.' },
-    { id: 'bodies', caption: 'Tabela ciał: wiek skanu, ostatnia interakcja, obrona, widoczna flota oraz średni i szczytowy łup — z księżycami pod planetami.' },
+    { id: 'report', caption: 'Dossier: po lewej werdykt i ocena, po prawej wszystkie ciała gracza.' },
+    { id: 'bodies', caption: 'Tabela ciał: wiek skanu, aktywność, obrona, flota oraz średnie i najwyższe surowce.' },
   ],
 
   codeRefs: [

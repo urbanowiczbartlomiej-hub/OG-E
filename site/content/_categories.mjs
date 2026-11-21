@@ -37,8 +37,8 @@ export const CATEGORIES = [
       en: 'Game interface',
     },
     blurb: {
-      pl: 'To, co widzisz wprost w grze i włączasz z panelu ustawień AGR: czytelność interfejsu, znaczniki floty na planetach, pulsowanie menu wydarzeń i kupca oraz baner ataku. Nic, co dotyka reklam, menu premium czy stopki gry.',
-      en: "What you see directly in the game and switch on from the AGR settings panel: interface readability, fleet-status planet markers, the event and trader menu pulses, and the attack banner. Nothing that touches ads, premium menus or the game footer.",
+      pl: 'To, co widzisz wprost w grze i włączasz z panelu ustawień AGR: czytelność interfejsu, znaczniki floty na planetach, pulsowanie menu wydarzeń i Handlarza oraz baner ataku. Nic, co dotyka reklam, menu premium czy stopki gry.',
+      en: "What you see directly in the game and switch on from the AGR settings panel: interface readability, fleet-status planet markers, the event and Merchant menu pulses, and the attack banner. Nothing that touches ads, premium menus or the game footer.",
     },
   },
   {

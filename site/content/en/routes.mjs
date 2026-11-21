@@ -8,35 +8,34 @@ export default {
   category: 'dashboard',
   locale: 'en',
 
-  name: 'Routes',
+  name: 'Daily Run — routes',
   oneLiner:
-    'A Dashboard editor for daily micro-fleet routes — define once where from, where to and with what, and Daily Run walks you through them in-game.',
+    'Define your daily small-fleet routes once in the Dashboard — then the Daily Run button walks you through them in the game, tap by tap.',
   order: 4,
 
   idea: [
-    'In the Dashboard you build **transport routes** per universe. A route is one or more **source bodies** (planets and/or moons) sharing one ordered **target list**, one **fleet** (ship + count) and a **mission**. A route can be paused with a toggle without deleting it.',
-    'Own-body sources and targets are picked from the list of your planets and moons (captured in-game), so a coordinate can never be mistyped; external targets are typed by hand. The same per-universe keys are consumed in-game by Daily Run, which then walks you along the route.',
+    'In the **Daily Run** tab of the Dashboard you build **routes**: from where (one or more of your planets/moons), with what (ships and count), with which mission and to where — a list of targets in a fixed order.',
+    'Your own planets and moons are picked from a list; other coordinates are typed by hand. A route can be **paused** without deleting it. One of your bodies that no longer exists (e.g. an abandoned colony) turns red — remove it with one click.',
   ],
 
   value: [
-    'A daily fleet-save across many bodies is a tedious round. Defining the routes once in a readable editor turns the daily ritual into clicking through a ready-made plan instead of retyping coordinates from scratch every day.',
+    'Sending resources or probes from many planets every day means typing coordinates over and over. Here you set it up once, and in the game you only tap.',
   ],
 
   fairplay: {
     summary: [
-      "It is a **pure configuration editor** — it saves your routes to the extension's local storage. It does not contact the game server, sends nothing, and schedules no background send-off.",
-      'Own-body targets come from **the list of your planets the game already shows**. The actual send-off happens later, in the Daily Run feature, and always through a native click after your tap.',
+      'It is **only a settings editor** — it saves routes in the extension, does not talk to the game and sends nothing by itself.',
+      'Sending happens later in the game, with the Daily Run button, always after your tap and through the native fleet form.',
     ],
   },
 
   details: [
-    'Own-body endpoints missing from the captured inventory are flagged "stale" and removable in one click; external targets never go stale.',
-    'Saving is debounced and flushed on universe switch and tab close, so your last edit is never lost.',
+    '**⚙ Settings** sets what "Send All" does: mission (Deployment / Transport), ships and resources (Most / All). The collect target is set in the game by holding the Send All zone of the button.',
+    'Routes sync between devices together with the rest of your data.',
   ],
 
   screenshots: [
-    { id: 'editor', caption: 'The routes editor in the Dashboard: sources, target list, fleet and mission.' },
-    { id: 'stale', caption: 'A target flagged as "stale", removable in one click.' },
+    { id: 'editor', caption: 'Two routes: one active, one paused. The red target [7:77:7] no longer exists — ready to remove.' },
   ],
 
   codeRefs: [

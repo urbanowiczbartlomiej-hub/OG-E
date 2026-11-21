@@ -12,31 +12,31 @@ export default {
 
   name: 'Event pulse',
   oneLiner:
-    'Podświetla tymczasowe wpisy wydarzeń w lewym menu, które wyglądają identycznie jak stałe pozycje Kupiec/Oficerowie/Sklep i łatwo je przeoczyć.',
+    'Wyróżnia tymczasowe wydarzenia w lewym menu, które wyglądają jak zwykłe pozycje i łatwo je przeoczyć.',
   order: 4,
 
   idea: [
-    'Gra od czasu do czasu wstawia do lewego paska tymczasowe wpisy (okna nagród, konkursy, sezonowe pozycje) pod tą samą klasą, którą mają stałe, zawsze obecne wpisy Kupiec/Oficerowie/Sklep. Wyglądając identycznie, giną w tle — Event pulse animuje TYLKO te tymczasowe wpisy, więc odróżniają się od stałych sąsiadów.',
-    'Puls gaśnie sam, gdy wykryjemy, że wszystkie dzienne zadania na stronie Rewarding są już zrobione — nie trzeba go ręcznie kasować, żeby przestał przypominać o czymś, co już zrobiłeś.',
+    'Gra co jakiś czas dokłada do lewego menu tymczasowe wydarzenia (np. nagrody, sklep z artefaktami). Wyglądają identycznie jak stałe pozycje, więc giną w tle. **Event pulse** animuje tylko te tymczasowe wpisy.',
+    'Przy nagrodach puls gaśnie, gdy na ich stronie wszystko jest już odebrane; przy sklepie z artefaktami — gdy odbierzesz wszystkie progi, aż do końca wydarzenia.',
   ],
 
   value: [
-    'Tymczasowe wydarzenia są łatwe do przegapienia w codziennym pośpiechu — wyglądają tak samo jak menu, które i tak ignorujesz. Event pulse daje im wyróżnienie, żebyś nie pominął ani jednego dnia, w którym wydarzenie jest już dostępne — dzięki temu zawsze odbierzesz wszystkie możliwe nagrody.',
+    'Nie przegapisz dnia wydarzenia, więc nie tracisz nagród.',
   ],
 
   fairplay: {
     summary: [
-      'To wyłącznie **wizualne podświetlenie już istniejącego elementu menu** — czysto dodatkowe (`AGENTS.md` §1.7), nic nie ukrywa ani nie zasłania: Kupiec, Oficerowie i Sklep wyglądają dokładnie tak jak zawsze.',
-      'Stan „zrobione na dziś" czytany jest z tego, co strona Rewarding i tak pokazuje po Twoim własnym otwarciu — nic nie jest odpytywane w tle.',
+      'To tylko **wizualne podświetlenie istniejącego elementu menu** — nic nie jest ukrywane ani zasłaniane.',
+      'Stan „odebrane" OG-E czyta ze strony wydarzenia, którą sam otwierasz — nic nie jest sprawdzane w tle.',
     ],
   },
 
   details: [
-    'Włącza/wyłącza się w panelu Ustawień OG-E, kafelek „Event pulse".',
+    'Domyślnie włączone; wyłączysz kafelkiem „Event pulse" w Ustawieniach OG-E.',
   ],
 
   screenshots: [
-    { id: 'menu', caption: 'Animowany wpis tymczasowego wydarzenia w lewym menu.' },
+    { id: 'menu', caption: 'Pulsujący wpis tymczasowego wydarzenia w lewym menu.' },
   ],
 
   codeRefs: [

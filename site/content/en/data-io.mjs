@@ -10,33 +10,31 @@ export default {
 
   name: 'Import / export / CSV',
   oneLiner:
-    "Save the selected universe's whole dataset to a JSON file, load it back by merging, and dump the colony history to CSV.",
-  order: 40,
+    'A backup of a server\'s data in one JSON file — no cloud, no account. Plus your colony history for a spreadsheet (CSV).',
+  order: 6,
 
   idea: [
-    'From the Dashboard you **export** the selected universe\'s data to a single JSON file and **import** it back. Import does not overwrite wholesale — each dataset is **merged** with the same reconciler as gist sync: additive, local-first. An Export → Import round-trip behaves exactly like a gist download.',
-    'Separately you **dump the colony history to CSV** to open it in a spreadsheet. Everything goes through local files (Blob) — the module never touches the network.',
+    '**Export JSON** on the Dashboard\'s top bar saves the selected server\'s data to a file (on a narrow screen the buttons hide under the server name). **Import JSON** loads a file into the **currently selected server** and merges it with what you already have — the same way sync does.',
+    'The **CSV** button next to the Big Colony Hunting chart saves your colony history for a spreadsheet.',
   ],
 
   value: [
-    'A backup, a transfer of your data to a new device without configuring a gist, or working the colony history in a spreadsheet — with no cloud and no account. You hold the file, you decide where it goes.',
+    'A backup, or moving your data to a new device without setting up sync. You keep the file, you decide where it goes.',
   ],
 
   fairplay: {
     summary: [
-      'Import/export is **local only**: no `fetch`, no contact with the game server or any other. Downloads go through a Blob, and loading reads the file you point at yourself.',
-      'The file is **safe to hand over**: secrets (the GitHub token, the ntfy token) and sync bookkeeping never enter it. It is your own data, gathered by normal play, packed into one file.',
+      'Everything happens **locally**: saving and loading a file, with no contact with the game server or anyone else.',
+      'The file is safe to share — **tokens and passwords never go into it**.',
     ],
   },
 
   details: [
-    'The watch-list import rides its own LWW+tombstone merge: an un-star in a newer file propagates, exactly like sync.',
-    "The file carries only extension-storage data; per-universe settings stored in the game's localStorage remain gist-sync-only.",
+    'The file does not include settings stored in the game or the colony-abandon password — it is a data backup, not a full device move.',
   ],
 
   screenshots: [
-    { id: 'buttons', caption: 'The Export / Import / CSV buttons in the OG-E Dashboard.' },
-    { id: 'summary', caption: 'The import summary: how many entries were added in each dataset after merging.' },
+    { id: 'buttons', caption: 'Export JSON and Import JSON next to the server picker, on the Dashboard\'s top bar.' },
   ],
 
   codeRefs: [

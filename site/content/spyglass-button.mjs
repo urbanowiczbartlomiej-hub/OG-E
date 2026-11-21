@@ -13,32 +13,33 @@ export default {
 
   name: 'Spyglass (przycisk)',
   oneLiner:
-    'Orb Spyglassa na FAB-ie prowadzi Cię po galaktyce i podpowiada, kogo obejrzeć, a do kogo wysłać sondę.',
+    'Złoty przycisk z okiem: podpowiada, który układ obejrzeć, a gdzie wysłać sondę — i pojawia się tylko wtedy, gdy jest coś do zrobienia.',
   order: 7,
 
   idea: [
-    'Spyglass to jeden z orbów przycisku OG-E. Sam nic nie wymyśla na miejscu — **działa dokładnie wg ustawień z zakładki Spyglass w Dashboardzie**: to tam trzymasz listę obserwowanych graczy, terminy ponownego skanu i to, czy interesują Cię planety, księżyce, czy jedno i drugie.',
-    'W grze przycisk sprowadza to do jednego tapnięcia: pomaga **obserwować galaktykę** (podsuwa kolejny system, który warto obejrzeć) i **wysyłać sondy szpiegowskie** tam, gdzie dane się zestarzały. Kolejne tapnięcie prowadzi do następnego celu z listy.',
+    'Przycisk **Spyglass** pojawia się sam, gdy masz obserwowanych graczy, włączone **Neighbours** (domyślnie tak, raz na dobę) albo ustawiony **Patrol** — i znika, gdy nie ma nic do zrobienia. Nie włączasz go kafelkiem jak pozostałych.',
+    'Etykieta mówi, co dalej: **Look** — obejrzyj ten układ w Galaktyce, **Spy** — sonda na jedno ciało (drugie tapnięcie, **Send**, wysyła ją), **Strike** — okazja na księżycu. **neighbours** i **patrol (N)** to obchód okolicy, **Reports** — czekają nowe raporty szpiegowskie, **Home** — nowi sąsiedzi do przejrzenia w Dashboardzie.',
+    'Co i jak często sprawdzać, ustawiasz raz w zakładce **Spyglass** w Dashboardzie.',
   ],
 
   value: [
-    'Bez tego wywiad to ręczne przeklikiwanie galaktyki i pamiętanie, kogo i kiedy się już oglądało. Przycisk zamienia to w rytm tapnięć, a całą decyzję „co dalej" podejmuje na podstawie ustawień, które raz sobie zdefiniowałeś.',
+    'Zamiast pamiętać, kogo i kiedy ostatnio oglądałeś, po prostu tapiesz. Przycisk sam układa kolejkę układów i sond z Twoich ustawień.',
   ],
 
   details: [
-    'Każda z funkcji wywiadu — ranking zagrożenia, dossier, rutyna, mapa, patrol — ma własny opis w rozdziale „Spyglass — wywiad".',
-    'Orb włączasz i wyłączasz jak każdy inny: kafelkiem na pasku przycisków w Ustawieniach OG-E.',
+    'Szczegóły analizy — ranking zagrożenia, dossier, rutyna, mapa, patrol — opisuje rozdział „Spyglass — wywiad".',
+    'Przytrzymanie przycisku przez 2 s gasi podpowiedź **Home**.',
   ],
 
   fairplay: {
     summary: [
-      'Przycisk **nie wysyła żadnych żądań do gry** — klika natywne elementy widoku galaktyki i natywną wysyłkę sondy, dokładnie te, które nacisnąłbyś sam. Tempo wyznaczasz Ty: nie ma tu żadnej pętli działającej w tle ani bez Twojego tapnięcia.',
-      'Wszystko, co przycisk wie, pochodzi z ekranów, które i tak otworzyłeś, oraz z ustawień, które sam zapisałeś w Dashboardzie.',
+      '**Look** to zwykłe przejście do układu w Galaktyce. Sonda to dwa tapnięcia: pierwsze wypełnia natywny formularz floty (statek, cel, misja **Szpieguj**), drugie naciska przycisk wysyłki gry. Zawsze jedno ciało, nic w tle.',
+      'Przycisk korzysta z tego, co widziałeś w grze, z publicznego API OGame i z Twoich ustawień.',
     ],
   },
 
   screenshots: [
-    { id: 'button', caption: 'Orb Spyglassa na przycisku OG-E — podpowiada kolejne spojrzenie na galaktykę albo wysyłkę sondy.' },
+    { id: 'button', caption: 'Spyglass na przycisku OG-E: „Look" — obejrzyj układ [1:116], zostało jeszcze 79 celów.' },
   ],
 
   codeRefs: [

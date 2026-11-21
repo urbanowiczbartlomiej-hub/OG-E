@@ -12,34 +12,35 @@ export default {
 
   name: 'Kto Cię szpieguje',
   oneLiner:
-    'Alerty „obca flota w pobliżu" zebrane w jedną tabelę: kto Cię ostatnio sondował, jak często i z jakich układów — najświeżsi i najbliżsi na górze.',
+    'Alerty o cudzych sondach w jednej tabeli: kto Cię szpiegował, jak często i skąd.',
   order: 7,
 
   idea: [
-    'Na stronie wiadomości OG-E zbiera alerty „obca flota w pobliżu Twojej planety" w **jedną tabelę**: jeden wiersz na szpiega, z tym kto, jak dawno, jak często i skąd Cię zaczepia. Najświeższe i najbliższe zagrożenia są na górze, a szpieg z flotą **w Twoim własnym układzie** jest osobno oznaczony, bo dosięga Cię najszybciej.',
-    'Ten sam materiał wraca jako panel na zakładce `Spyglass`, z zakresami `1d / 7d / 1m / 3m`. Stamtąd jednym tapnięciem wrzucasz szpiega na listę obserwowanych albo otwierasz jego dossier — czyli **odwracasz role**: ten, kto Cię obwąchał, staje się celem Twojego wywiadu.',
+    'Na stronie wiadomości, w zakładce **Szpieguj**, OG-E zbiera otwarte przez Ciebie alerty o obcych sondach w **jedną tabelę** — jeden wiersz na gracza: kiedy ostatnio, ile razy, skąd i przy których Twoich planetach. Zakres: **1d / 7d / 1m / 3m**.',
+    'Kolor wiersza pokazuje **Danger** gracza, a kliknięcie nicku otwiera jego dossier — ten, kto Cię szpiegował, sam staje się celem. Ta sama tabela jest w Dashboardzie, w zakładce Spyglass (**Who\'s spying**).',
   ],
 
   value: [
-    'OGame rozrzuca „kto Cię sondował" po pojedynczych wiadomościach, które łatwo przeoczyć. Tabela odpowiada na jedno pytanie obronne — **czy ktoś się mną interesuje i jak blisko jest?** — zanim przełoży się to na atak. A ponieważ prowadzi prosto do dossier, ta sama informacja od razu staje się materiałem do kontrataku.',
+    'OGame rozrzuca te alerty po pojedynczych wiadomościach. Tabela od razu odpowiada na pytanie: **czy ktoś się mną interesuje i jak blisko jest?**',
   ],
 
   fairplay: {
     summary: [
-      'Panel jest **czysto prezentacyjny**: pokazuje alerty, które sam otworzyłeś podczas normalnej gry. Nie inicjuje żadnego kliknięcia w grze, nie wysyła żądań, nie ma timera ani powiadomienia poza kartą.',
-      'To ta sama wiedza, którą OGame już Ci pokazał — tylko **zebrana w jedną czytelną tabelę** zamiast rozsypana po wiadomościach. Możesz zresztą podejrzeć surowe alerty, z których powstały wiersze.',
+      'Tabela **tylko porządkuje** wiadomości, które gra już Ci pokazała. Nic nie klika, nic nie wysyła.',
+      'Surowe alerty możesz podejrzeć (**show raw log**) — nic nie jest ukryte.',
     ],
   },
 
   details: [
-    'Przełącznik `Coords` / `Names` zmienia wiersze między koordynatami a nazwami ciał — jak Ci wygodniej czytać.',
-    '`show raw log` rozwija surowe alerty, na których oparty jest wiersz — nic nie jest ukryte przed sprawdzeniem.',
+    'Gracz szpiegujący z Twojego własnego układu jest oznaczony i stoi na górze.',
+    '**Mute** wycisza gracza, którego sondy Cię nie obchodzą (np. sojusznika).',
+    'Przycisk **Coords** / **Names** przełącza wiersze między współrzędnymi a nazwami planet.',
+    'Tabela w grze jest domyślnie włączona; wyłączysz ją kafelkiem „Who\'s spying" w Ustawieniach OG-E (Display).',
   ],
 
   screenshots: [
-    { id: 'dashboard', caption: 'Panel „kto Cię szpieguje" na zakładce Spyglass: wiersz na szpiega, zakres czasu i wejście na listę obserwowanych albo w dossier.' },
-    { id: 'panel', caption: 'Ta sama tabela na stronie wiadomości w grze, nad przeglądem raportów AGR.' },
-    { id: 'same-system', caption: 'Wiersz oznaczony jako zagrożenie z Twojego własnego układu — zawsze na górze listy.' },
+    { id: 'panel', caption: 'Tabela na stronie wiadomości w grze: dwóch graczy, liczba alertów i Twoje planety, przy których się pojawili.' },
+    { id: 'dashboard', caption: 'Ta sama tabela w Dashboardzie, w zakładce Spyglass.' },
   ],
 
   codeRefs: [

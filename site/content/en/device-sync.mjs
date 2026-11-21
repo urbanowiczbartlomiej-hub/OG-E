@@ -10,34 +10,35 @@ export default {
 
   name: 'Cross-device sync',
   oneLiner:
-    'Your collected data (galaxy scans, colony history) travels between your computer and phone through your own private GitHub gist.',
+    'Your computer and your phone see the same OG-E data — through your own private GitHub gist.',
   flagship: true,
   order: 5,
 
   idea: [
-    'In Settings you connect **your own GitHub token** (a classic PAT with the single `gist` permission), and OG-E keeps your locally-collected data in a **private gist that belongs to you**. Every device pushes and pulls through `api.github.com` — nowhere else.',
-    'Merging the two sides is **additive and local-first**: on a pull, remote entries are added to local (the newer scan wins), nothing is wholesale overwritten. Uploads are debounced by a 15-second window, so a burst of scans while scrolling the galaxy coalesces into one upload instead of a dozen.',
+    'In the **Sync** tab of the Dashboard you switch on **Sync across devices** and paste your **GitHub token** (the `gist` permission is enough). From then on OG-E keeps a copy of your data in **your private gist** and pulls it onto every device.',
+    'What cannot be rebuilt gets synced: colony history, Spyglass intel, the watch list, Daily Run routes and settings. Galaxy scans and the player list are rebuilt on each device from the public API.',
+    'Data is **merged**: lists (colonies, reports) fill each other in, while settings and routes are taken whole from the newer version.',
   ],
 
   value: [
-    'You play on several devices, and the knowledge gathered by normal play — scan classifications, colony observations — drifts apart between them. Sync means every device sees the same merged, current picture after boot, with no manual transfer.',
+    'Playing on a computer and a phone? Without sync each device knows something different. With it you see the same everywhere, without moving anything by hand.',
   ],
 
   fairplay: {
     summary: [
-      "Sync **never contacts the game server**. All traffic goes to a service you control (your GitHub gist), off the game's channel. That is OG-E's position in the terms of service: we only read game pages rendered in your own browser, and your data syncs through a separate channel.",
-      'It is **entirely opt-in**: with no token pasted by you, nothing leaves your machine. The token holds the smallest possible permission (`gist`) and lives locally. Only your own data, gathered by playing, is synced — there is no background game tracking.',
+      'Sync **never talks to the game server** — only to GitHub, to a gist that belongs to you.',
+      'It is **optional** and off by default: without your token nothing leaves the browser. Only your own data, gathered while playing, is synced.',
     ],
   },
 
   details: [
-    'Secrets (the GitHub token, the ntfy token) never enter the synced file or an export.',
-    "On GitHub rate-limit errors (403/429) the module backs off and does not hammer the API pointlessly — it stays inside GitHub's 5000 req/h budget.",
+    '**Stored on this device** shows how much data each server has on this device and when it last synced.',
+    'Done with a server? **Abandon** downloads an archive and deletes the data from this device (the gist copy stays).',
+    '**Alliance share (Spyglass)** is a separate, optional intel exchange with your alliance-mates.',
   ],
 
   screenshots: [
-    { id: 'settings', caption: 'The GitHub token field in OG-E Settings — sync is opt-in.' },
-    { id: 'merge', caption: 'Two devices see the same current data picture after merging.' },
+    { id: 'settings', caption: 'The Sync tab: GitHub token, "Sync now" and a summary of the server\'s data on this device.' },
   ],
 
   codeRefs: [

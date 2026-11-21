@@ -13,32 +13,32 @@ export default {
 
   name: 'Przyciski nawigacji galaktyki',
   oneLiner:
-    'Duże, kciukiem trafialne strzałki i wejścia do galaktyki/systemu pod tabelą — bo natywny nagłówek na telefonie jest ~16 px wysoki.',
+    'Duże przyciski galaktyki i układu, wygodne pod kciuk — zamiast malutkich natywnych.',
   order: 1,
 
   idea: [
-    'Widok galaktyki jest zaprojektowany pod desktop: przełączanie galaktyki/systemu, strzałki i przyciski Start / phalanx / spy / discovery w nagłówku mają na telefonie ok. 16 px wysokości — praktycznie nietrafialne bez zoomu. Panel OG-E dokłada te same kontrolki jeszcze raz, **pod tabelą systemu**, w celach dotykowych ~50 px: stepper galaktyki i systemu po lewej/prawej, przycisk „Start" po środku, a rzadziej używane Phalanx/Spy/Discovery chowają się pod składaną „pokrywką".',
-    'Panel niczego nie re-implementuje — **klika te same natywne przyciski i pola**, które są w nagłówku. Krok galaktyki/systemu przesuwa natywne strzałki (zawijanie i koszt deuteru zostają regułą gry), a „Start" wypełnia natywne pola i klika natywny submit. Jeśli przycisk jest wyłączony w nagłówku (np. phalanx niedostępny na tym ciele), panel pokazuje to samo.',
+    'Natywne strzałki galaktyki i układu oraz przyciski Phalanx / Spy / Discovery są malutkie, szczególnie na telefonie. OG-E zastępuje je **dużym panelem**: **−/+** dla galaktyki i układu, **Start** pośrodku, a rzadziej używane Phalanx / Spy / Discovery można zwinąć.',
+    'Panel stoi **pod tabelą** (domyślnie) albo **nad nią** — przełącznik **BTM / TOP / BOTH** w zwijanym wierszu; BOTH zostawia też natywny nagłówek gry.',
   ],
 
   value: [
-    'Bez tego panelu przeglądanie wielu systemów na telefonie to ciągłe szczypanie i przybliżanie, żeby trafić w mikroskopijną strzałkę, a potem odsuwanie z powrotem do tabeli. Panel trzyma nawigację w zasięgu kciuka, dokładnie tam, gdzie i tak patrzysz.',
+    'Przeglądasz Galaktykę kciukiem, bez przybliżania ekranu za każdym razem, gdy chcesz zmienić układ.',
   ],
 
   fairplay: {
     summary: [
-      'Panel **nie dodaje żadnej akcji, której nie było w nagłówku** — każdy przycisk to kliknięcie tego samego natywnego elementu, który nacisnąłbyś sam. Liczba żądań do gry jest identyczna jak przy ręcznej nawigacji.',
-      'Stan przycisków (włączony/wyłączony) jest **kopiowany z nagłówka**, nie liczony od nowa — więc nie może pokazać czegoś, czego natywny UI już nie mówi.',
+      'Każdy przycisk panelu **klika ten sam natywny element gry**, który kliknąłbyś sam — nawigacja zostaje zasadami gry.',
+      'Jeśli przycisk w grze jest nieaktywny (np. brak Falangi czujników), w panelu też jest nieaktywny.',
     ],
   },
 
   details: [
-    'Ten sam przełącznik co „Readability" w Ustawieniach OG-E (Display) włącza i wyłącza ten panel.',
-    'Osobna, zawsze aktywna poprawka: strzałki klawiatury w oknie phalanx/spy/discovery czasem gubią fokus i przeskakują system dwa razy zamiast raz — panel to koryguje niezależnie od reszty.',
+    'Działa razem z „Readability" w Ustawieniach OG-E (domyślnie włączone).',
+    'Strzałki na klawiaturze w oknach Phalanx / Spy / Discovery przeskakują dokładnie o jeden układ.',
   ],
 
   screenshots: [
-    { id: 'panel', caption: 'Panel nawigacji pod tabelą systemu: stepper galaktyki/systemu i przyciski Start / Phalanx / Spy / Discovery.' },
+    { id: 'panel', caption: 'Panel w pozycji TOP: −/+ galaktyki i układu, Start, oraz Phalanx / Spy / Discovery.' },
   ],
 
   codeRefs: [

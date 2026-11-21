@@ -10,27 +10,35 @@ export default {
 
   name: 'Who is spying on you',
   oneLiner:
-    'A table on the messages page showing who has recently probed your planets — the freshest and closest at the top.',
+    'Alerts about other players\' probes in one table: who spied on you, how often and from where.',
   order: 7,
 
   idea: [
-    'On the messages page OG-E gathers "hostile fleet near your planet" alerts into **one table**: one row per spy, with who, how long ago, how often and from where they poke you. The freshest and closest threats are at the top, and a spy with a fleet **in your own system** is flagged separately (they reach you the fastest).',
+    'On the messages page, in the **Espionage** tab, OG-E gathers the alerts about foreign probes you opened into **one table** — one row per player: when, how many times, from where and near which of your planets. Range: **1d / 7d / 1m / 3m**.',
+    'The row colour shows the player\'s **Danger**, and clicking the name opens their dossier — whoever spied on you becomes your target. The same table is in the Dashboard, in the Spyglass tab (**Who\'s spying**).',
   ],
 
   value: [
-    'OGame scatters "who probed you" across individual messages that are easy to miss. The table answers one defensive question — **is someone interested in me, and how close are they?** — before it turns into an attack.',
+    'OGame scatters these alerts across single messages. The table answers one question at a glance: **is someone interested in me, and how close are they?**',
   ],
 
   fairplay: {
     summary: [
-      'The panel is **purely presentational**: it shows alerts you opened yourself during normal play. It initiates no click in the game, sends no requests, and has no timer or notification outside the tab.',
-      'It is the same knowledge OGame already showed you — just **gathered into one readable table** instead of scattered across messages.',
+      'The table **only sorts** messages the game has already shown you. It clicks nothing and sends nothing.',
+      'You can look at the raw alerts (**show raw log**) — nothing is hidden.',
     ],
   },
 
+  details: [
+    'A player spying from your own system is flagged and listed first.',
+    '**Mute** silences a player whose probes you do not care about (e.g. an ally).',
+    'The **Coords** / **Names** button switches rows between coordinates and planet names.',
+    'The in-game table is on by default; switch it off with the "Who\'s spying" tile in OG-E Settings (Display).',
+  ],
+
   screenshots: [
-    { id: 'panel', caption: 'The "Who is spying on you" panel at the top of the Spy tab, above the AGR overview.' },
-    { id: 'same-system', caption: 'A row flagged as a threat from your own system — at the top of the list.' },
+    { id: 'panel', caption: 'The table on the in-game messages page: two players, their alert counts and the planets of yours they showed up near.' },
+    { id: 'dashboard', caption: 'The same table in the Dashboard, in the Spyglass tab.' },
   ],
 
   codeRefs: [

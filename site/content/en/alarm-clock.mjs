@@ -10,37 +10,39 @@ export default {
 
   name: 'Alarm clock',
   oneLiner:
-    'A reminder you set yourself for a fleet return — it rings on your phone at the time your own send-off determines.',
+    'Your phone rings when your fleet-save or an expedition wave comes back — at a time set by your own dispatch.',
   flagship: true,
   order: 3,
 
   idea: [
-    "On the game's event list every fleet row gets a small, clickable badge in its arrival-time cell. You tap it to **arm a reminder** relative to that flight (e.g. the moment a fleet-save returns), and a second tap removes it. Waves of returning expeditions are detected and controlled as a whole — one badge for the whole series.",
-    'The push is **queued on ntfy.sh** (a notification service you configure yourself with a token in Settings) with a delivery time computed from your send-off. ntfy holds and delivers the message at the appointed hour — after you set the reminder OG-E keeps no watch.',
+    'The alarm clock schedules phone notifications through **ntfy.sh** — a free notification app. It needs two tokens: **ntfy** (the **Alarm clock** tab in the Dashboard) and **GitHub** (the **Sync** tab) — the alarm clock keeps its reminder list in your private gist. Then switch on **Enable alarm clock** and subscribe to your topic on the phone.',
+    'Three kinds of reminders, each switched on separately: **Fleet-save** (detected automatically — a big fleet on a long flight), **Expeditions** (a whole wave of returns as one series) and **Ad-hoc** (a bell you set by hand on any flight in the event list). For each one you choose when it rings relative to landing.',
+    'Scheduled reminders ring even with the game closed. You see them all under **Reminders set**.',
   ],
 
   value: [
-    'A fleet return or the end of a fleet-save often lands in the middle of the night or the middle of a workday. Instead of doing the math in your head and coming back over and over, you set one reminder and your phone speaks up exactly when the fleet lands.',
+    'A fleet-save lands at 3 a.m. or in the middle of your workday. Instead of doing the maths in your head and logging in "just in case", you set it once — the phone rings when the fleet lands.',
   ],
 
   fairplay: {
     borderline: true,
     summary: [
-      'We say it **plainly: this is our one knowingly borderline feature**. That is why we keep it on the safe side and constrain it harder than the rules require.',
-      'It is a **player-set reminder for one specific send-off** — not an automaton reacting to in-game events. The ring time follows from your own action (your send-off), not from monitoring the server.',
-      'It is **presence-gated**: only ever armed while you are present in the game. OG-E does not watch the game on your behalf while you are away — no page reload, no reading the event list for hostile fleets, no audio, no blinking tab title, no system notifications.',
-      "OG-E reads the arrival time **passively from the event list the game already renders** — with no traffic to the game server. The push itself travels through ntfy.sh, a service you configured, off the game's channel.",
+      'We say it plainly: **this is our one feature on the edge of the rules**, which is why we keep it narrow.',
+      'It is **an alarm for a time you already know** from your own dispatch — not a game watchdog. It does not watch enemy fleets and does not reload the page. It only schedules reminders while you have the game open yourself.',
+      'OG-E reads the landing time from the event list the game already shows. The notification is sent by ntfy.sh, and the reminder list is kept in your gist — services you set up yourself. The game server has nothing to do with it.',
     ],
   },
 
   details: [
-    'A fleet-save is detected and scheduled automatically; a slot can only be cancelled inside its cancel window just before delivery.',
-    'Configuration and tokens live in the OG-E Settings panel; without an ntfy token the alarm sends nothing outward.',
+    'By default a fleet-save is a fleet of 100,000+ ships on a flight longer than 10 minutes — both thresholds can be changed.',
+    '**Landed-fleet reminder** rings (by default 20 min after landing) if a fleet-save is still sitting on the planet after landing.',
+    'ntfy schedules at most 3 days ahead. A later fleet-save or wave is scheduled the next time you open the game; an ad-hoc reminder further than 3 days out is not possible.',
+    'When a reminder cannot be scheduled (e.g. the daily ntfy limit is used up), a clear notice appears in the game.',
   ],
 
   screenshots: [
-    { id: 'badge', caption: 'The clickable alarm badge in a row\'s arrival-time cell on the event list.' },
-    { id: 'wave', caption: 'A wave of returning expeditions controlled as a single series.' },
+    { id: 'reminders', caption: 'Reminders set — scheduled bells: an expedition wave, an ad-hoc flight and a fleet-save.' },
+    { id: 'fleetsave', caption: 'Fleet-save settings: how many ships count as a fleet-save, when to ring, the message text and the Landed-fleet reminder.' },
   ],
 
   codeRefs: [

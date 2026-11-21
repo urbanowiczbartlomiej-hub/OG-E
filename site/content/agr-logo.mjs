@@ -12,27 +12,29 @@ export default {
 
   name: 'Logo AGR jako skrót do ustawień',
   oneLiner:
-    'Bezczynny dotąd przycisk logo AntiGameReborn dostaje ikonę OG-E i jednym kliknięciem otwiera menu opcji razem z zakładką Ustawień OG-E.',
+    'Kliknięcie ikony AntiGameReborn w menu otwiera od razu Ustawienia OG-E.',
   order: 2,
 
   idea: [
-    'AGR ma w rogu przycisk-logo, który domyślnie prawie nic nie robi po kliknięciu. Zamiast malować drugi, osobny przycisk na pasku, OG-E przejmuje ten — podmienia obrazek na własną ikonę i podpina klik pod dwie rzeczy naraz: otwarcie menu opcji AGR i automatyczne rozwinięcie w nim zakładki Ustawień OG-E.',
-    'To czysto kosmetyczna podmiana grafiki i jeden listener kliknięcia — reszta menu AGR działa dokładnie tak samo jak zawsze.',
+    'Ikona AGR w lewym menu na zmianę pokazuje logo **AGR** i **OG-E**. Kliknięcie otwiera menu AGR i od razu rozwija zakładkę **Ustawień OG-E**.',
   ],
 
   value: [
-    'Jedno kliknięcie zamiast dwóch (otwórz menu, potem znajdź zakładkę OG-E) — a przy okazji od razu widać, że rozszerzenie jest aktywne, bo ikona w rogu to nie jest już domyślne logo AGR.',
+    'Jedno kliknięcie zamiast dwóch — i od razu widać, że OG-E działa.',
   ],
 
   fairplay: {
     summary: [
-      'To wyłącznie **podmiana obrazka i skrót klawiszowy do już istniejącego menu** — nie dodaje żadnej nowej funkcji ani żądania do gry, tylko szybszą ścieżkę do ustawień, które i tak są dostępne przez AGR.',
-      'Jeśli AGR nie załaduje się w ciągu 10 sekund, moduł po cichu nic nie robi — logo AGR zostaje bez zmian, żadnego błędu na ekranie.',
+      'To tylko **grafika i skrót do istniejącego menu** — bez nowej funkcji i bez kontaktu z grą.',
     ],
   },
 
+  details: [
+    'Wymaga zainstalowanego AntiGameReborn (AGR) — tak jak cały panel Ustawień OG-E.',
+  ],
+
   screenshots: [
-    { id: 'logo', caption: 'Ikona OG-E w miejscu domyślnego logo AGR, w rogu paska.' },
+    { id: 'logo', caption: 'Ikona przy „AntiGameReborn" przenika się między logo AGR i OG-E.' },
   ],
 
   codeRefs: [

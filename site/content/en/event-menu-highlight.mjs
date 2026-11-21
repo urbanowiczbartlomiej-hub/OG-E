@@ -10,31 +10,31 @@ export default {
 
   name: 'Event pulse',
   oneLiner:
-    'Highlights temporary event entries in the left menu that look identical to the permanent Trader/Officers/Shop items and are easy to miss.',
+    'Highlights temporary events in the left menu, which look like regular entries and are easy to miss.',
   order: 4,
 
   idea: [
-    'From time to time the game inserts temporary entries into the left bar (reward windows, contests, seasonal items) under the same class the permanent, always-present Trader/Officers/Shop entries use. Looking identical, they get lost in the background — Event pulse animates ONLY those temporary entries, so they stand out from their permanent neighbours.',
-    'The pulse clears itself once we detect that every daily task on the Rewarding page is already done — no need to dismiss it by hand for it to stop reminding you of something you have already finished.',
+    'Every now and then the game adds temporary events to the left menu (e.g. rewards, the artifact shop). They look exactly like the permanent entries, so they blend in. **Event pulse** animates only those temporary entries.',
+    'For rewards the pulse stops once everything on their page is claimed; for the artifact shop — once you have claimed every tier, until the event ends.',
   ],
 
   value: [
-    'Temporary events are easy to miss in the daily rush — they look exactly like the menu you ignore anyway. Event pulse makes them stand out so you never skip a day on which an event is already available — that way you always collect every reward you can.',
+    'You do not miss an event day, so you do not lose rewards.',
   ],
 
   fairplay: {
     summary: [
-      'This is purely a **visual highlight of an already-existing menu element** — strictly additive (`AGENTS.md` §1.7), hiding or obscuring nothing: Trader, Officers and Shop look exactly as they always do.',
-      'The "done for today" state is read from what the Rewarding page already shows after you open it yourself — nothing is polled in the background.',
+      'It is only a **visual highlight of an existing menu entry** — nothing is hidden or covered.',
+      'OG-E reads the "claimed" state from the event page you open yourself — nothing is checked in the background.',
     ],
   },
 
   details: [
-    'Toggled in the OG-E Settings panel, the "Event pulse" tile.',
+    'On by default; switch it off with the "Event pulse" tile in OG-E Settings.',
   ],
 
   screenshots: [
-    { id: 'menu', caption: 'An animated temporary-event entry in the left menu.' },
+    { id: 'menu', caption: 'A pulsing temporary event entry in the left menu.' },
   ],
 
   codeRefs: [
