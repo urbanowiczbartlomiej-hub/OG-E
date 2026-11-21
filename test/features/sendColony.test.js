@@ -53,7 +53,11 @@ import {
   colonizeDecisionsStore,
   disposeColonizeDecisionsStore,
 } from '../../src/state/colonizeDecisions.js';
-import { blockingCoords, DEC_TAKEN } from '../../src/domain/colonizeDecisions.js';
+import {
+  blockingCoords,
+  DEC_TAKEN,
+  DEC_RESERVED,
+} from '../../src/domain/colonizeDecisions.js';
 import {
   setApiContext,
   _resetApiContextStoreForTest,
@@ -723,14 +727,19 @@ describe('onSendClick — fleetdispatch branch', () => {
     getSend()?.click();
     await settle();
     expect(navTarget).toBeNull();
-    // The retarget armed a ready send on 4:30:8. Tap 1's 'Stale' transient-hold
-    // (REVIEW.md 7.10, ~1.8 s) is still re-painting when the retarget lands, so
-    // wait it out and pump one refresh() — the derive-driven armed-fleet2 label
-    // ('Send' on the freshly-aimed slot) then resumes.
-    await new Promise((r) => setTimeout(r, 1900));
-    document.dispatchEvent(new CustomEvent('oge:galaxyScanned'));
+    // The retarget armed a ready send on 4:30:8, and the label says so AT ONCE.
+    // The tap that produced it also ACKNOWLEDGED tap 1's 'Stale' hold, so there
+    // is nothing left to wait out. Regression (the hold used to be purely
+    // time-based, ~1.8 s): every 1 Hz tick until the old deadline re-painted the
+    // DEAD slot's 'Stale' over the live label, so the user watched the previous
+    // failure flash back onto a target that was fine.
     expect(getSend()?.textContent).toContain('Send');
     expect(getSend()?.textContent).toContain('4:30:8');
+    // And a ticker fire can't resurrect it either: the shared clock snaps every
+    // subscriber on a visibility change, which is exactly a refresh() tick.
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(getSend()?.textContent).toContain('Send');
+    expect(getSend()?.textContent).not.toContain('Stale');
     expect(scansStore.get()['4:30']?.positions?.[8]?.status).toBe('empty');
 
     document.removeEventListener('oge:fd:cmd', onCmd);
@@ -1057,6 +1066,70 @@ describe('oge:colonizeSent reactor', () => {
 });
 
 // ──────────────────────────────────────────────────────────────────
+// Courier refusal → decision log (the reactor is not the only writer)
+// ──────────────────────────────────────────────────────────────────
+//
+// `onCheckTargetResult` only records when the game ISSUES a checkTarget that
+// carries our colony ship. It does not always: the game deduplicates the
+// request for unchanged coords, and `select()` has a re-entry fallback that
+// resolves with no detail at all. The courier still returns the verdict it
+// read, so the click path records the refusal itself. Without that, the slot
+// stayed unblocked and the picker re-proposed the exact coords it had just
+// skipped — on a fresh universe, where candidates come from the API breadth
+// layer and there is no scan entry to downgrade either, the whole Reserved
+// series came back on the next run.
+//
+// `armCourier` dispatches its checkTargetResult WITHOUT a `ships` map, which
+// is precisely the shape the reactor ignores — so these tests prove the click
+// path writes on its own.
+
+describe('courier refusal recording', () => {
+  it('reserved verdict is recorded even when no checkTarget reached the reactor', async () => {
+    setupScene({ onFleetdispatch: true });
+    settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
+    galaxyScanConfigStore.set({ ...galaxyScanConfigStore.get(), positions: '8' });
+    scansStore.set({
+      '4:30': { scannedAt: Date.now(), positions: { 8: { status: 'empty' } } },
+    });
+    installSendColony();
+    document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
+    const unhook = armCourier({ errorCode: 140016 });
+
+    getSend()?.click();
+    await settle();
+
+    expect(getSend()?.textContent).toContain('Reserved');
+    expect(colonizeDecisionsStore.get()['4:30:8']?.s).toBe(DEC_RESERVED);
+    expect(blockingCoords(colonizeDecisionsStore.get(), Date.now()).has('4:30:8')).toBe(true);
+    // The reactor really did sit this one out (no `ships` in the detail), so
+    // the scan entry is untouched — the decision alone is doing the blocking.
+    expect(scansStore.get()['4:30']?.positions?.[8]?.status).toBe('empty');
+    unhook();
+  });
+
+  it('a refusal about US (no colony ship) records nothing', async () => {
+    // 140035 says the FLEET lacks a colonizer, not that the slot is bad.
+    // Blacklisting here would burn a perfectly good target for 90 days.
+    setupScene({ onFleetdispatch: true });
+    settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
+    galaxyScanConfigStore.set({ ...galaxyScanConfigStore.get(), positions: '8' });
+    scansStore.set({
+      '4:30': { scannedAt: Date.now(), positions: { 8: { status: 'empty' } } },
+    });
+    installSendColony();
+    document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
+    const unhook = armCourier({ errorCode: 140035 });
+
+    getSend()?.click();
+    await settle();
+
+    expect(getSend()?.textContent).toContain('No ship');
+    expect(colonizeDecisionsStore.get()['4:30:8']).toBeUndefined();
+    unhook();
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
 // onSendHold — manual skip (hold-to-skip)
 // ──────────────────────────────────────────────────────────────────
 
@@ -1091,6 +1164,9 @@ describe('onSendHold — manual skip', () => {
     let clicks = 0;
     document.getElementById('dispatchFleet')?.addEventListener('click', () => (clicks += 1));
     _onSendHoldForTest();
+    // The write waits for the decision store's hydrate (a resolved sentinel
+    // here, so one microtask) before it lands — see recordDecision.
+    await settle();
     // The decision log now blocks 4:30:9 (taken), so the picker stops proposing it.
     expect(colonizeDecisionsStore.get()['4:30:9']?.s).toBe(DEC_TAKEN);
     expect(blockingCoords(colonizeDecisionsStore.get(), Date.now()).has('4:30:9')).toBe(true);

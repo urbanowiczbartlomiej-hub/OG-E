@@ -372,6 +372,34 @@ describe('downloadAndMerge', () => {
     expect(Number.isNaN(Date.parse(downCalls[0][1]))).toBe(false);
   });
 
+  it('adopting a remote coord does NOT arm an upload of what we just pulled', async () => {
+    // The write-back is REMOTE-origin data, not a user write, so it must not
+    // set the dirty flag — otherwise every round that adopted something ended
+    // by scheduling a PATCH of its own download, and a two-device account kept
+    // the pair PATCHing each other until GitHub's secondary rate limit (403)
+    // cut it off.
+    //
+    // The regression this guards: `downloadAndMerge` holds the upload-arm
+    // suppressor only across the SYNCHRONOUS prefix of `writeLocal`. The moment
+    // a slot waits for its store's hydrate before touching it, the store
+    // notification moves into the awaited tail, where the suppressor is already
+    // down. The decisions slot now re-raises it around the mutation itself.
+    colonizeDecisionsStore.set(/** @type {DecisionMap} */ ({ '4:30:5': dec(1000) }));
+    /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(
+      payload({ decisions: { '1:1:1': dec(2000) } }),
+    );
+    installSync();
+    await tick(0);
+    // The adopt really happened (otherwise this test proves nothing).
+    expect(Object.keys(colonizeDecisionsStore.get()).sort()).toEqual(['1:1:1', '4:30:5']);
+    // ...and left no dirty flag behind.
+    expect(localStorage.getItem('oge_uploadPending')).toBeNull();
+    // Past the debounce window: still no PATCH.
+    clearSyncSpies();
+    await tick(16_000);
+    expect(writeGistData).not.toHaveBeenCalled();
+  });
+
   it('does NOT write to stores when merge is a no-op (anti-loop protection)', async () => {
     // Same coord on both sides with identical decision — merge yields
     // the local reference unchanged (`changed === false`). The
