@@ -4,6 +4,17 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.71.2] — 2026-11-21
+
+### Fixed
+
+- **"Other galaxies first" picks the real neighbours on 9-galaxy servers.**
+  OG-E assumed every server had 7 galaxies, so on the new merged universes
+  galaxy 7 treated galaxy 1 as its neighbour — three jumps away in reality.
+  The Colonize and lifeform discovery buttons now read the galaxy count from
+  the server, so from galaxy 7 they look at 8 and 6 first, and the discovery
+  sweep reaches galaxies 8 and 9 too.
+
 ## [1.71.1] — 2026-11-21
 
 ### Fixed
