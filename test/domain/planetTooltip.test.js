@@ -18,18 +18,30 @@ const PL = '<b>Kolonia [4:9:8]</b><br/>Forma życia: Mechy'
 describe('parsePlanetTooltip', () => {
   it('reads coords and the field pair out of a real tooltip', () => {
     expect(parsePlanetTooltip(PL)).toEqual({
-      coords: '[4:9:8]', galaxy: 4, system: 9, position: 8, used: 0, max: 235,
+      coords: '[4:9:8]', galaxy: 4, system: 9, position: 8, used: 0, max: 235, diameter: 16494,
     });
   });
 
   it('accepts a comma diameter separator (locale-dependent rendering)', () => {
     const t = '<b>Colony [1:2:3]</b><br/>12,345km (7/188)<br/>';
-    expect(parsePlanetTooltip(t)).toMatchObject({ used: 7, max: 188 });
+    expect(parsePlanetTooltip(t)).toMatchObject({ used: 7, max: 188, diameter: 12345 });
   });
 
   it('accepts a diameter with no separator at all', () => {
     expect(parsePlanetTooltip('<b>C [1:2:3]</b><br/>9000km (1/163)'))
-      .toMatchObject({ used: 1, max: 163 });
+      .toMatchObject({ used: 1, max: 163, diameter: 9000 });
+  });
+
+  it('reads the diameter in whole km — any separator is a thousands separator', () => {
+    // 16.494 is sixteen thousand km, not sixteen and a half.
+    expect(parsePlanetTooltip('<b>C [1:2:8]</b><br/>16.494km (0/235)')?.diameter).toBe(16494);
+    expect(parsePlanetTooltip('<b>C [1:2:8]</b><br/>18,139km (0/359)')?.diameter).toBe(18139);
+  });
+
+  it('omits a zero diameter rather than storing a nonsense value', () => {
+    const p = parsePlanetTooltip('<b>C [1:2:8]</b><br/>0km (0/235)');
+    expect(p).toMatchObject({ max: 235 });
+    expect(p).not.toHaveProperty('diameter');
   });
 
   it('tolerates whitespace between the diameter and the parenthetical', () => {

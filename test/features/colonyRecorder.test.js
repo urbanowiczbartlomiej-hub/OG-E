@@ -205,6 +205,14 @@ describe('installColonyRecorder — synchronous path', () => {
     galaxyScanConfigStore.set(defaultGalaxyScanConfig());
   });
 
+  it('stamps the diameter read from the same tooltip as the fields', async () => {
+    // Scene tooltip: "16.494km (0/…)" → 16 494 km, whole km.
+    setupSidebarScene();
+    installColonyRecorder();
+    await flushMicrotasks();
+    expect(/** @type {ColonyEntry} */ (historyStore.get()[0]).d).toBe(16494);
+  });
+
   it('records off the overview page too — any ingame page renders the sidebar', async () => {
     // The whole point of reading the sidebar: the observation no longer
     // depends on the player opening this colony's overview.

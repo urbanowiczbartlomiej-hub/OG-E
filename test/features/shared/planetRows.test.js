@@ -41,7 +41,7 @@ describe('parsePlanetRow', () => {
     mount(row({ id: 'planet-33001', coords: '[4:9:8]', used: 0, max: 235, name: 'Kolonia' }));
     expect(parsePlanetRow(only())).toEqual({
       cp: 33001, coords: '[4:9:8]', galaxy: 4, system: 9, position: 8,
-      name: 'Kolonia', used: 0, max: 235,
+      name: 'Kolonia', used: 0, max: 235, diameter: 16494,
     });
   });
 
