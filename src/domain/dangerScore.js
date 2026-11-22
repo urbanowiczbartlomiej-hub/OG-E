@@ -8,8 +8,9 @@
 //
 // The game-changer is free and server-wide: the military highscore (type 3,
 // fetched hourly) carries a per-player `ships` COUNT, and the "military
-// destroyed" highscore (type 5) is a lifetime kill history that ONLY combat
-// moves (production and expeditions never touch it). Together they separate
+// destroyed" highscore (type 6 — NOT 5, which is military BUILT; see
+// docs/ogame-fleet-mechanics.md "Highscore types") is a lifetime kill history
+// that ONLY combat moves (production and expeditions never touch it). Together they separate
 // the harmless defensive whale (10–100× your military, all bunker, 0–few
 // ships) from the real aggressor (fleet + a trail of kills), which points
 // alone never could.
@@ -291,7 +292,7 @@ const computeReach = (planets) => {
  *   (server omits it for pure-defense accounts) — but only trust that when the
  *   feed carries the attribute AT ALL (see `feedHasShips`); else ships is unknown.
  * @property {Record<string, {score?:number}>} [destroyed]  Military destroyed
- *   (type 5): id → {score}. Lifetime kill history.
+ *   (type 6): id → {score}. Lifetime kill history.
  * @property {Record<string, {position?:number, score?:number}>} [honor]  Honour
  *   highscore (type 7): id → {position, score}. Negative score = bandit.
  * @property {number} [honorTotal]  Ranked-player count (honour feed length),

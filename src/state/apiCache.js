@@ -40,12 +40,37 @@ import { currentUniverseKey } from './universeKey.js';
  * @property {{ ranks: Record<string, ApiRank>, timestamp?: number, fetchedAt: number }} [honor]
  * @property {{ ranks: Record<string, ApiRank>, timestamp?: number, fetchedAt: number }} [economy]
  *   Economy highscore (type 1) — the civil baseline for the danger model.
- * @property {{ ranks: Record<string, ApiRank>, timestamp?: number, fetchedAt: number }} [destroyed]
- *   Military destroyed (type 5) — lifetime kill history; only combat moves it.
- * @property {{ ranks: Record<string, ApiRank>, timestamp?: number, fetchedAt: number }} [lost]
- *   Military lost (type 6) — war involvement / crash recency.
+ * @property {{ ranks: Record<string, ApiRank>, timestamp?: number, fetchedAt: number, hsType?: number }} [destroyed]
+ *   Military destroyed (type 6) — lifetime kill history; only combat moves it.
+ * @property {{ ranks: Record<string, ApiRank>, timestamp?: number, fetchedAt: number, hsType?: number }} [lost]
+ *   Military lost (type 4) — war involvement / crash recency.
  * @property {{ data: ServerData, fetchedAt: number }} [server]
  */
+
+/**
+ * highscore.xml `type` numbers of the two lifetime military sub-feeds. Each
+ * cached part carries the type it was fetched from (`hsType`).
+ * @see docs/ogame-fleet-mechanics.md — "Highscore types".
+ */
+export const HS_TYPE_DESTROYED = 6;
+export const HS_TYPE_LOST = 4;
+
+/**
+ * Drop lifetime parts cached under the pre-fix mapping. Until 1.71.2 OG-E read
+ * `destroyed` from type 5 (really military BUILT) and `lost` from type 6
+ * (really DESTROYED), with a 24 h TTL — so an untagged part holds the wrong
+ * feed. Dropping it on READ (not only on refresh) keeps the dashboard, which
+ * reads the cache without refreshing, from scoring on the swapped values; the
+ * part is simply missing until the next refresh, which the danger model
+ * already tolerates.
+ * @param {ApiCache} cache
+ * @returns {ApiCache}
+ */
+const dropMistypedParts = (cache) => {
+  if (cache.destroyed && cache.destroyed.hsType !== HS_TYPE_DESTROYED) delete cache.destroyed;
+  if (cache.lost && cache.lost.hsType !== HS_TYPE_LOST) delete cache.lost;
+  return cache;
+};
 
 /**
  * Suffix of the per-universe chrome.storage.local key. Exported for the
@@ -69,7 +94,7 @@ export const apiCacheKeyFor = (universeId) => `${universeId}:${API_CACHE_KEY_BAS
 export const readApiCache = async () => {
   const key = currentUniverseKey(API_CACHE_KEY_BASE, apiCacheKeyFor);
   const raw = await chromeStore.get(key);
-  return raw && typeof raw === 'object' ? /** @type {ApiCache} */ (raw) : {};
+  return raw && typeof raw === 'object' ? dropMistypedParts(/** @type {ApiCache} */ (raw)) : {};
 };
 
 /**
@@ -81,7 +106,7 @@ export const readApiCache = async () => {
  */
 export const readApiCacheFor = async (universeId) => {
   const raw = await chromeStore.get(apiCacheKeyFor(universeId));
-  return raw && typeof raw === 'object' ? /** @type {ApiCache} */ (raw) : {};
+  return raw && typeof raw === 'object' ? dropMistypedParts(/** @type {ApiCache} */ (raw)) : {};
 };
 
 /**

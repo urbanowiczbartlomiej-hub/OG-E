@@ -841,3 +841,61 @@ lifeform Plasma Drive and the Large Cargo Overclock.
 **The Researcher alliance-class expedition speed bonus applies in BOTH
 directions**: the flight out and the flight home. (It was once assumed to apply
 only one way.)
+
+## Highscore types — which `type` is built, lost and destroyed
+
+The public `highscore.xml?category=1&type=N` feed (players) numbers its tables:
+
+| `type` | Table |
+|---|---|
+| 0 | Total |
+| 1 | Economy |
+| 2 | Research |
+| 3 | Military (current fleet + defence; carries the `ships` count) |
+| 4 | Military **lost** |
+| 5 | Military **built** |
+| 6 | Military **destroyed** |
+| 7 | Honour |
+
+The three lifetime military tables are tied by an accounting identity:
+
+```
+built (5) = current military (3) + lost (4)
+```
+
+**The wrong intuition:** *"type 5 is destroyed, type 6 is lost."* OG-E shipped
+with exactly that for a long time, so its "kill history" was really a
+"built ever" history: it rewarded anyone who builds and loses a lot (miners
+and expedition players burning cargo ships), and the unused "lost" feed was
+really the kills. Nothing in the XML names the table, so the mapping has to be
+measured — and the identity above is what tells the tables apart, because only
+one assignment satisfies it.
+
+Measured on one mature server (about 1200 ranked players), among players with
+a non-trivial score:
+
+- `type5 = type3 + type4` holds within 2 % for **78 %** of players. Every other
+  pairing of the three tables (`5 = 3 + 6`, `6 = 3 + 4`, `4 = 3 + 5`, …) holds
+  for **under 3 %**.
+- `type5 ≥ type3` for **99 %** of players — a "built ever" total can not be
+  below what you currently own. The same test passes for only 59 % with type 4
+  and 30 % with type 6.
+- Where the identity misses, built is usually the larger side (14 % of players,
+  by a median of ~19 % of built; 8 % miss the other way). The cause is not
+  established: units that leave without combat (scrapping) would explain the
+  first, and the three files being regenerated at different moments, or
+  defence repaired after a fight, the second. Treat both as hypotheses.
+
+Destroyed (6) is its own quantity, not derivable from the other three:
+destroyed ÷ built has a median of ~0.12 and passes 1.0 for fewer than one player
+in ten. That ratio is the cleanest public "this account lives off combat"
+signal. A pure-defence account still scores destroyed points — its defence
+shooting down attackers counts — so a high destroyed total alone does not
+prove offence.
+
+How much the wrong table mattered: ranking players by built instead of
+destroyed kept ~78 % of the top decile the same, but moved 14 % of all players
+by more than 20 percentile points.
+
+The feed constants live in [`src/state/apiCache.js`](../src/state/apiCache.js)
+(`HS_TYPE_DESTROYED`, `HS_TYPE_LOST`).

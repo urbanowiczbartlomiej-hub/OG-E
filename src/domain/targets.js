@@ -364,7 +364,7 @@ export function playerMatchesQuery(c, query) {
  * @param {Record<string, ApiPlayerLite>} [feeds.players]   players.xml: id → {name,status,alliance}.
  * @param {Record<string, ApiRankLite>} [feeds.total]       total highscore: id → {position,score}.
  * @param {Record<string, ApiRankLite>} [feeds.military]    military highscore: id → {position,score,ships}.
- * @param {Record<string, ApiRankLite>} [feeds.destroyed]   military destroyed (type 5): id → {position,score}.
+ * @param {Record<string, ApiRankLite>} [feeds.destroyed]   military destroyed (type 6): id → {position,score}.
  * @returns {TargetCandidate[]}
  */
 export function buildTargetCandidates(feeds = {}) {

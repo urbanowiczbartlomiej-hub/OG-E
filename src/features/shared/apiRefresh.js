@@ -33,6 +33,8 @@ import {
   writeApiCache,
   readApiCacheFor,
   writeApiCacheFor,
+  HS_TYPE_DESTROYED,
+  HS_TYPE_LOST,
 } from '../../state/apiCache.js';
 
 const MINUTE = 60 * 1000;
@@ -193,9 +195,12 @@ export async function refreshApiCache(opts = {}) {
     });
   }
   // Lifetime-cumulative behaviour feeds for the danger model + Spyglass:
-  // economy (type 1) — the civil baseline; military destroyed (type 5) — the
-  // kill history only combat can move; military lost (type 6) — war
-  // involvement / crash recency.
+  // economy (type 1) — the civil baseline; military destroyed (type 6) — the
+  // kill history only combat can move; military lost (type 4) — war
+  // involvement / crash recency. Type 5 is military BUILT (= current + lost),
+  // NOT destroyed — see docs/ogame-fleet-mechanics.md "Highscore types". Each
+  // part records the type it was fetched from (`hsType`) so `state/apiCache`
+  // can drop a part cached under the old, swapped mapping.
   if (force || !isFresh(cache.economy, TTL.lifetime, now)) {
     await feed('economy', async () => {
       const hs = parseHighscore(await fetchApiText('highscore', { category: '1', type: '1' }, origin));
@@ -205,16 +210,16 @@ export async function refreshApiCache(opts = {}) {
   }
   if (force || !isFresh(cache.destroyed, TTL.lifetime, now)) {
     await feed('destroyed', async () => {
-      const hs = parseHighscore(await fetchApiText('highscore', { category: '1', type: '5' }, origin));
+      const hs = parseHighscore(await fetchApiText('highscore', { category: '1', type: String(HS_TYPE_DESTROYED) }, origin));
       if (hs.timestamp == null) throw new Error('degenerate destroyed highscore parse (no timestamp)');
-      cache.destroyed = { ranks: hs.ranks, timestamp: hs.timestamp, fetchedAt: now };
+      cache.destroyed = { ranks: hs.ranks, timestamp: hs.timestamp, fetchedAt: now, hsType: HS_TYPE_DESTROYED };
     });
   }
   if (force || !isFresh(cache.lost, TTL.lifetime, now)) {
     await feed('lost', async () => {
-      const hs = parseHighscore(await fetchApiText('highscore', { category: '1', type: '6' }, origin));
+      const hs = parseHighscore(await fetchApiText('highscore', { category: '1', type: String(HS_TYPE_LOST) }, origin));
       if (hs.timestamp == null) throw new Error('degenerate lost highscore parse (no timestamp)');
-      cache.lost = { ranks: hs.ranks, timestamp: hs.timestamp, fetchedAt: now };
+      cache.lost = { ranks: hs.ranks, timestamp: hs.timestamp, fetchedAt: now, hsType: HS_TYPE_LOST };
     });
   }
   if (force || !isFresh(cache.server, TTL.server, now)) {
