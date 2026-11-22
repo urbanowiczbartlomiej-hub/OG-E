@@ -22,7 +22,10 @@ vi.mock('../../src/lib/logger.js', () => ({
   logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-vi.mock('../../src/state/apiCache.js', () => ({
+// Keep the module's real constants (the highscore type numbers) — only the
+// storage I/O is faked.
+vi.mock('../../src/state/apiCache.js', async (importOriginal) => ({
+  ...(/** @type {object} */ (await importOriginal())),
   readApiCache: vi.fn(() => Promise.resolve({})),
   writeApiCache: vi.fn(() => Promise.resolve()),
   readApiCacheFor: vi.fn(() => Promise.resolve({})),
@@ -86,6 +89,28 @@ describe('refreshApiCache — in-game defaults (no origin / no universeId)', () 
     // Every feed fetched without an explicit origin (arg 3 undefined).
     expect(fetchMock.mock.calls.length).toBeGreaterThan(0);
     for (const call of fetchMock.mock.calls) expect(call[2]).toBeUndefined();
+  });
+});
+
+describe('refreshApiCache — lifetime military feeds', () => {
+  // Type 5 is military BUILT; the kill history is type 6 and losses are type 4.
+  it('reads destroyed from highscore type 6 and lost from type 4, never type 5', async () => {
+    await refreshApiCache({ force: true });
+
+    const types = fetchMock.mock.calls
+      .filter((c) => c[0] === 'highscore')
+      .map((c) => c[1].type);
+    expect(types).toContain('6');
+    expect(types).toContain('4');
+    expect(types).not.toContain('5');
+  });
+
+  it('tags each cached part with the type it was fetched from', async () => {
+    await refreshApiCache({ force: true });
+
+    const written = asMock(writeApiCache).mock.calls[0][0];
+    expect(written.destroyed.hsType).toBe(6);
+    expect(written.lost.hsType).toBe(4);
   });
 });
 

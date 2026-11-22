@@ -81,6 +81,41 @@ describe('readApiCacheFor (explicit universe)', () => {
   });
 });
 
+describe('parts cached under the old highscore mapping', () => {
+  // Before the fix `destroyed` held type 5 (military built) and `lost` held
+  // type 6 (destroyed). Such a part carries no `hsType` tag.
+  it('drops an untagged destroyed / lost part on read', async () => {
+    mock.get.mockResolvedValue({
+      military: { ranks: { 1: { position: 1, score: 5 } }, fetchedAt: 1 },
+      destroyed: { ranks: { 1: { position: 1, score: 9 } }, fetchedAt: 1 },
+      lost: { ranks: { 1: { position: 1, score: 3 } }, fetchedAt: 1 },
+    });
+    const cache = await readApiCache();
+    expect(cache.destroyed).toBeUndefined();
+    expect(cache.lost).toBeUndefined();
+    expect(cache.military).toBeDefined();
+  });
+
+  it('drops a part tagged with the wrong type', async () => {
+    mock.get.mockResolvedValue({
+      destroyed: { ranks: {}, fetchedAt: 1, hsType: 5 },
+      lost: { ranks: {}, fetchedAt: 1, hsType: 6 },
+    });
+    await expect(readApiCacheFor('s999-en')).resolves.toEqual({});
+  });
+
+  it('keeps parts tagged with the right type (destroyed 6, lost 4)', async () => {
+    const stored = {
+      destroyed: { ranks: {}, fetchedAt: 1, hsType: 6 },
+      lost: { ranks: {}, fetchedAt: 1, hsType: 4 },
+    };
+    mock.get.mockResolvedValue(structuredClone(stored));
+    await expect(readApiCache()).resolves.toEqual(stored);
+    mock.get.mockResolvedValue(structuredClone(stored));
+    await expect(readApiCacheFor('s999-en')).resolves.toEqual(stored);
+  });
+});
+
 describe('writeApiCache', () => {
   it('persists wholesale under the current-universe key', async () => {
     /** @type {import('../../src/state/apiCache.js').ApiCache} */

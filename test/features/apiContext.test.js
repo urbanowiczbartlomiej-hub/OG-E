@@ -26,7 +26,10 @@ vi.mock('../../src/lib/ogameApi.js', () => ({
   fetchApiText: vi.fn(),
 }));
 
-vi.mock('../../src/state/apiCache.js', () => ({
+// Keep the module's real constants (the highscore type numbers) — only the
+// storage I/O is faked.
+vi.mock('../../src/state/apiCache.js', async (importOriginal) => ({
+  ...(/** @type {object} */ (await importOriginal())),
   readApiCache: vi.fn(() => Promise.resolve(memCache)),
   writeApiCache: vi.fn((c) => {
     memCache = c;
