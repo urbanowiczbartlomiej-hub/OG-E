@@ -139,9 +139,38 @@ export const sentExpiresAt = (d) => {
 const TERMINAL = new Set([DEC_MINE, DEC_ABANDONED, DEC_TAKEN]);
 
 /**
+ * Is `later` a decision about the slot AFTER our `abandoned` hold on it ended?
+ *
+ * `abandoned` is terminal only while its re-colonization window is open. Once
+ * the slot is released ({@link abandonRecolonizableAt}) it is a fresh position
+ * again, and anything recorded about it from then on (we re-sent a colonizer;
+ * the game refused it as reserved) describes the NEW slot, not the planet we
+ * gave up. Pure: decided from the two timestamps alone, no clock — the release
+ * time is a function of the give-up `ts`.
+ *
+ * @param {Decision} abandoned
+ * @param {Decision} later
+ * @returns {boolean}
+ */
+const supersedesAbandoned = (abandoned, later) =>
+  abandoned.s === DEC_ABANDONED &&
+  !TERMINAL.has(later.s) &&
+  typeof abandoned.ts === 'number' &&
+  typeof later.ts === 'number' &&
+  later.ts >= abandonRecolonizableAt(abandoned.ts);
+
+/**
  * Merge two decisions for the SAME coord. A terminal outcome
  * (mine/abandoned/taken) never regresses to sent/reserved regardless of `ts`;
  * otherwise newest `ts` wins (ties → `incoming`).
+ *
+ * One exception: an `abandoned` whose window had already closed when the other
+ * decision was made loses to it (see {@link supersedesAbandoned}). Without it,
+ * every sync round resurrected the stale `abandoned` from the gist over a fresh
+ * `reserved` — a past-window `abandoned` blocks nothing and is even re-offered
+ * by {@link freedCoords} — so a slot the game kept refusing came back at the
+ * head of every colonize run. The same rule used to swallow a re-colonization's
+ * `sent` the moment a sync round brought the old `abandoned` back.
  *
  * @param {Decision | undefined} existing
  * @param {Decision | undefined} incoming
@@ -150,6 +179,8 @@ const TERMINAL = new Set([DEC_MINE, DEC_ABANDONED, DEC_TAKEN]);
 export const mergeDecision = (existing, incoming) => {
   if (!existing) return incoming;
   if (!incoming) return existing;
+  if (supersedesAbandoned(existing, incoming)) return incoming;
+  if (supersedesAbandoned(incoming, existing)) return existing;
   const exTerm = TERMINAL.has(existing.s);
   const inTerm = TERMINAL.has(incoming.s);
   if (exTerm && !inTerm) return existing;

@@ -125,6 +125,7 @@ import {
   parseCurrentGalaxyView,
 } from './domHelpers.js';
 import { SHIP_COLONY, TARGET_PLANET, galaxyCountOf } from '../../domain/rules.js';
+import { ERR_RESERVED } from '../../domain/fleetPlan.js';
 import { OWNER_COL } from '../../domain/fleetOwnership.js';
 import {
   CHECK_TARGET_RESULT_EVENT,
@@ -173,6 +174,12 @@ const SEND_HALF_ID = 'oge-col-send';
 // fallbacks (e.g. the 'No targets' flash) and the fleetdispatch URL
 // sniff.
 
+/**
+ * sendFleet refusal: the target player is on vacation. One of the two send
+ * refusals known to be about the TARGET (the other is ERR_RESERVED); see the
+ * refusal table in docs/ogame-fleet-mechanics.md.
+ */
+const ERR_SEND_VACATION = 140008;
 /** Repaint ticker period in ms. */
 const REPAINT_TICK_MS = 1000;
 /** Hold duration (ms) required to trigger a manual skip of the current candidate. */
@@ -655,6 +662,30 @@ const onSendClick = async () => {
       // over) — abandon it for a clean fleet1 instead of sending their fleet.
       if (r.reason === 'foreign') {
         location.href = bareFleetdispatchUrl();
+        return;
+      }
+      // The SEND itself can be refused for a reason about the TARGET, not just
+      // the checkTarget before it: sendFleet answers 200 with an error body
+      // (docs/ogame-fleet-mechanics.md, "A refused send still answers HTTP
+      // 200"), and 140016 is one of its codes. The check was made at tap 1; the
+      // send happens at tap 2, which the min-gap 'Wait Ns' hold can push minutes
+      // later — on a young universe, plenty of time for someone else's
+      // colonizer to reserve the slot. Nothing recorded that refusal (the
+      // button just said 'Failed'), so the coords we had just lost came back at
+      // the head of the next run. Record it like any refusal of the slot.
+      //
+      // Only codes known to be about the target count. Everything else a send
+      // can be refused for (140026 fuel, 612 fleet slots, 100 token, ...) is
+      // about US and must never blacklist a good target.
+      const refused = colTarget;
+      if (refused && r.errorCode === ERR_RESERVED) {
+        recordCourierRefusal('reserved', refused);
+        showTransient(colErrorPaint('reserved', refused));
+        return;
+      }
+      if (refused && r.errorCode === ERR_SEND_VACATION) {
+        recordCourierRefusal('generic', refused);
+        showTransient(colErrorPaint('generic', refused));
         return;
       }
       showTransient({
