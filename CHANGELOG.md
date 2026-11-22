@@ -4,6 +4,26 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.71.5] — 2026-11-22
+
+### Fixed
+
+- **Fleet reminders no longer get stuck on the hourglass.** After a single
+  refusal from GitHub, OG-E could pause cloud sync for up to an hour even
+  though plenty of requests were left. A reminder you ticked in the event list
+  then kept blinking with the hourglass and was never set. The pause is now as
+  short as GitHub actually asks for, and OG-E retries on its own, so the
+  reminder is set as soon as sync is possible again, without reloading the
+  page.
+- **A request that hangs no longer blocks reminders.** Requests to GitHub and
+  ntfy now give up after a timeout instead of waiting forever.
+
+### Added
+
+- **Sync diagnostics.** OG-E keeps a short local record of its recent GitHub
+  requests and errors, so a future sync problem can be traced. It stays in
+  your browser and never includes your token.
+
 ## [1.71.4] — 2026-11-22
 
 ### Fixed
