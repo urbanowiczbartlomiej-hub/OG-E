@@ -342,7 +342,7 @@ Codes seen so far:
 | code | meaning |
 | --- | --- |
 | `140026` | not enough deuterium for this flight (*Niewystarczająca ilość paliwa!*) |
-| `140016` | target reserved for a planet move (24 h cooldown) |
+| `140016` | target reserved — a planet move (24 h cooldown), and also a slot we abandoned that the game has not released yet (see Colonization) |
 | `140035` | no colony ship in the fleet |
 | `140008` | player on vacation |
 | `612` | every fleet slot in use |
@@ -514,6 +514,22 @@ OG-E's model: the slot re-enters the candidate pool at the **first 03:00 that is
 The weekly `universe.xml` lags this by up to 7 days and may still list a freed
 slot as ours, so the picker overrides that stale occupancy with the local
 "freed" fact.
+
+**That model is not the whole story — observed 2026-11-22 on a young universe.**
+Two positions abandoned on 2026-11-20 at ~15:56 were still refused on 2026-11-22
+**after** 03:00 — the moment the rule above says they are free. The refusal came
+back as `140016` ("reserved"), the same code as a planet-move hold, not a code
+of its own, and it showed up both on checkTarget and on the send itself. So
+either the hold after a give-up is longer than "first 03:00 ≥ 24h" on some
+servers, or the sweep does not release every slot it should. We do not yet know
+which, nor how long the hold really lasts.
+
+The wrong intuition worth writing down: *"once the release time has passed, the
+`abandoned` record is just history, and a later `reserved` about the same slot
+can never conflict with it."* It can. A given-up slot that the game keeps
+holding past our computed release produces exactly that pair — an old
+`abandoned` and a fresh `reserved` for the same coordinates — and anything that
+treats `abandoned` as final will quietly bring the slot back into play.
 
 **Measured on a real universe** (s163-pl, 1474 recorded colonizations over 106
 days): **375 distinct slots**, one of them re-colonized **9 times**, and **319
