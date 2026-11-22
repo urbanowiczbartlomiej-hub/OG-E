@@ -4,6 +4,19 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.71.3] — 2026-11-22
+
+### Fixed
+
+- **Danger now counts real kills.** The "destroyed" history behind the Danger
+  score was read from the wrong public highscore table: it held everything a
+  player had ever *built*, not what they had destroyed. Players who build and
+  lose a lot — miners, expedition fleets — looked more dangerous than they
+  are. Danger and the Spyglass "destroyed" column now use the real kill
+  history, so a large fleet that never attacks ranks lower and the "destroyed"
+  figures are smaller than before. The numbers correct themselves on the next
+  data refresh.
+
 ## [1.71.2] — 2026-11-21
 
 ### Fixed
