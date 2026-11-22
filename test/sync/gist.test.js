@@ -58,6 +58,7 @@ import {
   BACKOFF_KEY,
   SYNC_STATUS_MIRROR_BASE,
 } from '../../src/sync/gist.js';
+import { readGhCalls, readGhErrors } from '../../src/state/ghCallLog.js';
 import { chromeStore } from '../../src/lib/storage.js';
 import { gzipEncode } from '../../src/lib/gzip.js';
 
@@ -189,7 +190,9 @@ describe('gh() API client', () => {
     // second call throws "rate limited" (which proves arming happened)
     // and that the thrown message mentions a minute count in the
     // DEFAULT_BACKOFF_MS range (5 min).
-    mockFetch(makeResponse({ ok: false, status: 403, body: 'forbidden' }));
+    mockFetch(makeResponse({
+      ok: false, status: 403, body: 'You have exceeded a secondary rate limit.',
+    }));
     await expect(gh('/gists')).rejects.toThrow(/HTTP 403/);
     const next = vi.fn();
     vi.stubGlobal('fetch', next);
@@ -197,6 +200,66 @@ describe('gh() API client', () => {
     // backoff of 5 minutes is in effect.
     await expect(gh('/gists')).rejects.toThrow(/~5 min/);
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it('a 403 that is not a rate limit arms NO backoff', async () => {
+    // Quota left, no Retry-After, body says nothing about a rate limit —
+    // e.g. a permissions refusal. The next call must still reach GitHub.
+    mockFetch(makeResponse({
+      ok: false, status: 403, body: 'Resource not accessible',
+      headers: { 'X-RateLimit-Remaining': '4953', 'X-RateLimit-Reset': String(Math.floor(Date.now() / 1000) + 1200) },
+    }));
+    await expect(gh('/gists')).rejects.toThrow(/HTTP 403/);
+    const next = mockFetch(makeResponse({ body: { ok: true } }));
+    await expect(gh('/gists')).resolves.toEqual({ ok: true });
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores X-RateLimit-Reset while quota remains (no wait to the top of the hour)', async () => {
+    // The live bug: Reset rides on EVERY response, so honouring it for a
+    // secondary limit froze every gist call for ~20 min with 4953 left.
+    mockFetch(makeResponse({
+      ok: false, status: 403, body: 'secondary rate limit',
+      headers: { 'X-RateLimit-Remaining': '4953', 'X-RateLimit-Reset': String(Math.floor(Date.now() / 1000) + 50 * 60) },
+    }));
+    await expect(gh('/gists')).rejects.toThrow(/HTTP 403/);
+    vi.stubGlobal('fetch', vi.fn());
+    await expect(gh('/gists')).rejects.toThrow(/~5 min/);
+  });
+
+  it('waits until X-RateLimit-Reset when the primary quota is spent', async () => {
+    mockFetch(makeResponse({
+      ok: false, status: 403, body: 'API rate limit exceeded',
+      headers: { 'X-RateLimit-Remaining': '0', 'X-RateLimit-Reset': String(Math.floor(Date.now() / 1000) + 30 * 60) },
+    }));
+    await expect(gh('/gists')).rejects.toThrow(/HTTP 403/);
+    vi.stubGlobal('fetch', vi.fn());
+    await expect(gh('/gists')).rejects.toThrow(/~30 min/);
+  });
+
+  it('records calls and errors in the local trail', async () => {
+    mockFetch(makeResponse({ body: { ok: true } }));
+    await gh('/gists/abc', { method: 'PATCH', body: JSON.stringify({ files: { 'f.json': { content: 'x' } } }) });
+    mockFetch(makeResponse({
+      ok: false, status: 403, body: 'secondary rate limit', headers: { 'Retry-After': '60' },
+    }));
+    await expect(gh('/gists/abc')).rejects.toThrow(/HTTP 403/);
+    await expect(gh('/gists/abc')).rejects.toThrow(/rate limited/);
+
+    const calls = readGhCalls();
+    expect(calls.map((c) => c.status)).toEqual([200, 403, -1]);
+    expect(calls[0]).toMatchObject({ method: 'PATCH', path: '/gists/abc', files: ['f.json'] });
+    const errors = readGhErrors();
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ status: 403, body: 'secondary rate limit', backoffMs: 60_000 });
+    expect(errors[0].recent.map((c) => c.status)).toEqual([200]);
+  });
+
+  it('records a network failure as status 0 and rethrows', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('timed out')));
+    await expect(gh('/gists')).rejects.toThrow('timed out');
+    expect(readGhCalls()[0]).toMatchObject({ status: 0, note: 'timed out' });
+    expect(readGhErrors()).toHaveLength(0);
   });
 
   it('throws HTTP <status>: <body snippet> on non-ok responses', async () => {

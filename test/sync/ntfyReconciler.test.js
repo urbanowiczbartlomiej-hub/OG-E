@@ -525,7 +525,9 @@ describe('fetchScheduledMessages', () => {
     await fetchScheduledMessages({ topic: 'oge-t', token: 'tk_abc', now: 0 });
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe(`https://ntfy.sh/oge-t/json?poll=1&scheduled=1&${expectedAuthParam('tk_abc')}`);
-    expect(init).toBeUndefined();
+    // Only a timeout signal — no headers (an Authorization header would fail
+    // the CORS preflight; auth rides in the query string).
+    expect(Object.keys(init)).toEqual(['signal']);
   });
 
   it('parses NDJSON: one message per line, future-only', async () => {

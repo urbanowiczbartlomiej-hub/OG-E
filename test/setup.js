@@ -40,3 +40,12 @@ beforeEach(() => {
 if (typeof XMLHttpRequest !== 'undefined') {
   XMLHttpRequest.prototype.send = function inertSend() {};
 }
+
+// happy-dom's AbortSignal has no static `timeout()` (every browser OG-E
+// supports does — Firefox ≥ 100, Chrome ≥ 103). The request helpers pass
+// `AbortSignal.timeout(ms)` to fetch; in tests fetch is always stubbed, so a
+// signal that simply never aborts is the faithful stand-in (and arms no
+// timer that could fire under a test's fake clock).
+if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout !== 'function') {
+  AbortSignal.timeout = () => new AbortController().signal;
+}
