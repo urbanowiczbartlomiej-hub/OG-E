@@ -4,6 +4,19 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.71.4] — 2026-11-22
+
+### Fixed
+
+- **Colonize stops coming back to the same Reserved slots.** When you give up
+  a colony, the game can keep its slot reserved for longer than OG-E expected.
+  OG-E did note the refusal, but cloud sync then restored the old "abandoned"
+  note over it, so the same coordinates led every new run. The newer note now
+  wins.
+- **A send refused at the last moment is remembered too.** If the slot gets
+  reserved between arming the colony ship and sending it, the button now shows
+  `Reserved` and skips that slot next time, instead of just saying `Failed`.
+
 ## [1.71.3] — 2026-11-22
 
 ### Fixed
