@@ -53,7 +53,7 @@ bridges → lib + domain (MAIN-world; must NOT import state/features/sync)
   reactive store — currently `state/dailyActions.js`,
   `state/lifeformArtifacts.js`, `state/fleetSaveSet.js`,
   `state/manualLandedFs.js`, `state/coloArrival.js`, `state/badgeCache.js`,
-  `state/expStartPlanet.js`, and `state/spyFabCache.js`
+  `state/expStartPlanet.js`, `state/spyFabCache.js`, and `state/ghCallLog.js`
   (over `safeLS`) plus
   `state/ownProfile.js` and `state/apiCache.js` (over `chrome.storage`).
   That's deliberate: nothing subscribes to them (they're read on demand at the

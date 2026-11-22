@@ -15,6 +15,10 @@ until you turn them on.
 - Other UI preferences and per-device settings (`localStorage`).
 - An in-memory diagnostic log buffer — only when you enable the
   logger toggle, never persisted, gone when the tab closes.
+- A short trail of the most recent GitHub API calls and errors (path,
+  status, timing, GitHub's rate-limit headers; never the token) in
+  `localStorage`, for diagnosing sync failures. It never leaves your
+  browser.
 
 ## Sent to GitHub (only if you turn sync on)
 

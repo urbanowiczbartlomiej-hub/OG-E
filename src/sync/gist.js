@@ -85,6 +85,7 @@ import { gzipEncode, gzipDecode } from '../lib/gzip.js';
 import { safeLS, chromeStore } from '../lib/storage.js';
 import { parseUniverseId } from '../lib/universeId.js';
 import { SYNC_STATUS_EVENT } from '../lib/ogeEvents.js';
+import { recordGhCall } from '../state/ghCallLog.js';
 
 /**
  * @typedef {import('../state/scans.js').GalaxyScans} GalaxyScans
@@ -371,6 +372,23 @@ const rateLimitWaitMs = (res, body) => {
   return 0;
 };
 
+/**
+ * The gist file names a write request touches — tells the call trail WHICH
+ * writer it was (the data payload vs a universe's alarm-clock file).
+ *
+ * @param {BodyInit | null | undefined} body
+ * @returns {{ files?: string[] }}
+ */
+const writtenFiles = (body) => {
+  if (typeof body !== 'string') return {};
+  try {
+    const files = JSON.parse(body)?.files;
+    return files && typeof files === 'object' ? { files: Object.keys(files) } : {};
+  } catch {
+    return {};
+  }
+};
+
 /** Epoch-ms until which {@link gh} short-circuits (0 / past = no backoff). */
 export const getBackoffUntil = () => backoffUntil;
 
@@ -559,37 +577,77 @@ export const conciseErrorBody = (text) => {
  */
 export const gh = async (path, options = {}) => {
   const now = Date.now();
+  // Diagnostic trail (state/ghCallLog.js): every call, its outcome, and the
+  // rate headers — so the next unexplained 403 can be reconstructed.
+  /** @type {import('../state/ghCallLog.js').GhCall} */
+  const call = {
+    at: new Date(now).toISOString(),
+    method: (options.method || 'GET').toUpperCase(),
+    path,
+    ...writtenFiles(options.body),
+    status: 0,
+    ms: 0,
+    ...(typeof location !== 'undefined'
+      ? { page: new URLSearchParams(location.search).get('page') || '' }
+      : {}),
+  };
   if (backoffUntil > now) {
     const minutes = Math.ceil((backoffUntil - now) / 60000);
-    throw new Error(
-      `rate limited — backing off until ${new Date(backoffUntil).toLocaleTimeString()} (~${minutes} min)`,
-    );
+    const msg = `rate limited — backing off until ${new Date(backoffUntil).toLocaleTimeString()} (~${minutes} min)`;
+    recordGhCall({ ...call, status: -1, note: msg });
+    throw new Error(msg);
   }
 
   const token = getToken();
   if (!token) throw new Error('No GitHub token');
 
-  const res = await fetch(API_BASE + path, {
-    // A request that never settles must not wedge its caller forever (the
-    // alarmClock producer serializes runs, so one hung request used to block
-    // every later sync until a reload). A caller-supplied signal wins.
-    signal: AbortSignal.timeout(GH_TIMEOUT_MS),
-    ...options,
-    headers: {
-      Accept: 'application/vnd.github+json',
-      Authorization: `Bearer ${token}`,
-      'X-GitHub-Api-Version': '2022-11-28',
-      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-      .../** @type {Record<string, string>} */ (options.headers || {}),
-    },
+  /** @type {Response} */
+  let res;
+  try {
+    res = await fetch(API_BASE + path, {
+      // A request that never settles must not wedge its caller forever (the
+      // alarmClock producer serializes runs, so one hung request used to block
+      // every later sync until a reload). A caller-supplied signal wins.
+      signal: AbortSignal.timeout(GH_TIMEOUT_MS),
+      ...options,
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${token}`,
+        'X-GitHub-Api-Version': '2022-11-28',
+        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+        .../** @type {Record<string, string>} */ (options.headers || {}),
+      },
+    });
+  } catch (err) {
+    recordGhCall({
+      ...call, ms: Date.now() - now, note: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
+  /** @param {string} h @returns {{} | Record<string, string>} */
+  const hdr = (h) => {
+    const v = res.headers.get(h);
+    return v === null ? {} : { [h.replace(/^x-ratelimit-/, '').replace(/-./g, (m) => m[1].toUpperCase())]: v };
+  };
+  Object.assign(call, {
+    status: res.status, ms: Date.now() - now,
+    ...hdr('x-ratelimit-remaining'), ...hdr('x-ratelimit-used'), ...hdr('x-ratelimit-resource'),
   });
 
+  if (res.ok) recordGhCall(call);
   if (!res.ok) {
     // `.catch` makes the read defensive: some error bodies aren't text
     // decodable (e.g. upstream connection reset), in which case we fall
     // back to the status line.
     const text = await res.text().catch(() => '');
     const waitMs = rateLimitWaitMs(res, text);
+    recordGhCall(call, {
+      .../** @type {{ retryAfter?: string }} */ (hdr('retry-after')),
+      .../** @type {{ reset?: string }} */ (hdr('x-ratelimit-reset')),
+      .../** @type {{ limit?: string }} */ (hdr('x-ratelimit-limit')),
+      body: text,
+      backoffMs: waitMs,
+    });
     if (waitMs > 0) {
       backoffUntil = Date.now() + waitMs;
       // Mirror to localStorage so the Settings status row can show the
