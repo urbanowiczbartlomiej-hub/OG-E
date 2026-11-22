@@ -96,6 +96,59 @@ describe('mergeDecision', () => {
   });
 });
 
+describe('mergeDecision — a past-window abandoned is no longer terminal', () => {
+  // Regression from a live young universe: two colonies given up on day 1 were
+  // refused 140016 on day 3, AFTER their computed release. The fresh `reserved`
+  // was recorded — and then every sync round brought the old `abandoned` back
+  // over it (terminal beat non-terminal). A past-window abandoned blocks nothing
+  // and is re-offered by freedCoords, so the same slots led every colonize run.
+  const giveUp = new Date(2026, 10, 20, 15, 56).getTime();
+  const released = abandonRecolonizableAt(giveUp);
+  const abandoned = dec(DEC_ABANDONED, giveUp, { f: 120 });
+
+  it('a reserved recorded after the release beats it — in either argument order', () => {
+    const reserved = dec(DEC_RESERVED, released + HOUR, { aa: released + 37 * HOUR });
+    expect(mergeDecision(abandoned, reserved)).toBe(reserved);
+    expect(mergeDecision(reserved, abandoned)).toBe(reserved);
+  });
+
+  it('a re-colonization sent after the release beats it too', () => {
+    const sent = dec(DEC_SENT, released + HOUR, { aa: released + 3 * HOUR });
+    expect(mergeDecision(abandoned, sent)).toBe(sent);
+    expect(mergeDecision(sent, abandoned)).toBe(sent);
+  });
+
+  it('exactly at the release instant the later decision already wins', () => {
+    const reserved = dec(DEC_RESERVED, released, { aa: released + 36 * HOUR });
+    expect(mergeDecision(abandoned, reserved)).toBe(reserved);
+  });
+
+  it('INSIDE the window the abandoned still holds — terminal pinning is untouched', () => {
+    const early = dec(DEC_RESERVED, released - 1, { aa: released + 36 * HOUR });
+    expect(mergeDecision(abandoned, early)).toBe(abandoned);
+    expect(mergeDecision(early, abandoned)).toBe(abandoned);
+  });
+
+  it('only non-terminal decisions can supersede: abandoned vs a later taken is plain LWW', () => {
+    const taken = dec(DEC_TAKEN, released + HOUR);
+    expect(mergeDecision(abandoned, taken)).toBe(taken);
+    const olderTaken = dec(DEC_TAKEN, giveUp - HOUR);
+    expect(mergeDecision(olderTaken, abandoned)).toBe(abandoned);
+  });
+
+  it('a sync round no longer resurrects the stale abandoned over local state', () => {
+    const reserved = dec(DEC_RESERVED, released + HOUR, { aa: released + 37 * HOUR });
+    const local = { '6:40:8': reserved };
+    const remote = { '6:40:8': abandoned };
+    const { merged, changed } = mergeColonizeDecisions(local, remote);
+    expect(changed).toBe(false);
+    expect(merged['6:40:8']).toBe(reserved);
+    // ...and the slot stays blocked while the reservation lasts.
+    expect(blockingCoords(merged, released + 2 * HOUR).has('6:40:8')).toBe(true);
+    expect(freedCoords(merged, released + 2 * HOUR).has('6:40:8')).toBe(false);
+  });
+});
+
 describe('withDecision', () => {
   it('adds a new coord, returning a new map', () => {
     /** @type {import('../../src/domain/colonizeDecisions.js').DecisionMap} */

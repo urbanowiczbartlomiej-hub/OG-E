@@ -622,6 +622,55 @@ describe('onSendClick — fleetdispatch branch', () => {
     unhook();
   });
 
+  // The SEND itself can be refused for a reason about the target: the check
+  // happened at tap 1, and the min-gap hold can push tap 2 minutes later — time
+  // enough on a young universe for someone else's colonizer to reserve the
+  // slot. sendFleet answers 200 with an error body. Before, the button just said
+  // 'Failed' and recorded nothing, so the slot led the next run again.
+  /**
+   * Arm [4:30:8] with tap 1, then tap 2 with the server refusing the send.
+   * @param {number} errorCode
+   */
+  const sendRefusedWith = async (errorCode) => {
+    setupScene({ onFleetdispatch: true });
+    settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
+    scansStore.set({
+      '4:30': { scannedAt: Date.now(), positions: { 8: { status: 'empty' } } },
+    });
+    installSendColony();
+    document.dispatchEvent(new CustomEvent('oge:eventBoxLoaded'));
+    const unhook = armCourier({ errorCode: null, missionOk: true });
+    getSend()?.click();
+    await settle();
+    expect(getSend()?.textContent).toContain('Send');
+    document.getElementById('dispatchFleet')?.addEventListener('click', () => {
+      document.dispatchEvent(new CustomEvent('oge:sendFleetResult', {
+        detail: { success: false, errorCode, mission: 7 },
+      }));
+    });
+    getSend()?.click();
+    await settle();
+    unhook();
+  };
+
+  it('tap 2 refused as RESERVED → the slot is recorded and the button says so', async () => {
+    await sendRefusedWith(140016);
+    expect(getSend()?.textContent).toContain('Reserved');
+    expect(colonizeDecisionsStore.get()['4:30:8']?.s).toBe(DEC_RESERVED);
+    expect(blockingCoords(colonizeDecisionsStore.get(), Date.now()).has('4:30:8')).toBe(true);
+  });
+
+  it('tap 2 refused because the target is on VACATION → the slot is recorded as taken', async () => {
+    await sendRefusedWith(140008);
+    expect(colonizeDecisionsStore.get()['4:30:8']?.s).toBe(DEC_TAKEN);
+  });
+
+  it('tap 2 refused for a reason about US (fuel) → nothing is recorded', async () => {
+    await sendRefusedWith(140026);
+    expect(getSend()?.textContent).toContain('No fuel');
+    expect(colonizeDecisionsStore.get()['4:30:8']).toBeUndefined();
+  });
+
   it('tap 2 with a min-gap conflict shows "Wait Ns" and does not dispatch', async () => {
     setupScene({ onFleetdispatch: true });
     settingsStore.set({ ...settingsStore.get(), showColonizeButton: true });
