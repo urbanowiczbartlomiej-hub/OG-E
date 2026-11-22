@@ -68,8 +68,10 @@ import { readFleetReminders, armFleetReminder, removeFleetReminder } from '../..
 import { writeNtfyHealth } from '../../state/ntfyHealth.js';
 import { readFsSendHints } from '../../state/fsSendHints.js';
 import { syncAlarmClock, ALARM_CLOCK_NTFY_TOKEN_KEY, isValidNtfyToken } from '../../sync/alarmClock.js';
+import { getBackoffUntil } from '../../sync/gist.js';
 import { parseUniverseId } from '../../lib/universeId.js';
 import { debounce } from '../../lib/debounce.js';
+import { logger } from '../../lib/logger.js';
 import { safeLS, chromeStore } from '../../lib/storage.js';
 import { GAME } from '../../lib/gameDom.js';
 import {
@@ -96,6 +98,17 @@ const RETURN_ROW_SELECTOR =
  * of event-box refreshes, short enough that a send registers promptly.
  */
 const DEBOUNCE_MS = 1500;
+
+/**
+ * Self-retry after a failed sync: first delay, doubling per consecutive
+ * failure up to the cap. A failed run used to wait for an UNRELATED trigger
+ * (reload, event-box refresh, settings edit), so a just-clicked reminder sat
+ * in "syncing" indefinitely and never reached ntfy. While the gist client is
+ * backing off a rate limit, the retry lands just after the backoff lifts
+ * instead (any call before that would throw without touching the network).
+ */
+const RETRY_MIN_MS = 10_000;
+const RETRY_MAX_MS = 5 * 60_000;
 
 /**
  * @typedef {import('../../domain/waves.js').ReturnEntry} ReturnEntry
@@ -320,6 +333,23 @@ export const installAlarmClockProducer = (opts = {}) => {
   // if the XHR never lands, the run simply waits for the next page view
   // (the pending journal keeps user intents durable meanwhile).
   let eventListLoaded = !isFleetdispatchPage();
+  // Self-retry after a failed sync (see RETRY_MIN_MS). One timer at a time.
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let retryTimer = null;
+  let retryDelayMs = RETRY_MIN_MS;
+  const scheduleRetry = () => {
+    if (retryTimer !== null) return;
+    const backoffLeft = getBackoffUntil() - Date.now();
+    const delay = backoffLeft > 0 ? backoffLeft + 1000 : retryDelayMs;
+    if (backoffLeft <= 0) retryDelayMs = Math.min(retryDelayMs * 2, RETRY_MAX_MS);
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      if (installed) { pendingForce = true; void run(); }
+    }, delay);
+  };
+  const clearRetry = () => {
+    if (retryTimer !== null) { clearTimeout(retryTimer); retryTimer = null; }
+  };
 
   const doRun = async () => {
     const forceSettings = pendingForce;
@@ -487,13 +517,24 @@ export const installAlarmClockProducer = (opts = {}) => {
         }
         // Drop the commands we applied; keep any the user queued meanwhile.
         writePending(universeId, readPending(universeId).slice(pending.length));
+        retryDelayMs = RETRY_MIN_MS;
+        clearRetry();
       } else {
-        // Leave the pending queue intact and re-try on the next trigger.
+        // Leave the pending queue intact and re-try. `no-token` (no gist
+        // token configured) is permanent until the player sets one — the
+        // settings subscriber forces that run, so no timer for it.
         pendingForce = true;
+        if (res.reason !== 'no-token') {
+          logger.warn(`alarmClock: sync not applied (${res.reason ?? 'unknown'}), will retry`);
+          scheduleRetry();
+        }
       }
-    } catch {
-      // Network / gist error — keep pending, retry next trigger.
+    } catch (err) {
+      // Network / gist error — keep pending, retry on our own timer (never
+      // wait on an unrelated trigger; see RETRY_MIN_MS).
       pendingForce = true;
+      logger.warn('alarmClock: sync failed, will retry', err);
+      scheduleRetry();
     } finally {
       // Tell the UI to re-read the (possibly just-written) mirror — reliable
       // in-tab signal, independent of chrome.storage.onChanged.
@@ -665,6 +706,7 @@ export const installAlarmClockProducer = (opts = {}) => {
       unsubConfig();
       unsubScanConfig();
       unsubAlarmClockConfig();
+      clearRetry();
       installed = null;
     },
     armAdhoc,

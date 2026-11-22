@@ -136,6 +136,9 @@ import { logger } from '../lib/logger.js';
 export const ntfyAuthParam = (token) =>
   'auth=' + btoa('Bearer ' + token).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
+/** Per-request timeout for the ntfy queue poll and publish. */
+const NTFY_TIMEOUT_MS = 30_000;
+
 /**
  * Default wave alarmClock schedule, in seconds AFTER the wave returns —
  * `0m, 10m, 30m, 60m`. Used when the (free-form) schedule setting is empty
@@ -292,7 +295,9 @@ export const alarmClockFireTimes = (
  */
 export const fetchScheduledMessages = async ({ topic, token, now }) => {
   const url = `https://ntfy.sh/${topic}/json?poll=1&scheduled=1&${ntfyAuthParam(token)}`;
-  const res = await fetch(url);
+  // Timeout: a poll that never settles would wedge the alarmClock producer's
+  // serialized run (and with it every later arm/disarm) until a reload.
+  const res = await fetch(url, { signal: AbortSignal.timeout(NTFY_TIMEOUT_MS) });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new Error(`ntfy poll ${res.status}: ${body.slice(0, 200)}`);
@@ -394,6 +399,7 @@ const postMessage = async ({ topic, token, fireAt, now, title, body, priority, i
     headers,
     body,
     keepalive: true,
+    signal: AbortSignal.timeout(NTFY_TIMEOUT_MS),
   });
   if (!res.ok) {
     const detail = await res.text().catch(() => '');

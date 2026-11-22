@@ -30,10 +30,10 @@
 //
 // GitHub's REST quota is 5000 authenticated requests per hour. Abuse
 // detection and secondary rate limits (403 from burst writes) can fire
-// earlier. Whenever the API returns 403 or 429 we parse the rate-limit
-// signals — in priority order: `Retry-After` (seconds), then
-// `X-RateLimit-Reset` (epoch seconds), then a default 5-minute backoff
-// — and arm the module-local `backoffUntil` timestamp. Every
+// earlier. Whenever the API returns a rate-limit 403 or a 429 we parse the
+// signals — `Retry-After` (seconds), then `X-RateLimit-Reset` but only when
+// `X-RateLimit-Remaining` is 0, then a default 5-minute backoff (see
+// `rateLimitWaitMs`) — and arm the module-local `backoffUntil` timestamp. Every
 // subsequent {@link gh} call before that moment *throws immediately
 // without a network round-trip*. This is essential: without it, the
 // retry loop in the calling sync engine would just keep rebooting the
@@ -334,6 +334,46 @@ export const API_BASE = 'https://api.github.com';
  */
 const DEFAULT_BACKOFF_MS = 5 * 60 * 1000;
 
+/** Per-request timeout for {@link gh}; a hung request aborts instead of blocking forever. */
+const GH_TIMEOUT_MS = 60_000;
+
+/**
+ * How long to back off after a failed GitHub response, or 0 for "not a rate
+ * limit — don't back off". GitHub's documented rules, in order:
+ *
+ *   - `Retry-After` present → wait that many seconds (secondary limits).
+ *   - `X-RateLimit-Remaining: 0` → the primary hourly quota is spent; wait
+ *     until `X-RateLimit-Reset`.
+ *   - a 429, or a 403 whose body names a rate limit (secondary limit with no
+ *     header) → {@link DEFAULT_BACKOFF_MS}.
+ *   - any other 403 (permissions, abuse of a single resource) is NOT a rate
+ *     limit: no backoff, the caller just sees the error.
+ *
+ * `X-RateLimit-Reset` rides on EVERY GitHub response, quota spent or not. The
+ * old code used it whenever `Retry-After` was missing, so a single 403 with
+ * thousands of requests left could freeze every gist call — including the
+ * alarm clock's arm/disarm sync — until the top of the hourly window (seen
+ * live: ~20 min of stuck reminders with 4953 requests remaining).
+ *
+ * @param {Response} res
+ * @param {string} body
+ * @returns {number} Milliseconds to back off (0 = none).
+ */
+const rateLimitWaitMs = (res, body) => {
+  if (res.status !== 403 && res.status !== 429) return 0;
+  const retryAfter = parseInt(res.headers.get('Retry-After') || '', 10);
+  if (retryAfter > 0) return retryAfter * 1000;
+  if (res.headers.get('X-RateLimit-Remaining') === '0') {
+    const reset = parseInt(res.headers.get('X-RateLimit-Reset') || '', 10);
+    return reset > 0 ? Math.max(0, reset * 1000 - Date.now()) : DEFAULT_BACKOFF_MS;
+  }
+  if (res.status === 429 || /rate limit/i.test(body)) return DEFAULT_BACKOFF_MS;
+  return 0;
+};
+
+/** Epoch-ms until which {@link gh} short-circuits (0 / past = no backoff). */
+export const getBackoffUntil = () => backoffUntil;
+
 // ── Module-local state ──────────────────────────────────────────────
 
 /**
@@ -530,6 +570,10 @@ export const gh = async (path, options = {}) => {
   if (!token) throw new Error('No GitHub token');
 
   const res = await fetch(API_BASE + path, {
+    // A request that never settles must not wedge its caller forever (the
+    // alarmClock producer serializes runs, so one hung request used to block
+    // every later sync until a reload). A caller-supplied signal wins.
+    signal: AbortSignal.timeout(GH_TIMEOUT_MS),
     ...options,
     headers: {
       Accept: 'application/vnd.github+json',
@@ -541,19 +585,12 @@ export const gh = async (path, options = {}) => {
   });
 
   if (!res.ok) {
-    if (res.status === 403 || res.status === 429) {
-      // Three possible rate-limit signals, in priority order. The
-      // priority matches GitHub's own docs: `Retry-After` is the
-      // concrete "wait N seconds" used by secondary limits;
-      // `X-RateLimit-Reset` is the epoch second when the primary
-      // 5000/hour quota resets; the default falls back when neither
-      // header is present (some abuse-detector paths omit both).
-      const retryAfter = parseInt(res.headers.get('Retry-After') || '', 10);
-      const reset = parseInt(res.headers.get('X-RateLimit-Reset') || '', 10);
-      let waitMs = 0;
-      if (retryAfter > 0) waitMs = retryAfter * 1000;
-      else if (reset > 0) waitMs = Math.max(0, reset * 1000 - Date.now());
-      else waitMs = DEFAULT_BACKOFF_MS;
+    // `.catch` makes the read defensive: some error bodies aren't text
+    // decodable (e.g. upstream connection reset), in which case we fall
+    // back to the status line.
+    const text = await res.text().catch(() => '');
+    const waitMs = rateLimitWaitMs(res, text);
+    if (waitMs > 0) {
       backoffUntil = Date.now() + waitMs;
       // Mirror to localStorage so the Settings status row can show the
       // retry-after countdown. The throw below routes through the caller's
@@ -561,10 +598,6 @@ export const gh = async (path, options = {}) => {
       safeLS.set(BACKOFF_KEY, String(backoffUntil));
     }
     // Truncate the body to keep the thrown message Settings-UI-sized.
-    // `.catch` makes the read defensive: some error bodies aren't text
-    // decodable (e.g. upstream connection reset), in which case we fall
-    // back to the status line.
-    const text = await res.text().catch(() => '');
     throw new Error(`HTTP ${res.status}: ${conciseErrorBody(text) || res.statusText}`);
   }
   return res.json();

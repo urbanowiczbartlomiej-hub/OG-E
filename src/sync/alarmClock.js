@@ -343,7 +343,7 @@ const readAlarmClockState = async (universeId) => {
     // makes syncAlarmClock rebuild the alarm state from scratch — losing the
     // cross-device bookkeeping over a transient availability failure. A throw
     // just aborts this sync round; the next one retries.
-    const res = await fetch(file.raw_url);
+    const res = await fetch(file.raw_url, { signal: AbortSignal.timeout(60_000) });
     if (!res.ok) throw new Error(`alarmClock raw_url fetch failed: HTTP ${res.status}`);
     text = await res.text();
   } else {
