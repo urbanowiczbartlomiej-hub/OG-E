@@ -4,6 +4,17 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.72.0] — 2026-11-22
+
+### Added
+
+- **Colony history records the planet's diameter.** Each new colony is saved
+  with its diameter in km, read from the same planet-list tooltip as its
+  fields. The colony CSV export has a new `DiameterKm` column (empty for
+  colonies recorded earlier), and cloud sync fills it in from your other
+  devices. Fields are rounded down from the diameter, so the diameter shows a
+  planet's size roll about 30 times more precisely.
+
 ## [1.71.5] — 2026-11-22
 
 ### Fixed
