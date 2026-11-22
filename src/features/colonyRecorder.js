@@ -204,9 +204,10 @@ const tryCollect = async () => {
   if (fresh.length === 0) return 0;
 
   // Gate 2 — the cp index (~1.4 KB) instead of the history rows (~130 KB and
-  // climbing). Dedup is by cp because OGame's cp-ids come from one global
-  // monotonic counter, so a matching cp means we already have this exact
-  // observation. Note the same slot gets re-colonized repeatedly and each
+  // climbing). Dedup is by cp because each universe numbers its planets and
+  // moons from one monotonic counter (docs/ogame-fleet-mechanics.md →
+  // "Planet ids"), and the history is per universe, so a matching cp means we
+  // already have this exact observation. Note the same slot gets re-colonized repeatedly and each
   // re-colonization is a NEW planet with its own field count, so coords could
   // never serve as the key here.
   const idx = await readHistoryCpIndex();

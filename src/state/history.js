@@ -61,7 +61,8 @@ import { currentUniverseKey } from './universeKey.js';
  *
  * @typedef {object} ColonyEntry
  * @property {number} cp
- *   Planet cp-id. Globally unique across the account; used as the
+ *   Planet cp-id. Unique within one universe (each universe has its own
+ *   counter — docs/ogame-fleet-mechanics.md → "Planet ids"); used as the
  *   uniqueness key when merging local and remote histories.
  * @property {number} fields
  *   Max fields of the planet (constant per planet).

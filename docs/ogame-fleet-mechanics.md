@@ -565,6 +565,17 @@ is by definition a colony.
      multipliers), so this term is `+10 % · (1 + E)`;
    - Researcher alliance class: **+5 % diameter** (not boosted by `E`).
 
+   The two class bonuses **add** (`1 + 0.10·(1+E) + 0.05`); they do not
+   multiply (`(1 + 0.10·(1+E)) × 1.05`). The question was open on the Polish
+   forum since 2021, with an estimate that it needed 20 000–50 000
+   colonizations. It did not: knowing the centre of the natural roll is
+   enough. On 926 colonizations with the bonus read from the game (+20.37 %),
+   the additive model gives a natural mean of 203.1 ± 0.5, the multiplicative
+   one 200.6, and the likelihood favours addition by 25.8 log-units (about
+   10¹¹ : 1). Every other variant tried — `E` also boosting the Researcher
+   part, the Researcher 5 % applied to fields instead of diameter, the server
+   bonus added before the multiplier — is off by 7 to 30 standard errors.
+
    The game rolls a **diameter**, and the field count is derived from it:
    **`fields = floor((diameter_km / 1000)²)`** before the server's bonus
    fields. Checked on eight bonus-free planets of another server (position 1,
@@ -628,6 +639,34 @@ commitment**: if no colony is recorded within ~4h of dispatch (and after the
 fleet would have arrived), the slot returns to the candidate pool
 (`domain/colonizeDecisions.sentExpiresAt`).
 
+### Planet ids (cp) — one counter per universe
+
+Every planet and moon gets an id (`cp`) from a counter that is **per
+universe**, shared by planets and moons, and only ever grows. Each universe's
+counter starts at the same base: in all 21 Polish universes checked
+(`universe.xml`, 2026-11-13) the lowest ids are 33 620 176–33 620 179 (the
+admin and team planets), plus a planet with id 1. A moon always has a higher
+id than its planet.
+
+**The wrong intuition:** *"cp ids come from one global counter across all
+servers, so the same number never appears twice."* Because every universe
+starts at ~33.62 million, ids on any server look like one continuous sequence.
+They are not: 32 714 of 218 167 ids exist in two or more universes at the same
+time. A **server merge assigns new ids** too — an account's next colony after
+a merge was numbered 1.4 million lower than its last one on the old server.
+
+What the counter does tell you is how many planets and moons a universe has
+created: one mature universe went from 34.90 to 35.04 million in seven months
+(~530–670 a day); a freshly merged one used 6 000–13 000 a day.
+
+**Size is not a function of the id.** On 2398 colonizations of one account,
+the natural roll shows no dependence on cp (residues mod 2…624, the gap to
+the previous own colony), on time of day, galaxy or system, and none on the
+previous roll (lag-1 correlation −0.05 ± 0.02 in cp order, sign not stable
+between servers; 1 619 re-rolls of the same slot, r = −0.02). Seeding a
+Mersenne Twister with the cp, in any of 140 simple variants, predicts no
+better than chance.
+
 ### The natural roll is a sum of three uniform draws, not a bell curve
 
 The position-8 roll behaves like the **sum of three independent uniform
@@ -686,10 +725,28 @@ sliver of a "252" draw above 252 could add one more field, at ~1 in 3 million.
 draws" is three whole numbers (e.g. 52–84 each) added up. On a second sample
 (569 colonizations at one fixed +20.37 %), 194 of them show a field count that
 such a whole-number roll could never produce, so that variant is ruled out.
-A mean of three whole draws (steps of ⅓ field) and a continuous draw fit the
-data almost equally well (log-likelihood −2565.0 vs −2564.1); the game showing
-diameters in whole kilometres (a step of ~0.03 field) is effectively
-continuous. Parity carries no signal: 50.8 % of those counts are even.
+Parity carries no signal: 50.8 % of those counts are even.
+
+**Not a mean of three whole numbers either** — corrected 2026-11-22. On 569
+colonizations a mean of three whole draws (steps of ⅓ field) and a continuous
+draw looked equally good (log-likelihood −2565.0 vs −2564.1), and the note
+above once left the question open. With 926 colonizations at the same fixed
+bonus the ⅓ lattice loses by 7.5 log-units; in 400 simulations where the
+lattice was true, none scored that low. A ⅙ lattice is ruled out the same
+way; anything finer than ~0.1 field is indistinguishable from continuous with
+field counts alone. It matters at the top: a ⅓ lattice would make a natural
+252 one in ~913 000 colonizations instead of ~203 000. The three draws also
+have **equal widths** (best fit 31/31/38 % of the range, no better than
+equal; a 50/25/25 split loses 12 log-units).
+
+**The top edge is known only to about half a field.** The formulas above
+treat the roll as continuous on [156, 253). On 2398 colonizations the data
+lean slightly towards [156, 252] (natural mean 203.8 ± 0.3 against 204.5;
+free-edge fit puts the top at 252.7, 95 % 251.5–253.9). Two standard errors
+is not a verdict, but the edge matters for the tail: 247+ is one in 939 with
+the top at 253 and one in 1 573 with it at 252; 250+ one in 7 500 or 24 600.
+The diameter (whole km, ~0.04 field near the top) resolves this, which is
+why OG-E records it with each new colony.
 
 **Histogram noise, for scale.** With ~2 000 colonizations spread over ~90
 one-field bars, a bar holds ~22 colonies and swings ±5 (±20 %) by chance alone;
