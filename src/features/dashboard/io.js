@@ -732,7 +732,9 @@ const csvField = (value) => {
  * module-scope cache populated by `chromeStore.get(historyKeyFor(...))`)
  * so this module stays free of store wiring.
  *
- * Columns: CP, Coords, Position, Fields, Date (ISO).
+ * Columns: CP, Coords, Position, Fields, SizeBonusPct, DiameterKm, Date (ISO).
+ * The two optional columns are empty for colonies recorded before OG-E knew
+ * them.
  * Rows sorted by timestamp descending — most recent first, matching
  * the on-page list order.
  *
@@ -747,7 +749,7 @@ export const exportColonyCsv = (entries, universeId) => {
   if (typeof document === 'undefined') return;
 
   const sorted = [...entries].sort((a, b) => b.timestamp - a.timestamp);
-  const header = 'CP,Coords,Position,Fields,SizeBonusPct,Date';
+  const header = 'CP,Coords,Position,Fields,SizeBonusPct,DiameterKm,Date';
   const rows = sorted.map((e) =>
     [
       csvField(e.cp),
@@ -755,6 +757,7 @@ export const exportColonyCsv = (entries, universeId) => {
       csvField(e.position),
       csvField(e.fields),
       csvField(typeof e.b === 'number' ? e.b : ''),
+      csvField(typeof e.d === 'number' ? e.d : ''),
       csvField(new Date(e.timestamp).toISOString()),
     ].join(','),
   );

@@ -254,6 +254,7 @@ const tryCollect = async () => {
       position: r.position,
       timestamp,
       ...(b != null ? { b } : {}),
+      ...(r.diameter != null ? { d: r.diameter } : {}),
     })),
   ]);
 

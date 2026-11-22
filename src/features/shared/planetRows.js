@@ -32,6 +32,7 @@ import { parsePlanetTooltip } from '../../domain/planetTooltip.js';
  * @property {string} name     Display name; may be empty.
  * @property {number} used     Fields currently built on.
  * @property {number} max      Field slots available.
+ * @property {number} [diameter] Diameter in whole km, when readable.
  */
 
 /**

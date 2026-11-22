@@ -203,6 +203,11 @@ any code was written:
   a click in the dashboard, outside a game page load, would be a forbidden
   background call (§4) and would show the player as active. The value is
   read-only in the dashboard: it can only come from that page.
+- **Recording each new colony's diameter** (2026-11-22) — **Allowed** (§4,
+  same reasoning as the field count). The diameter sits in the same sidebar
+  tooltip the colony recorder already reads on a page the player loaded
+  (`domain/planetTooltip.js`); keeping it adds no request, no timer and no
+  page of our own — one more number from text already on screen.
 
 ## What OG-E never does (all grep-verified)
 

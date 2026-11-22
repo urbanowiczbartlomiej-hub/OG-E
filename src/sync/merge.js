@@ -292,12 +292,18 @@ export const mergeHistory = (local, remote) => {
     if (!mine) {
       byCp.set(h.cp, h);
       changed = true;
-    } else if (typeof mine.b !== 'number' && typeof h.b === 'number' && h.b >= 0) {
+    } else {
       // Enrichment, never an overwrite: a colony recorded before its size
-      // bonus was known learns it from a peer (or a back-filled import).
-      // Local wins for every field it already has.
-      byCp.set(h.cp, { ...mine, b: h.b });
-      changed = true;
+      // bonus (`b`) or diameter (`d`) was known learns it from a peer (or a
+      // back-filled import). Local wins for every field it already has.
+      /** @type {Partial<ColonyEntry>} */
+      const add = {};
+      if (typeof mine.b !== 'number' && typeof h.b === 'number' && h.b >= 0) add.b = h.b;
+      if (typeof mine.d !== 'number' && typeof h.d === 'number' && h.d > 0) add.d = h.d;
+      if (Object.keys(add).length > 0) {
+        byCp.set(h.cp, { ...mine, ...add });
+        changed = true;
+      }
     }
   }
   return { merged: [...byCp.values()], changed };

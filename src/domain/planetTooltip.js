@@ -21,10 +21,17 @@
 //
 // # What is deliberately NOT parsed
 //
-// Only the coords and the field pair. The name is read from the row's
-// `.planet-name` span instead (localisation-independent), the lifeform and
-// temperature lines are unused, and the diameter number is noise — we
-// anchor on it only to disambiguate the parenthetical (see FIELDS_RE).
+// The coords, the field pair and the diameter. The name is read from the
+// row's `.planet-name` span instead (localisation-independent); the lifeform
+// and temperature lines are unused.
+//
+// # Why the diameter is kept
+//
+// The field count is `floor((diameter / 1000)²) + server bonus`, so the
+// diameter in whole km is the same roll ~30× finer than the field count
+// (one km near 18 000 km is ~0.04 field). The colony history records it so
+// the size roll can be studied below field resolution
+// (docs/ogame-fleet-mechanics.md → Colonization).
 
 /** @ts-check */
 
@@ -53,7 +60,21 @@ const FIELDS_RE = /(\d+(?:[.,]\d+)?)\s*km\s*\((\d+)\/(\d+)\)/;
  * @property {number} position Slot number, 1..15.
  * @property {number} used     Fields currently built on.
  * @property {number} max      Field slots available.
+ * @property {number} [diameter] Planet diameter in whole km; absent when the
+ *   number could not be read cleanly.
  */
+
+/**
+ * "16.494" / "16,494" / "16494" → 16494. Diameters are whole km, so any
+ * separator in the number is a thousands separator, never a decimal one.
+ *
+ * @param {string} raw
+ * @returns {number | undefined}
+ */
+const parseDiameterKm = (raw) => {
+  const km = parseInt(raw.replace(/[.,]/g, ''), 10);
+  return Number.isFinite(km) && km > 0 ? km : undefined;
+};
 
 /**
  * Parse a decoded `data-tooltip-title` value.
@@ -86,6 +107,7 @@ export const parsePlanetTooltip = (tooltip) => {
     return null;
   }
 
+  const diameter = parseDiameterKm(fieldsMatch[1]);
   return {
     coords: `[${galaxy}:${system}:${position}]`,
     galaxy,
@@ -93,5 +115,6 @@ export const parsePlanetTooltip = (tooltip) => {
     position,
     used,
     max,
+    ...(diameter != null ? { diameter } : {}),
   };
 };

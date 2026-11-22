@@ -78,6 +78,12 @@ import { currentUniverseKey } from './universeKey.js';
  *   natural roll (`domain/planetRoll.js`). Absent on colonies recorded before
  *   the bonus was read; a back-filled import or a peer can add it
  *   (`sync/merge.mergeHistory`), never overwrite it.
+ * @property {number} [d]
+ *   Planet diameter in whole km, read from the same sidebar tooltip as
+ *   `fields` (`domain/planetTooltip.js`). The field count is the truncated
+ *   square of the diameter, so this is the size roll at ~0.04-field
+ *   resolution instead of 1 field. Absent on colonies recorded before
+ *   2026-11-22; like `b`, a peer can add it, never overwrite it.
  */
 
 /**
