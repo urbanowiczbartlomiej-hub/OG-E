@@ -92,6 +92,9 @@ export const installRoutes = ({ getUniverseId }) => {
   const collectMissionChips = document.getElementById('routesCollectMission');
   const collectShipsChips = document.getElementById('routesCollectShips');
   const collectResourcesChips = document.getElementById('routesCollectResources');
+  const pairShipsChips = document.getElementById('routesPairShips');
+  const pairResourcesChips = document.getElementById('routesPairResources');
+  const pairNextChips = document.getElementById('routesPairNext');
   // Defensive: if the markup is absent (older dashboard.html), no-op so a
   // missing tab never throws during boot.
   if (!list) return { refresh: () => {} };
@@ -108,12 +111,15 @@ export const installRoutes = ({ getUniverseId }) => {
    *   collectMission: number,
    *   collectShips: 'all' | 'most',
    *   collectResources: 'all' | 'most',
+   *   pairShips: 'all' | 'most',
+   *   pairResources: 'all' | 'most',
+   *   pairNext: boolean,
    *   bodies: Body[],
    *   bodyByKey: Map<string, Body>,
    *   hasInventory: boolean,
    * }}
    */
-  let model = { routes: [], collectTarget: null, collectMission: MISSION_DEPLOYMENT, collectShips: 'most', collectResources: 'most', bodies: [], bodyByKey: new Map(), hasInventory: false };
+  let model = { ...parseDailyRunRoutes(null), bodies: [], bodyByKey: new Map(), hasInventory: false };
 
   /** @param {string} msg @param {string} [color] */
   const setStatus = (msg, color) => {
@@ -145,6 +151,9 @@ export const installRoutes = ({ getUniverseId }) => {
     setChipValue(collectMissionChips, String(model.collectMission));
     setChipValue(collectShipsChips, model.collectShips);
     setChipValue(collectResourcesChips, model.collectResources);
+    setChipValue(pairShipsChips, model.pairShips);
+    setChipValue(pairResourcesChips, model.pairResources);
+    setChipValue(pairNextChips, model.pairNext ? 'on' : 'off');
   };
 
   /**
@@ -155,17 +164,14 @@ export const installRoutes = ({ getUniverseId }) => {
    * + request exactly like {@link save}, so the change rides the same
    * per-universe newest-wins sync. No-op when no universe is selected.
    *
-   * @param {Partial<{ collectMission: number, collectShips: 'all' | 'most', collectResources: 'all' | 'most' }>} patch
+   * @param {Partial<import('../../domain/dailyRunRoutes.js').DailyRunConfig>} patch
    * @returns {Promise<void>}
    */
   const writeCollectConfig = async (patch) => {
     const uni = getUniverseId();
     if (!uni) return;
     const stored = await chromeStore.get(dailyRunRoutesKeyFor(uni));
-    const { routes, collectTarget, collectMission, collectShips, collectResources } = parseDailyRunRoutes(stored);
-    await chromeStore.set(dailyRunRoutesKeyFor(uni), {
-      routes, collectTarget, collectMission, collectShips, collectResources, ...patch,
-    });
+    await chromeStore.set(dailyRunRoutesKeyFor(uni), { ...parseDailyRunRoutes(stored), ...patch });
     await chromeStore.set(dailyRunRoutesTsKeyFor(uni), Date.now());
     await chromeStore.set(syncRequestKeyFor(uni), Date.now());
   };
@@ -553,7 +559,7 @@ export const installRoutes = ({ getUniverseId }) => {
     autosave.flush();
     const uni = getUniverseId();
     if (!uni) {
-      model = { routes: [], collectTarget: null, collectMission: MISSION_DEPLOYMENT, collectShips: 'most', collectResources: 'most', bodies: [], bodyByKey: new Map(), hasInventory: false };
+      model = { ...parseDailyRunRoutes(null), bodies: [], bodyByKey: new Map(), hasInventory: false };
       syncCollectChips();
       render();
       setStatus('');
@@ -563,12 +569,12 @@ export const installRoutes = ({ getUniverseId }) => {
       chromeStore.get(dailyRunRoutesKeyFor(uni)),
       chromeStore.get(bodiesKeyFor(uni)),
     ]);
-    const { routes, collectTarget, collectMission, collectShips, collectResources } = parseDailyRunRoutes(storedRoutes);
+    const parsed = parseDailyRunRoutes(storedRoutes);
     const bodies = Array.isArray(/** @type {any} */ (storedBodies)?.bodies)
       ? /** @type {Body[]} */ (/** @type {any} */ (storedBodies).bodies)
       : [];
     const bodyByKey = new Map(bodies.map((b) => [coordTypeKey(b), b]));
-    model = { routes: clone(routes), collectTarget, collectMission, collectShips, collectResources, bodies, bodyByKey, hasInventory: bodies.length > 0 };
+    model = { ...parsed, routes: clone(parsed.routes), bodies, bodyByKey, hasInventory: bodies.length > 0 };
     syncCollectChips();
     render();
     setStatus('');
@@ -603,27 +609,20 @@ export const installRoutes = ({ getUniverseId }) => {
     // ── synchronous snapshot ──
     const persistable = clone(persistableRoutes());
     const pending = model.routes.length - persistable.length;
-    const { collectMission, collectShips, collectResources } = model;
+    const { collectMission, collectShips, collectResources, pairShips, pairResources, pairNext } = model;
+    const knobs = { collectMission, collectShips, collectResources, pairShips, pairResources, pairNext };
 
     // Preserve the in-game-set collect target; we only own `routes` (the
-    // collect mission/ships/resources ride along from the same model that
+    // collect + Drop/Up knobs ride along from the same model that
     // writeCollectConfig keeps in sync).
     const stored = await chromeStore.get(dailyRunRoutesKeyFor(uni));
     const parsed = parseDailyRunRoutes(stored);
-    const next = {
-      routes: persistable,
-      collectTarget: parsed.collectTarget,
-      collectMission,
-      collectShips,
-      collectResources,
-    };
-    // Fire-time no-op check against the STORE (routes + the collect knobs
-    // this write would change) — identical payloads don't write, don't stamp.
+    const next = { ...parsed, ...knobs, routes: persistable };
+    // Fire-time no-op check against the STORE (routes + the knobs this write
+    // would change) — identical payloads don't write, don't stamp.
     const unchanged =
       JSON.stringify(parsed.routes) === JSON.stringify(persistable)
-      && parsed.collectMission === collectMission
-      && parsed.collectShips === collectShips
-      && parsed.collectResources === collectResources;
+      && Object.entries(knobs).every(([k, v]) => /** @type {any} */ (parsed)[k] === v);
     if (unchanged) return;
 
     await chromeStore.set(dailyRunRoutesKeyFor(uni), next);
@@ -682,6 +681,20 @@ export const installRoutes = ({ getUniverseId }) => {
     const res = v === 'all' ? 'all' : 'most';
     model.collectResources = res;
     void writeCollectConfig({ collectResources: res });
+  });
+  wireCollectChips(pairShipsChips, (v) => {
+    const ships = v === 'all' ? 'all' : 'most';
+    model.pairShips = ships;
+    void writeCollectConfig({ pairShips: ships });
+  });
+  wireCollectChips(pairResourcesChips, (v) => {
+    const res = v === 'all' ? 'all' : 'most';
+    model.pairResources = res;
+    void writeCollectConfig({ pairResources: res });
+  });
+  wireCollectChips(pairNextChips, (v) => {
+    model.pairNext = v !== 'off';
+    void writeCollectConfig({ pairNext: model.pairNext });
   });
 
   return { refresh: () => void refresh() };

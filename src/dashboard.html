@@ -2147,6 +2147,36 @@
           </div>
         </div>
       </div>
+
+      <!-- Drop / Up (lower-left zone): own moon ↔ own planet, same slot.
+           Same "most"/"all" mapping as Send All; Next = walk on to the next
+           body after a send. Wired by features/dashboard/routes.js. -->
+      <p class="settings-desc" style="margin-top:16px;"><strong>Drop / Up</strong></p>
+      <div id="routesPairRow">
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:8px;">
+          <span style="color:#8aa;font-size:13px;min-width:80px;">Ships</span>
+          <div class="chip-group seg" id="routesPairShips" data-value="most">
+            <button type="button" data-value="most" title="Leave a small reserve (default)">Most</button>
+            <button type="button" data-value="all" title="Send every ship">All</button>
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:8px;">
+          <span style="color:#8aa;font-size:13px;min-width:80px;">Resources</span>
+          <div class="chip-group seg" id="routesPairResources" data-value="most">
+            <button type="button" data-value="most" title="Leave some resources behind (default)">Most</button>
+            <button type="button" data-value="all" title="Load everything the fleet can carry">All</button>
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+          <span style="color:#8aa;font-size:13px;min-width:80px;">Next</span>
+          <div class="chip-group seg" id="routesPairNext" data-value="on">
+            <button type="button" data-value="on" title="After a send, go to the next moon / planet (default)">On</button>
+            <button type="button" data-value="off" title="Stay on this body after a send">Off</button>
+          </div>
+        </div>
+      </div>
     </div>
   </details>
 </section>

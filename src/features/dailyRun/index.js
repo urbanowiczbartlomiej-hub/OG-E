@@ -4,9 +4,9 @@
 // "park the fleet on a moon, scatter micro-fleets to the planets, then
 // pull everything back" workflow.
 //
-// # The unified button — two zones
+// # The unified button — three zones, cut like a Y
 //
-// A single circular button split into two equal-height zones, stacked vertically:
+// One circular button cut into three 120° wedges (top, lower-left, lower-right):
 //
 //   - TOP (Send): from the current MOON, send a fixed micro-fleet
 //     (Stacjonuj / mission=4) to each target defined for that moon in the routes
@@ -14,7 +14,15 @@
 //     preloaded via the fleetdispatch URL `am<shipId>=count` param, so the page
 //     lands on fleet step 1 with the micro-fleet already selected. With no route
 //     for the current body, a tap opens the dashboard's route-setup tab instead.
-//   - BOTTOM (Collect): TAP sends EVERYTHING (all ships + all resources) from the
+//     A target equal to the body you stand on flies the Spy-16 trick instead
+//     (Espionage to [g:s:16] and back, a probe riding along) — see
+//     `microLegs` in ./pure.js for why.
+//   - LOWER-LEFT (Drop / Up): TAP sends everything (per the Drop / Up most/all
+//     settings) from the current body to the other body at the SAME slot —
+//     own moon → own planet ("Drop") or own planet → own moon ("Up") — then,
+//     with `Next` on, walks to the next body of the same kind. An empty body
+//     proposes the jump instead.
+//   - LOWER-RIGHT (Collect): TAP sends EVERYTHING (all ships + all resources) from the
 //     current planet back to the ad-hoc collect target. LONG-PRESS (2s+, see
 //     LONG_PRESS_MS) marks the body you're standing on as that collect target.
 //     The label shows the
@@ -87,7 +95,12 @@ import {
   installFleetCourier,
   bareFleetdispatchUrl,
 } from '../shared/fleetCourier.js';
-import { MISSION_DEPLOYMENT, TARGET_PLANET, TARGET_MOON } from '../../domain/rules.js';
+import {
+  MISSION_DEPLOYMENT,
+  TARGET_PLANET,
+  TARGET_MOON,
+  SHIP_ESPIONAGE_PROBE,
+} from '../../domain/rules.js';
 import { OWNER_FS } from '../../domain/fleetOwnership.js';
 import { mayCompleteFleet2 } from '../shared/fleetOwnership.js';
 import { EVENT_BOX_LOADED_EVENT } from '../../lib/ogeEvents.js';
@@ -97,13 +110,17 @@ import { resolveSelection } from '../../domain/fleetPlan.js';
 import {
   coordTypeKey,
   findRouteForBody,
-  findNextMicroTarget,
-  countRemainingMicroTargets,
+  planMicro,
+  spyFleet,
+  pairTarget,
+  pairedOriginKeys,
 } from './pure.js';
 import {
   readCurrentBody,
   readInboundLegs,
   findNextCollectSourceCp,
+  findNextPairSourceCp,
+  hasMoonAt,
   bodyNameByCoord,
 } from './domHelpers.js';
 
@@ -112,6 +129,7 @@ import {
 const FS_UNIFIED_ID = 'oge-fs-unified';
 const FS_MICRO_ZONE_ID = 'oge-fs-micro-zone';
 const FS_COLLECT_ZONE_ID = 'oge-fs-collect-zone';
+const FS_PAIR_ZONE_ID = 'oge-fs-pair-zone';
 
 const FLASH_MS = 1500;
 const SENT_LOCK_MS = 3000;
@@ -121,6 +139,16 @@ const LONG_PRESS_MS = 2000;
 // Daily Run uses pure green: micro & collect both in green family (minimal difference).
 const BG_MICRO = FAB_MODULES.fs.color; // green rim (micro zone) — the module's signature colour
 const BG_COLLECT = '#43cf72'; // green rim (collect zone, slightly brighter)
+const BG_PAIR = '#2fb87a'; // green rim (Drop / Up zone, a teal-leaning green)
+
+/** @typedef {'micro' | 'collect' | 'pair'} ZoneKey */
+
+/** Base rim colour per zone (restored after a toned flash). */
+const ZONE_BG = /** @type {Record<ZoneKey, string>} */ ({
+  micro: BG_MICRO,
+  collect: BG_COLLECT,
+  pair: BG_PAIR,
+});
 
 // ─── Eventbox readiness gate ────────────────────────────────────────────
 // OGame fetches the fleet-event list asynchronously, up to a few seconds
@@ -146,19 +174,43 @@ const EVENTBOX_SETTLE_MS = 150;
 
 /** @param {string} name */
 const urlParam = (name) => new URLSearchParams(location.search).get(name);
-/** "→ g:s:p 🪐/🌙" label for a target coord.
+/**
+ * The game's own moon picture (30×30 GIF with a TRANSPARENT background),
+ * served from the game's CDN — this button only ever renders on a game page,
+ * which loads from that CDN anyway. Deliberately not the fleet form's
+ * planet/moon/debris sprite sheet: that one is opaque (each icon sits on a
+ * near-black square that shows on the green rim), so moons get this picture
+ * and planets get no icon — the planet's name already says which body it is.
+ */
+const MOON_ICON_URL = 'https://gf3.geo.gfsrv.net/cdn87/c9643df71b262232a4d66e591f7543.gif';
+
+/** The caption icon for a target: the game's moon picture for a moon, none
+ * for a planet.
+ * @param {import('../../state/dailyRunRoutes.js').TargetCoord | null | undefined} t
+ * @returns {import('../shared/button.js').LabelIcon | undefined} */
+const targetIcon = (t) =>
+  t && t.type === TARGET_MOON
+    ? { src: MOON_ICON_URL, cols: 1, rows: 1, x: 0, y: 0, aspect: 1 }
+    : undefined;
+
+/** "→ g:s:p" label for a target coord (a moon also gets the
+ * {@link targetIcon} drawn after it).
  * @param {import('../../state/dailyRunRoutes.js').TargetCoord | null | undefined} t */
 const targetLabel = (t) =>
-  t ? `→ ${t.galaxy}:${t.system}:${t.position} ${t.type === 3 ? '🌙' : '🪐'}` : '';
+  t ? `→ ${t.galaxy}:${t.system}:${t.position}` : '';
 
 /** Like {@link targetLabel} but prefers the body's NAME (resolved from the
- * live planet list) over its coords — used by the "Send All" collect zone.
- * Falls back to coords when the name can't be resolved.
+ * live planet list) over its coords. Falls back to coords when the name can't
+ * be resolved (e.g. the Spy-16 point, which is no body of ours).
  * @param {import('../../state/dailyRunRoutes.js').TargetCoord | null | undefined} t */
 const collectTargetLabel = (t) => {
   if (!t) return '';
+  // A moon reads as the game's own word for it: its stored name is usually a
+  // localised default (identical on every moon), and the moon icon drawn
+  // after the caption already marks the kind.
+  if (t.type === TARGET_MOON) return '→ moon';
   const name = bodyNameByCoord(t);
-  return name ? `→ ${name} ${t.type === 3 ? '🌙' : '🪐'}` : targetLabel(t);
+  return name ? `→ ${name}` : targetLabel(t);
 };
 
 /**
@@ -200,21 +252,35 @@ const openDashboardRoutes = () => {
 };
 
 /**
- * Set of {@link coordTypeKey}s that already have an inbound fleet of
- * `mission` — the "already sent a micro-fleet here" guard, scoped to the
- * route's own mission so a transport route isn't fooled by a deployment leg
- * (or vice-versa) to the same target.
+ * Whether this body can fly the Spy-16 leg (it needs one espionage probe).
+ * Unknown availability (off fleetdispatch) counts as yes, so the off-page tap
+ * still navigates; the fleetdispatch page then decides with real numbers.
  *
- * @param {number} mission
- * @returns {Set<string>}
+ * @returns {boolean}
  */
-const microInFlightKeys = (mission) => {
-  const set = new Set();
-  for (const leg of readInboundLegs()) {
-    if (leg.mission === mission) set.add(coordTypeKey(leg.dest));
-  }
-  return set;
+const canSpyHere = () => {
+  const avail = shipAvailability();
+  return !avail || (avail[SHIP_ESPIONAGE_PROBE] ?? 0) > 0;
 };
+
+/**
+ * The micro zone's plan on the current body — the decisions live in the pure
+ * {@link planMicro} (route order, "already in the air" guard, the own-body
+ * Spy-16 trick); this only gathers the page inputs.
+ *
+ * @param {import('../../state/dailyRunRoutes.js').Route} route
+ * @returns {ReturnType<typeof planMicro>}
+ */
+const microPlan = (route) => planMicro(route, readCurrentBody(), readInboundLegs(), canSpyHere());
+
+/**
+ * The cp of the next body still needing its Drop / Up (same kind as the one
+ * you stand on), or `null`.
+ *
+ * @returns {string | null}
+ */
+const nextPairSourceCp = () =>
+  findNextPairSourceCp(pairedOriginKeys(readInboundLegs()), readCurrentBody()?.type ?? TARGET_PLANET);
 
 /**
  * Set of {@link coordTypeKey}s of bodies that already have a deployment
@@ -284,6 +350,20 @@ const collectPlanetEmpty = () => {
   return !!avail && !resolveSelection({ kind: 'all' }, avail).ok;
 };
 
+/**
+ * The Drop / Up target for the current body — its own planet (on a moon) or
+ * its own moon (on a planet) — or `null` when there is none (unreadable body,
+ * or a planet without a moon).
+ *
+ * @returns {import('../../state/dailyRunRoutes.js').TargetCoord | null}
+ */
+const currentPairTarget = () => {
+  const body = readCurrentBody();
+  if (!body) return null;
+  if (body.type !== TARGET_MOON && !hasMoonAt(body)) return null;
+  return pairTarget(body);
+};
+
 // ─── label painting ─────────────────────────────────────────────────────
 
 /**
@@ -296,15 +376,17 @@ const collectPlanetEmpty = () => {
  * @param {string} big
  * @param {string} [small]   subtitle below main
  * @param {string} [hint]    micro-hint at bottom (low-weight)
+ * @param {import('../shared/button.js').LabelIcon} [smallIcon] sprite cell after the subtitle
  * @returns {void}
  */
-const setLabel = (el, big, small, hint) => {
+const setLabel = (el, big, small, hint, smallIcon) => {
   if (!el) return;
   // Skip identical repaints: renderLines rebuilds the label DOM from scratch,
   // so repainting the SAME content (the 1 Hz reconciler recomputes it every
   // second) would visibly re-render the text for nothing. The last-painted
   // signature rides on the zone element, so it resets with every mount.
-  const sig = `${big}\u0000${small ?? ''}\u0000${hint ?? ''}`;
+  const iconSig = smallIcon ? `${smallIcon.x},${smallIcon.y}` : '';
+  const sig = `${big}\u0000${small ?? ''}\u0000${hint ?? ''}\u0000${iconSig}`;
   if (el.dataset.ogeLabelSig === sig) return;
   el.dataset.ogeLabelSig = sig;
   // Paint into the shared Button's label span so the ring/ripple
@@ -312,7 +394,7 @@ const setLabel = (el, big, small, hint) => {
   const target = el.querySelector('.' + LABEL_CLASS) || el;
   renderLines(
     /** @type {HTMLElement} */ (target),
-    labelLines({ main: big, sub: small, hint }),
+    labelLines({ main: big, sub: small, hint, subIcon: smallIcon }),
   );
 };
 
@@ -343,7 +425,7 @@ let flashTimer = null;
  * `refresh()` — so a toned flash must put the base colour back itself, both
  * when the restore timer fires and when a new tap/flash supersedes it.
  *
- * @type {'micro' | 'collect' | null}
+ * @type {ZoneKey | null}
  */
 let flashTonedZone = null;
 
@@ -352,9 +434,17 @@ let flashTonedZone = null;
  * the key).
  *
  * @param {HTMLElement} el
- * @returns {'micro' | 'collect'}
+ * @returns {ZoneKey}
  */
-const zoneKeyOf = (el) => (el.id === FS_MICRO_ZONE_ID ? 'micro' : 'collect');
+const zoneKeyOf = (el) =>
+  el.id === FS_MICRO_ZONE_ID ? 'micro' : el.id === FS_PAIR_ZONE_ID ? 'pair' : 'collect';
+
+/** Zone element id per zone key. */
+const ZONE_ID = /** @type {Record<ZoneKey, string>} */ ({
+  micro: FS_MICRO_ZONE_ID,
+  collect: FS_COLLECT_ZONE_ID,
+  pair: FS_PAIR_ZONE_ID,
+});
 
 /**
  * Restore the base rim of the zone the last flash toned. No-op when the last
@@ -364,7 +454,7 @@ const zoneKeyOf = (el) => (el.id === FS_MICRO_ZONE_ID ? 'micro' : 'collect');
  */
 const restoreFlashTone = () => {
   if (flashTonedZone === null) return;
-  controller?.setBg(flashTonedZone, flashTonedZone === 'micro' ? BG_MICRO : BG_COLLECT);
+  controller?.setBg(flashTonedZone, ZONE_BG[flashTonedZone]);
   controller?.setError(false);
   flashTonedZone = null;
 };
@@ -481,6 +571,18 @@ const stashCollectRedirect = (target) => {
 };
 
 /**
+ * Stash the post-send redirect for a DROP / UP send: with `Next` on, the next
+ * body of the same kind still needing its Drop / Up; otherwise (or when none
+ * is left) this same body.
+ *
+ * @returns {void}
+ */
+const stashPairRedirect = () => {
+  const nextCp = dailyRunRoutesStore.get().pairNext !== false ? nextPairSourceCp() : null;
+  stashRedirect(bareFleetdispatchUrl(nextCp || urlParam('cp')));
+};
+
+/**
  * Post-send landing check — run once per page load, before anything else.
  *
  * Reads (and immediately clears) the stash written beside the bridge handoff.
@@ -541,7 +643,9 @@ let eventBoxReady = true;
  * tap 1, consumed on tap 2 to stash the right post-send redirect. `null`
  * when no select is currently armed.
  *
- * @type {{ mode: 'micro' | 'collect', target: import('../../state/dailyRunRoutes.js').TargetCoord } | null}
+ * `spy` marks a micro order flying the own-body Spy-16 leg (armed label).
+ *
+ * @type {{ mode: ZoneKey, target: import('../../state/dailyRunRoutes.js').TargetCoord, spy?: boolean } | null}
  */
 let pending = null;
 
@@ -564,33 +668,58 @@ let errorMode = false;
  * single-ship fleet (frac 1) to the next un-sent target; Collect → all
  * ships to the stored collect target.
  *
- * @param {'micro' | 'collect'} mode
- * @returns {{ order: import('../shared/fleetCourier.js').FleetOrder } | { flash: string, tone?: string, openDash?: boolean }}
+ * Drop / Up → everything (per the Drop / Up most/all knobs) to the other body
+ * at the same slot. A `{ nav }` result means "nothing to send here — go to
+ * this cp" (an empty body proposing the next one; the label already says so).
+ *
+ * @param {ZoneKey} mode
+ * @returns {{ order: import('../shared/fleetCourier.js').FleetOrder, spy?: boolean } | { flash: string, tone?: string, openDash?: boolean } | { nav: string }}
  */
 const buildOrder = (mode) => {
   if (mode === 'micro') {
     const route = findRouteForBody(dailyRunRoutesStore.get().routes, readCurrentBody());
     if (!route) return { flash: 'No route', tone: TONE_ERROR, openDash: true };
-    const mission = route.mission ?? MISSION_DEPLOYMENT;
-    const next = findNextMicroTarget(route.targets, microInFlightKeys(mission));
+    const { next } = microPlan(route);
     // Exhaustion, not failure — the day's work here is done (amber, like
     // expedition's 'All sent').
     if (!next) return { flash: 'All sent', tone: TONE_WAIT };
+    const fleet = next.spy ? spyFleet(route.fleet) : route.fleet;
     // Hard gate BEFORE any courier action: a micro-fleet that can't be
     // filled must never start the select→continue walk (the label already
     // says why — see refresh()).
-    if (microShortfall(route)) return { flash: 'No ships', tone: TONE_ERROR };
+    if (microShortfall({ fleet })) return { flash: 'No ships', tone: TONE_ERROR };
     return {
+      spy: next.spy,
       order: {
         spec: {
           kind: 'list',
-          ships: route.fleet.map((f) => ({ id: Number(f.shipId), qty: Number(f.count), frac: 1 })),
+          ships: fleet.map((f) => ({ id: Number(f.shipId), qty: Number(f.count), frac: 1 })),
         },
-        target: next,
-        mission,
+        target: next.target,
+        mission: next.mission,
         owner: OWNER_FS,
         zeroResources: true,
         speedStep: 10,
+      },
+    };
+  }
+  if (mode === 'pair') {
+    const cfg = dailyRunRoutesStore.get();
+    const target = currentPairTarget();
+    if (!target) return { flash: 'No moon', tone: TONE_ERROR };
+    if (collectPlanetEmpty()) {
+      const nextCp = nextPairSourceCp();
+      // Exhaustion, not failure — every pair is done (amber).
+      return nextCp ? { nav: nextCp } : { flash: 'All done', tone: TONE_WAIT };
+    }
+    return {
+      order: {
+        spec: { kind: 'all' },
+        selectMostShips: cfg.pairShips !== 'all',
+        target,
+        mission: MISSION_DEPLOYMENT,
+        resources: cfg.pairResources === 'all' ? 'all' : 'most',
+        owner: OWNER_FS,
       },
     };
   }
@@ -649,7 +778,7 @@ const reasonLabel = (reason) => {
  *   • step 2 + ready → tap 2 "Wysłanie": stash the post-send redirect and
  *     fire the one server-visible action (dispatch).
  *
- * @param {'micro' | 'collect'} mode
+ * @param {ZoneKey} mode
  * @returns {Promise<void>}
  */
 const handleZone = async (mode) => {
@@ -662,8 +791,7 @@ const handleZone = async (mode) => {
     return;
   }
   if (busy) return;
-  const zoneId = mode === 'micro' ? FS_MICRO_ZONE_ID : FS_COLLECT_ZONE_ID;
-  const zone = document.getElementById(zoneId);
+  const zone = document.getElementById(ZONE_ID[mode]);
   // Event list not loaded yet — any target/in-flight derivation would run
   // on stale data; the label already says Wait…, the tap just re-flashes it.
   // Deliberately TONELESS: during the load gate every command button wears
@@ -705,6 +833,7 @@ const handleZone = async (mode) => {
       return;
     }
     if (mode === 'micro') stashMicroRedirect();
+    else if (mode === 'pair') stashPairRedirect();
     else stashCollectRedirect(dailyRunRoutesStore.get().collectTarget);
     busy = true;
     setLabel(zone, 'Wait…');
@@ -742,6 +871,10 @@ const handleZone = async (mode) => {
   // Off fleetdispatch — go there (bare); the next tap selects in-page.
   if (s === 'off') {
     const built = buildOrder(mode);
+    if ('nav' in built) {
+      location.href = bareFleetdispatchUrl(built.nav);
+      return;
+    }
     if ('flash' in built) {
       if (built.openDash && openDashboardRoutes()) return;
       flash(zone, built.flash, built.tone);
@@ -753,6 +886,11 @@ const handleZone = async (mode) => {
 
   // Tap 1 — select the fleet + target and prepare a ready step 2.
   const built = buildOrder(mode);
+  // Drop / Up on an empty body: the tap accepts the jump the label proposes.
+  if ('nav' in built) {
+    location.href = bareFleetdispatchUrl(built.nav);
+    return;
+  }
   if ('flash' in built) {
     if (built.openDash && openDashboardRoutes()) return;
     flash(zone, built.flash, built.tone);
@@ -797,12 +935,13 @@ const handleZone = async (mode) => {
     else flash(zone, fail.text, fail.tone);
     return;
   }
-  pending = { mode, target: built.order.target };
+  pending = { mode, target: built.order.target, spy: built.spy };
   refresh();
 };
 
 const onMicroClick = () => void handleZone('micro');
 const onCollectClick = () => void handleZone('collect');
+const onPairClick = () => void handleZone('pair');
 
 /** Grey a zone out (or restore it) to show it's working / locked. Routed
  * through the shared controller's `setDim` — NOT a direct `zone.style.opacity`
@@ -811,18 +950,19 @@ const onCollectClick = () => void handleZone('collect');
  * sendExpedition's single-zone lock (via the shared `syncNodeDim`). The old
  * inline-opacity path skipped that logo step, leaving the node lit while both
  * halves were busy.
- * @param {'micro' | 'collect'} key @param {boolean} on */
+ * @param {ZoneKey} key @param {boolean} on */
 const dimZone = (key, on) => {
   controller?.setDim(key, on);
 };
 
-/** Grey BOTH zones (or restore them). `busy` swallows taps on both zones,
- * so the grey must cover both too — the whole button reads busy (logo
+/** Grey EVERY zone (or restore them). `busy` swallows taps on all zones,
+ * so the grey must cover all of them too — the whole button reads busy (logo
  * included), exactly like sendExpedition's single-zone lock.
  * @param {boolean} on */
 const dimAll = (on) => {
   dimZone('micro', on);
   dimZone('collect', on);
+  dimZone('pair', on);
 };
 
 /**
@@ -874,14 +1014,12 @@ const lockBriefly = () => {
  * The amber rim this used to paint made Daily Run the one button with a
  * gold ring while greyed — the exact inconsistency it was told not to have.
  *
- * @param {HTMLElement | null} microZone
- * @param {HTMLElement | null} collectZone
+ * @param {Array<HTMLElement | null>} zones
  * @returns {void}
  */
-const paintEventBoxGate = (microZone, collectZone) => {
+const paintEventBoxGate = (zones) => {
   if (eventBoxReady) return;
-  setLabel(microZone, 'Wait…', undefined, '(event list)');
-  setLabel(collectZone, 'Wait…', undefined, '(event list)');
+  for (const z of zones) setLabel(z, 'Wait…', undefined, '(event list)');
 };
 
 /**
@@ -898,7 +1036,8 @@ const refresh = () => {
   if (busy || flashTimer !== null || errorMode) return;
   const microZone = document.getElementById(FS_MICRO_ZONE_ID);
   const collectZone = document.getElementById(FS_COLLECT_ZONE_ID);
-  paintEventBoxGate(microZone, collectZone);
+  const pairZone = document.getElementById(FS_PAIR_ZONE_ID);
+  paintEventBoxGate([microZone, collectZone, pairZone]);
   if (!eventBoxReady) return;
   // Armed = OUR tap 1 completed and the form still sits on fleet2.
   // Deliberately NOT gated on readyToDispatch(): the game re-validates
@@ -915,23 +1054,39 @@ const refresh = () => {
     if (!route) {
       setLabel(microZone, 'Setup', undefined, '(no routes)');
     } else if (armed && armed.mode === 'micro') {
-      setLabel(microZone, 'Send', collectTargetLabel(armed.target), '(tap to send)');
+      setLabel(microZone, armed.spy ? 'Spy' : 'Send', collectTargetLabel(armed.target), '(tap to send)', targetIcon(armed.target));
     } else {
-      const inflight = microInFlightKeys(route.mission ?? MISSION_DEPLOYMENT);
-      const next = findNextMicroTarget(route.targets, inflight);
+      const { next, left } = microPlan(route);
       if (!next) {
         setLabel(microZone, 'Done', undefined, 'all sent');
       } else {
-        const short = microShortfall(route);
+        const short = microShortfall({ fleet: next.spy ? spyFleet(route.fleet) : route.fleet });
         if (short) {
           // Not enough ships for the micro-fleet — say so persistently
           // (and buildOrder blocks the tap with the same message).
           setLabel(microZone, 'No ships', `${short.have}/${short.want}`);
         } else {
-          const left = countRemainingMicroTargets(route.targets, inflight);
-          setLabel(microZone, 'Send', collectTargetLabel(next), `${left} left`);
+          // 'Spy' = the own-body Spy-16 trip (see pure.js microLegs).
+          setLabel(microZone, next.spy ? 'Spy' : 'Send', collectTargetLabel(next.target), `${left} left`, targetIcon(next.target));
         }
       }
+    }
+  }
+
+  // Drop / Up (lower-left) label — own moon → own planet, or the reverse.
+  if (pairZone) {
+    const body = readCurrentBody();
+    const word = body?.type === TARGET_MOON ? 'Drop' : 'Up';
+    const target = currentPairTarget();
+    if (!target) {
+      setLabel(pairZone, 'Up', undefined, 'no moon');
+    } else if (armed && armed.mode === 'pair') {
+      setLabel(pairZone, word, collectTargetLabel(target), '(tap to send)', targetIcon(target));
+    } else if (collectPlanetEmpty()) {
+      // Nothing to take here — the tap walks on (see buildOrder).
+      setLabel(pairZone, 'Empty', body?.type === TARGET_MOON ? '→ next moon' : '→ next planet');
+    } else {
+      setLabel(pairZone, word, collectTargetLabel(target), undefined, targetIcon(target));
     }
   }
 
@@ -939,9 +1094,9 @@ const refresh = () => {
   if (collectZone) {
     const t = dailyRunRoutesStore.get().collectTarget;
     if (!t) {
-      setLabel(collectZone, 'Send All', undefined, '(hold to set target)');
+      setLabel(collectZone, 'Send All', undefined, '(hold to set)');
     } else if (armed && armed.mode === 'collect') {
-      setLabel(collectZone, 'Send All', collectTargetLabel(t), '(tap to send)');
+      setLabel(collectZone, 'Send All', collectTargetLabel(t), '(tap to send)', targetIcon(t));
     } else if (collectPlanetEmpty()) {
       // Nothing to take here — propose the jump; the tap performs it
       // (see handleZone). Mirrors the post-send "advance to the next
@@ -952,7 +1107,7 @@ const refresh = () => {
         collectSourceType() === TARGET_MOON ? '→ next moon' : '→ next planet',
       );
     } else {
-      setLabel(collectZone, 'Send All', collectTargetLabel(t), '(hold to change)');
+      setLabel(collectZone, 'Send All', collectTargetLabel(t), '(hold to change)', targetIcon(t));
     }
   }
 };
@@ -1019,6 +1174,8 @@ export const installDailyRun = () => {
       module: FAB_MODULES.fs,
       gateUntilEventBox: true,
       holdMs: LONG_PRESS_MS,
+      // Cut like a Y: micro on top, Drop / Up lower-left, Send All lower-right.
+      layout: 'y',
       zones: [
         {
           key: 'micro',
@@ -1027,7 +1184,7 @@ export const installDailyRun = () => {
           bg: BG_MICRO,
           glyph: PLANET_ARROW_GLYPH,
           onTap: onMicroClick,
-          labelShiftY: -6,
+          sector: 'top',
         },
         {
           // TAP collects; LONG-PRESS (onHold) sets the collect target.
@@ -1038,7 +1195,16 @@ export const installDailyRun = () => {
           bg: BG_COLLECT,
           onTap: onCollectClick,
           onHold: onSetTargetClick,
-          labelShiftY: 1,
+          sector: 'right',
+        },
+        {
+          // Own moon ↔ own planet: Drop on a moon, Up on a planet.
+          key: 'pair',
+          id: FS_PAIR_ZONE_ID,
+          ariaLabel: 'Drop to the own planet / up to the own moon',
+          bg: BG_PAIR,
+          onTap: onPairClick,
+          sector: 'left',
         },
       ],
     });

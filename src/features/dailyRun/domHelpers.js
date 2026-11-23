@@ -161,3 +161,51 @@ export const findNextCollectSourceCp = (collectedOriginKeys, targetKey, sourceTy
     },
   );
 };
+
+/**
+ * Whether the planet-list row at `coord`'s slot has a moon. `false` when the
+ * list isn't rendered or no row matches. Gates Up (a planet with no moon has
+ * nowhere to go up to).
+ *
+ * @param {TargetCoord | null | undefined} coord
+ * @returns {boolean}
+ */
+export const hasMoonAt = (coord) => {
+  if (!coord) return false;
+  for (const row of document.querySelectorAll(GAME.SMALL_PLANET)) {
+    const c = parseKoords(row.querySelector(GAME.PLANET_KOORDS)?.textContent);
+    if (c && c.galaxy === coord.galaxy && c.system === coord.system && c.position === coord.position) {
+      return !!row.querySelector(GAME.MOON_LINK);
+    }
+  }
+  return false;
+};
+
+/**
+ * The cp of the next body in `#planetList` order still needing its Drop / Up:
+ * same kind as `sourceType` (moons for Drop, planets for Up), on a row that
+ * HAS a moon (a pair needs both bodies), and not yet sending to its pair.
+ * Walks forward from the active row, wrapping; the active row itself comes
+ * last. `null` when nothing is left.
+ *
+ * @param {Set<string>} pairedKeys  {@link coordTypeKey}s already in the air
+ *   to their pair (see `pairedOriginKeys`).
+ * @param {number} sourceType  `TARGET_MOON` walks moons, else planets.
+ * @returns {string | null}
+ */
+export const findNextPairSourceCp = (pairedKeys, sourceType) => {
+  const wantMoon = sourceType === TARGET_MOON;
+  return findNextPlanetInList(
+    (p) => {
+      const coords = parseKoords(p.querySelector(GAME.PLANET_KOORDS)?.textContent);
+      if (!coords || !p.querySelector(GAME.MOON_LINK)) return false;
+      return !pairedKeys.has(coordTypeKey({ ...coords, type: wantMoon ? TARGET_MOON : TARGET_PLANET }));
+    },
+    {
+      active: 'last',
+      cpOf: wantMoon
+        ? (p) => cpFromHref(p.querySelector(GAME.MOON_LINK)?.getAttribute('href'))
+        : undefined,
+    },
+  );
+};

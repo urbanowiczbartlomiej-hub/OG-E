@@ -132,7 +132,6 @@ import {
   alarmClockConfigTsKeyFor,
 } from '../state/alarmClockConfig.js';
 import { parseDailyRunRoutes } from '../domain/dailyRunRoutes.js';
-import { MISSION_DEPLOYMENT } from '../domain/rules.js';
 import { normalizeGalaxyScanConfig, sanitizeGalaxyScanConfigForWire } from '../domain/galaxyScanConfig.js';
 import { normalizeAlarmClockConfig } from '../domain/alarmClockConfig.js';
 import {
@@ -476,13 +475,13 @@ const noteApplied = async (rev, { beacon = false } = {}) => {
  * @returns {Promise<import('./merge.js').DailyRunRoutesSlot>}
  */
 const readLocalRoutesSlot = async () => {
-  if (!routesUniverseId) return { routes: [], collectTarget: null, collectMission: MISSION_DEPLOYMENT, collectShips: 'most', collectResources: 'most', updatedAt: 0 };
+  if (!routesUniverseId) return { ...parseDailyRunRoutes(null), updatedAt: 0 };
   const [raw, ts] = await Promise.all([
     chromeStore.get(dailyRunRoutesKeyFor(routesUniverseId)),
     chromeStore.get(dailyRunRoutesTsKeyFor(routesUniverseId)),
   ]);
-  const { routes, collectTarget, collectMission, collectShips, collectResources } = parseDailyRunRoutes(raw);
-  return { routes, collectTarget, collectMission, collectShips, collectResources, updatedAt: typeof ts === 'number' ? ts : 0 };
+  const parsed = parseDailyRunRoutes(raw);
+  return { ...parsed, updatedAt: typeof ts === 'number' ? ts : 0 };
 };
 
 /**
@@ -500,23 +499,13 @@ const writeLocalRoutesSlot = async (slot) => {
   if (!routesUniverseId) return;
   bumpApplying('dailyRunRoutes');
   try {
-    await chromeStore.set(dailyRunRoutesKeyFor(routesUniverseId), {
-      routes: slot.routes,
-      collectTarget: slot.collectTarget,
-      collectMission: slot.collectMission ?? MISSION_DEPLOYMENT,
-      collectShips: slot.collectShips ?? 'most',
-      collectResources: slot.collectResources ?? 'most',
-    });
+    // Every scalar setting is defaulted by the one normaliser (so a newly
+    // added field can't be dropped here); the routes array passes through.
+    /** @type {import('../state/dailyRunRoutes.js').DailyRunRoutes} */
+    const value = { ...parseDailyRunRoutes(slot), routes: slot.routes };
+    await chromeStore.set(dailyRunRoutesKeyFor(routesUniverseId), value);
     await chromeStore.set(dailyRunRoutesTsKeyFor(routesUniverseId), slot.updatedAt);
-    dailyRunRoutesStore.set(
-      /** @type {import('../state/dailyRunRoutes.js').DailyRunRoutes} */ ({
-        routes: slot.routes,
-        collectTarget: slot.collectTarget,
-        collectMission: slot.collectMission ?? MISSION_DEPLOYMENT,
-        collectShips: slot.collectShips ?? 'most',
-        collectResources: slot.collectResources ?? 'most',
-      }),
-    );
+    dailyRunRoutesStore.set(value);
   } finally {
     dropApplying('dailyRunRoutes');
   }

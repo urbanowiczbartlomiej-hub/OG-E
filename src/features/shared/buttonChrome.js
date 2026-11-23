@@ -118,6 +118,18 @@ export const BUTTON_CHROME_CSS = [
   'opacity:.55;}',
   '.oge-host .zone:hover{filter:brightness(1.12) saturate(1.05);}',
 
+  // ── Y layout: three stacked full-size wedges (clip-path set inline by
+  //    button.js) + three seams from the centre, fading into the lens. ─────
+  '.oge-host.split.y{display:block;}',
+  '.oge-host.y .zone{position:absolute;inset:0;width:100%;height:100%;padding:0;}',
+  '.oge-host.y .zone+.zone::before{display:none;}',
+  // 39% of the diameter from the centre: the seam stops short of the rim
+  // chrome band (which starts ~44%) and fades out at both ends.
+  '.oge-y-seam{position:absolute;left:50%;top:50%;width:1.5px;height:39%;',
+  'transform-origin:50% 0;z-index:4;pointer-events:none;',
+  'background:linear-gradient(to bottom,transparent 25%,',
+  'color-mix(in oklab,var(--rim) 60%,#fff) 70%,transparent);opacity:.55;}',
+
   // ── Split: stronger rim + dark inset backing to restore thread contrast
   //    Zone gradients colour the area just inside the circular edge, reducing
   //    contrast between the thread and its inner background. A dark inset at

@@ -209,6 +209,27 @@ any code was written:
   (`domain/planetTooltip.js`); keeping it adds no request, no timer and no
   page of our own — one more number from text already on screen.
 
+## Daily Run: Drop / Up zone and the own-body Spy-16 leg — classification (GREEN)
+
+**Allowed** (§1.1, one click = one game action). Sorted before any code was
+written:
+
+- **Drop / Up** (the button's third zone) — sends from the body you stand on to
+  the other body at the SAME slot (own moon → own planet, or the reverse),
+  through the same two-tap fleet form as Send All: tap 1 selects, tap 2 is the
+  player's own dispatch. After a send it may redirect to the next body (the
+  same post-send redirect Send All already uses). One body, one target, one
+  send per tap pair — nothing is queued or chained.
+- **The own-body Spy-16 leg** — when a route's target list contains the body
+  you stand on, that target becomes an Espionage trip to position 16 of the
+  same system (a probe added to the micro-fleet) instead of being skipped. It
+  is still ONE target picked for ONE tap pair, exactly like any other route
+  target; it is not "spy many targets" (§1.1's forbidden example) — the target
+  is an empty slot, never another player.
+
+Neither reads anything new (the event list and the fleet form already on the
+page) nor sends anything the player didn't tap.
+
 ## What OG-E never does (all grep-verified)
 
 - No origination of a game **request**, and no modification of one beyond the

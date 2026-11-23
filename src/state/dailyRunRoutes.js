@@ -66,6 +66,12 @@ import { currentUniverseKey } from './universeKey.js';
  *   `'all'` (explicit fill) or `'most'` (AGR "send most" — leaves a reserve).
  * @property {'all' | 'most'} collectResources  How "Send All" loads cargo:
  *   `'all'` (#allresources) or `'most'` (#mostresources — leaves a reserve).
+ * @property {'all' | 'most'} [pairShips]  Same choice for Drop / Up (own moon ↔
+ *   own planet). Absent ⇒ `'most'`.
+ * @property {'all' | 'most'} [pairResources]  Drop / Up cargo load. Absent ⇒ `'most'`.
+ * @property {boolean} [pairNext]  Drop / Up walks on to the next body after a
+ *   send. Absent ⇒ `true`. (Optional: values written by older builds lack
+ *   all three — readers default them.)
  */
 
 /**
@@ -168,6 +174,9 @@ const emptyConfig = () => ({
   collectMission: MISSION_DEPLOYMENT,
   collectShips: 'most',
   collectResources: 'most',
+  pairShips: 'most',
+  pairResources: 'most',
+  pairNext: true,
 });
 
 /**

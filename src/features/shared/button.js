@@ -49,6 +49,22 @@ export const LABEL_CLASS = 'oge-btn-label';
  * @property {number} [opacity]       0..1 (default 1).
  * @property {number} [marginTop]     px gap above this line (default 0).
  * @property {number} [letterSpacing] px letter-spacing (default 0).
+ * @property {LabelIcon} [icon]       sprite cell drawn after the text, about
+ *   one line-height tall (e.g. the game's own planet / moon icon).
+ */
+
+/**
+ * One cell of a sprite sheet, drawn inline after a label line. The sheet is
+ * `cols` × `rows` equal cells; (`x`, `y`) picks the cell (0-based);
+ * `aspect` is one cell's width / height.
+ *
+ * @typedef {object} LabelIcon
+ * @property {string} src
+ * @property {number} cols
+ * @property {number} rows
+ * @property {number} x
+ * @property {number} y
+ * @property {number} aspect
  */
 
 /**
@@ -61,6 +77,8 @@ export const LABEL_CLASS = 'oge-btn-label';
  * @property {string} bg                   initial rim/state colour (used as CSS --rim).
  * @property {(ev: MouseEvent) => void} onTap
  * @property {() => void} [onHold]         present ⇒ enables long-press on this zone.
+ * @property {'top' | 'left' | 'right'} [sector]  which third of a `layout: 'y'`
+ *                                         button this zone fills (ignored otherwise).
  * @property {string} [glyph]              inner SVG markup of the glass node
  *                                         lens glyph (see buttonGlyphs.js);
  *                                         omitted ⇒ no lens.
@@ -86,6 +104,11 @@ export const LABEL_CLASS = 'oge-btn-label';
  * @property {string} [posKey]             localStorage key for the dragged
  *                                         position (standalone buttons only).
  * @property {ZoneConfig[]} zones          1 zone ⇒ single circle; 2+ ⇒ split.
+ * @property {'y'} [layout]                 `'y'` ⇒ three zones cut like the
+ *                                         letter Y (top / lower-left / lower-right,
+ *                                         120° each, see {@link Y_SECTORS}) instead
+ *                                         of stacked halves. Each zone names its
+ *                                         `sector`.
  * @property {number} [edgeOffset]         bottom-right anchor inset (default 20).
  * @property {number} [dragThreshold]      px before a gesture is a drag (default 8).
  * @property {number} [holdMs]             long-press duration (default 300).
@@ -123,6 +146,46 @@ const DEFAULTS = {
   holdMs: 300,
 };
 
+/** Label scale of a Y third relative to a stacked half. */
+const Y_FONT_FACTOR = 0.85;
+
+/**
+ * Geometry of the `layout: 'y'` button. The cuts run from the centre: the stem
+ * straight down, the arms 60° either side of straight up — three 120° wedges.
+ * `clip` is the wedge as a clip-path (points may lie outside the box; the
+ * round host clips the rest). An arm reaches the box edge at (50 ± 86.6,
+ * 0) %, the stem at (50, 150) %. `label` places the label on the wedge's
+ * bisector (x/y in %), its width along that axis (`w`, %), its tilt (`rot`,
+ * degrees) and its scale (`em`).
+ *
+ * A horizontal "Send All" overran the rim chrome, so the lower labels are
+ * tilted like lettering on the lower arc of a coin — the text's TOP leans
+ * toward the centre (−45° right, +45° left: halfway between the upper arm's
+ * direction and true coin lettering at 60°) — and run a touch smaller.
+ */
+const Y_SECTORS = {
+  top: {
+    clip: 'polygon(50% 50%, -36.6% 0%, 136.6% 0%)',
+    label: { x: 50, y: 23, w: 60, rot: 0, em: 1 },
+  },
+  left: {
+    clip: 'polygon(50% 50%, -36.6% 0%, -50% 150%, 50% 150%)',
+    // On the bisector, 29% of the diameter out from the centre — the middle
+    // of the band between the lens and the rim chrome.
+    label: { x: 24.9, y: 64.5, w: 50, rot: 45, em: 0.9 },
+  },
+  right: {
+    clip: 'polygon(50% 50%, 50% 150%, 150% 150%, 136.6% 0%)',
+    label: { x: 75.1, y: 64.5, w: 50, rot: -45, em: 0.9 },
+  },
+};
+
+/**
+ * Seam rotations (CSS, clockwise from straight down): the stem, the up-left
+ * arm (120°) and the up-right arm (240°).
+ */
+const Y_SEAM_DEGREES = [0, 120, 240];
+
 /**
  * Paint up to N stacked lines into a zone's `.oge-btn-label` span. Only
  * the label span is cleared, so the sibling ring/ripple decoration (on a
@@ -143,6 +206,19 @@ export const renderLines = (span, lines) => {
   for (const line of lines) {
     const div = document.createElement('div');
     div.textContent = line.text;
+    if (line.icon) {
+      const { src, cols, rows, x, y, aspect } = line.icon;
+      const h = 1.3; // em of this line
+      const icon = document.createElement('span');
+      icon.setAttribute('aria-hidden', 'true');
+      icon.style.cssText =
+        `display:inline-block;height:${h}em;width:${(h * aspect).toFixed(3)}em;` +
+        'vertical-align:-0.35em;margin-left:0.15em;' +
+        `background:url("${src}") no-repeat;` +
+        `background-size:${cols * 100}% ${rows * 100}%;` +
+        `background-position:${cols > 1 ? (x / (cols - 1)) * 100 : 0}% ${rows > 1 ? (y / (rows - 1)) * 100 : 0}%;`;
+      div.appendChild(icon);
+    }
     let css = `font-size:${line.em || '1em'};white-space:nowrap;`;
     if (line.opacity != null && line.opacity !== 1) css += `opacity:${line.opacity};`;
     if (line.marginTop) css += `margin-top:${line.marginTop}px;`;
@@ -161,10 +237,12 @@ export const renderLines = (span, lines) => {
  * label font sizes / opacities / spacing — pass the result to
  * {@link renderLines} (or `Button.paintLines`).
  *
- * @param {{ main: string, sub?: string, hint?: string }} parts
+ * `subIcon` (optional) is a sprite cell drawn right after the caption.
+ *
+ * @param {{ main: string, sub?: string, hint?: string, subIcon?: LabelIcon }} parts
  * @returns {LabelLine[]}
  */
-export const labelLines = ({ main, sub, hint }) => {
+export const labelLines = ({ main, sub, hint, subIcon }) => {
   // Two-word verdicts crowd the round rim at full size, so a few shared
   // labels wear a slightly smaller primary. Handled HERE (the single source
   // of truth for label sizes) so every feature shrinks them identically
@@ -176,7 +254,7 @@ export const labelLines = ({ main, sub, hint }) => {
   /** @type {LabelLine[]} */
   const lines = [{ text: main, em: SHRUNK_PRIMARY[main] || '1em' }];
   if (sub != null && sub !== '') {
-    lines.push({ text: sub, em: '0.5em', opacity: 0.85, marginTop: 2, letterSpacing: 0.5 });
+    lines.push({ text: sub, em: '0.5em', opacity: 0.85, marginTop: 2, letterSpacing: 0.5, icon: subIcon });
   }
   if (hint != null && hint !== '') {
     // The hint is one nowrap line across a ROUND rim, so its length — not just
@@ -204,6 +282,7 @@ export const labelLines = ({ main, sub, hint }) => {
  */
 export const createButton = (cfg) => {
   if (document.getElementById(cfg.id)) return null;
+  const yLayout = cfg.layout === 'y' && cfg.zones.length === 3;
 
   const edgeOffset = cfg.edgeOffset ?? DEFAULTS.edgeOffset;
   const dragThreshold = cfg.dragThreshold ?? DEFAULTS.dragThreshold;
@@ -211,7 +290,9 @@ export const createButton = (cfg) => {
   const single = cfg.zones.length === 1;
   // Single-zone labels run 1px smaller than the raw scale (the split
   // buttons keep theirs, which stay legible across two stacked halves).
-  const base = Math.round(cfg.size * cfg.fontScale) - (single ? 1 : 0) + 'px';
+  // A Y third is narrower than a stacked half, so its labels run smaller.
+  const base =
+    Math.round(cfg.size * cfg.fontScale * (yLayout ? Y_FONT_FACTOR : 1)) - (single ? 1 : 0) + 'px';
   // Unified-FAB members fill the shell's wrapper (which owns the fixed
   // position, the z-index and the drag); standalone buttons position and
   // stack themselves as before.
@@ -274,7 +355,7 @@ export const createButton = (cfg) => {
   } else {
     const wrap = document.createElement('div');
     wrap.id = cfg.id;
-    wrap.className = 'oge-host split';
+    wrap.className = yLayout ? 'oge-host split y' : 'oge-host split';
     wrap.title = cfg.title;
     // box-shadow is driven by .oge-host CSS via --rim (set to primary zone colour).
     wrap.style.cssText = [
@@ -307,12 +388,25 @@ export const createButton = (cfg) => {
         'border:none',
         'cursor:pointer',
         `font-size:${base}`,
+        // Y: every third is a full-size layer clipped to its wedge (clip-path
+        // also clips hit-testing, so a tap lands on exactly one zone).
+        ...(yLayout ? [`clip-path:${Y_SECTORS[z.sector ?? 'top'].clip}`] : []),
       ].join(';');
       half.style.setProperty('--rim', z.bg);
       wrap.appendChild(half);
       zoneEls.set(z.key, half);
       // A split half IS its own fill — it sits below the host's ring/lens.
       fillEls.set(z.key, half);
+    }
+    // Y: the three seams (stem down, arms up-left / up-right), drawn above
+    // the wedges and fading into the central lens like the split seam.
+    if (yLayout) {
+      for (const deg of Y_SEAM_DEGREES) {
+        const seam = document.createElement('span');
+        seam.className = 'oge-y-seam';
+        seam.style.transform = `translateX(-50%) rotate(${deg}deg)`;
+        wrap.appendChild(seam);
+      }
     }
     outer = wrap;
   }
@@ -325,7 +419,13 @@ export const createButton = (cfg) => {
     const el = /** @type {HTMLElement} */ (fillEls.get(z.key));
     const span = document.createElement('span');
     span.className = LABEL_CLASS;
-    if (z.labelShiftY) span.style.transform = `translateY(${z.labelShiftY}px)`;
+    if (yLayout) {
+      // Centre the label on its wedge's visual middle, narrowed to fit it.
+      const at = Y_SECTORS[z.sector ?? 'top'].label;
+      span.style.cssText =
+        `position:absolute;left:${at.x}%;top:${at.y}%;width:${at.w}%;font-size:${at.em}em;` +
+        `transform:translate(-50%,calc(-50% + ${z.labelShiftY ?? 0}px)) rotate(${at.rot}deg);`;
+    } else if (z.labelShiftY) span.style.transform = `translateY(${z.labelShiftY}px)`;
     el.appendChild(span);
     labelEls.set(z.key, span);
   }

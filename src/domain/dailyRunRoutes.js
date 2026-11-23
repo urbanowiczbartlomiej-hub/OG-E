@@ -65,6 +65,21 @@ import { MISSION_DEPLOYMENT } from './rules.js';
  */
 
 /**
+ * The whole normalised Daily Run config of one universe (what
+ * {@link parseDailyRunRoutes} returns and the store holds).
+ *
+ * @typedef {object} DailyRunConfig
+ * @property {Route[]} routes
+ * @property {TargetCoord | null} collectTarget
+ * @property {number} collectMission
+ * @property {'all' | 'most'} collectShips
+ * @property {'all' | 'most'} collectResources
+ * @property {'all' | 'most'} pairShips      Drop / Up ship selection.
+ * @property {'all' | 'most'} pairResources  Drop / Up cargo load.
+ * @property {boolean} pairNext              Drop / Up walks on after a send.
+ */
+
+/**
  * Coordinate key IGNORING target type — `"galaxy:system:position"`.
  *
  * @param {{ galaxy: number, system: number, position: number }} c
@@ -157,9 +172,12 @@ const normalizeRoute = (r) => {
  * `collectShips` / `collectResources` pick how that action selects ships and
  * loads cargo — `'all'` or `'most'` (AGR "send/load most", which leaves a
  * reserve); both default to `'most'` (anything but an explicit `'all'`).
+ * `pairShips` / `pairResources` are the same choice for the Drop / Up action
+ * (own moon ↔ own planet, same slot), also defaulting to `'most'`; `pairNext`
+ * (default `true`) says whether a Drop / Up send walks on to the next body.
  *
  * @param {unknown} stored
- * @returns {{ routes: Route[], collectTarget: TargetCoord | null, collectMission: number, collectShips: 'all' | 'most', collectResources: 'all' | 'most' }}
+ * @returns {DailyRunConfig}
  */
 export const parseDailyRunRoutes = (stored) => {
   const obj = stored && typeof stored === 'object' ? /** @type {any} */ (stored) : {};
@@ -174,7 +192,16 @@ export const parseDailyRunRoutes = (stored) => {
   const routes = Array.isArray(raw)
     ? /** @type {Route[]} */ (raw.map(normalizeRoute).filter(Boolean))
     : [];
-  return { routes, collectTarget, collectMission, collectShips, collectResources };
+  return {
+    routes,
+    collectTarget,
+    collectMission,
+    collectShips,
+    collectResources,
+    pairShips: obj.pairShips === 'all' ? 'all' : 'most',
+    pairResources: obj.pairResources === 'all' ? 'all' : 'most',
+    pairNext: obj.pairNext !== false,
+  };
 };
 
 /**

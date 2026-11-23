@@ -385,6 +385,9 @@ export const mergeSettings = (local, remote) => {
  * @property {number} collectMission  Mission id the in-game "Send All" (collect) action uses.
  * @property {'all' | 'most'} collectShips  How "Send All" selects ships.
  * @property {'all' | 'most'} collectResources  How "Send All" loads cargo.
+ * @property {'all' | 'most'} [pairShips]  Drop / Up ship selection.
+ * @property {'all' | 'most'} [pairResources]  Drop / Up cargo load.
+ * @property {boolean} [pairNext]  Drop / Up walks on after a send.
  * @property {number} updatedAt  Epoch-ms of the last local edit (0 = never).
  */
 
@@ -429,6 +432,9 @@ export const mergeDailyRunRoutes = (local, remote) => {
         collectMission: remote.collectMission ?? local.collectMission,
         collectShips: remote.collectShips ?? local.collectShips,
         collectResources: remote.collectResources ?? local.collectResources,
+        pairShips: remote.pairShips ?? local.pairShips,
+        pairResources: remote.pairResources ?? local.pairResources,
+        pairNext: remote.pairNext ?? local.pairNext,
         updatedAt: rT,
       },
       changed: true,
