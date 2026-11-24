@@ -154,30 +154,44 @@ const Y_FONT_FACTOR = 0.85;
  * straight down, the arms 60° either side of straight up — three 120° wedges.
  * `clip` is the wedge as a clip-path (points may lie outside the box; the
  * round host clips the rest). An arm reaches the box edge at (50 ± 86.6,
- * 0) %, the stem at (50, 150) %. `label` places the label on the wedge's
- * bisector (x/y in %), its width along that axis (`w`, %), its tilt (`rot`,
- * degrees) and its scale (`em`).
- *
- * A horizontal "Send All" overran the rim chrome, so the lower labels are
- * tilted like lettering on the lower arc of a coin — the text's TOP leans
- * toward the centre (−45° right, +45° left: halfway between the upper arm's
- * direction and true coin lettering at 60°) — and run a touch smaller.
+ * 0) %, the stem at (50, 150) %. `bisector` is the wedge's axis in degrees,
+ * clockwise from straight up — its label is placed from it by {@link yLabelAt}.
  */
 const Y_SECTORS = {
-  top: {
-    clip: 'polygon(50% 50%, -36.6% 0%, 136.6% 0%)',
-    label: { x: 50, y: 23, w: 60, rot: 0, em: 1 },
-  },
-  left: {
-    clip: 'polygon(50% 50%, -36.6% 0%, -50% 150%, 50% 150%)',
-    // On the bisector, 29% of the diameter out from the centre — the middle
-    // of the band between the lens and the rim chrome.
-    label: { x: 24.9, y: 64.5, w: 50, rot: 45, em: 0.9 },
-  },
-  right: {
-    clip: 'polygon(50% 50%, 50% 150%, 150% 150%, 136.6% 0%)',
-    label: { x: 75.1, y: 64.5, w: 50, rot: -45, em: 0.9 },
-  },
+  top: { clip: 'polygon(50% 50%, -36.6% 0%, 136.6% 0%)', bisector: 0 },
+  right: { clip: 'polygon(50% 50%, 50% 150%, 150% 150%, 136.6% 0%)', bisector: 120 },
+  left: { clip: 'polygon(50% 50%, -36.6% 0%, -50% 150%, 50% 150%)', bisector: 240 },
+};
+
+/**
+ * Distance of every label's centre from the button's centre, in % of the
+ * diameter — the same for all three wedges: the middle of the band between the
+ * central lens (radius ~11.5 %) and the rim chrome (from ~44 %).
+ */
+const Y_LABEL_RADIUS = 28;
+
+/** Label width along its own baseline, in % of the diameter (same for all). */
+const Y_LABEL_WIDTH = 46;
+
+/**
+ * Where a Y wedge's label goes, computed from the wedge's bisector — no
+ * per-wedge hand-tuned offsets. The label (one container: main line, caption,
+ * icon, hint) is centred ON the bisector at {@link Y_LABEL_RADIUS}, and its
+ * baseline runs TANGENT to that circle (perpendicular to the bisector), like
+ * lettering on a coin: the bisector angle itself, folded into (−90°, 90°] so
+ * no text is ever upside down — the lower labels get ∓60° with their tops
+ * toward the centre. (A horizontal lower label overran the rim chrome.)
+ *
+ * @param {number} bisectorDeg  clockwise from straight up.
+ * @returns {{ x: number, y: number, rot: number }}  x/y in %, rot in degrees.
+ */
+const yLabelAt = (bisectorDeg) => {
+  const rad = (bisectorDeg * Math.PI) / 180;
+  return {
+    x: 50 + Y_LABEL_RADIUS * Math.sin(rad),
+    y: 50 - Y_LABEL_RADIUS * Math.cos(rad),
+    rot: ((((bisectorDeg + 90) % 180) + 180) % 180) - 90,
+  };
 };
 
 /**
@@ -421,10 +435,10 @@ export const createButton = (cfg) => {
     span.className = LABEL_CLASS;
     if (yLayout) {
       // Centre the label on its wedge's visual middle, narrowed to fit it.
-      const at = Y_SECTORS[z.sector ?? 'top'].label;
+      const at = yLabelAt(Y_SECTORS[z.sector ?? 'top'].bisector);
       span.style.cssText =
-        `position:absolute;left:${at.x}%;top:${at.y}%;width:${at.w}%;font-size:${at.em}em;` +
-        `transform:translate(-50%,calc(-50% + ${z.labelShiftY ?? 0}px)) rotate(${at.rot}deg);`;
+        `position:absolute;left:${at.x.toFixed(2)}%;top:${at.y.toFixed(2)}%;width:${Y_LABEL_WIDTH}%;` +
+        `transform:translate(-50%,-50%) rotate(${at.rot}deg);transform-origin:50% 50%;`;
     } else if (z.labelShiftY) span.style.transform = `translateY(${z.labelShiftY}px)`;
     el.appendChild(span);
     labelEls.set(z.key, span);
