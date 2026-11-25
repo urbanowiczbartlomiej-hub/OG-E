@@ -4,6 +4,38 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.73.0] — 2026-11-25
+
+### Added
+
+- **Daily Run button has three zones.** The button is now cut like a Y: the
+  micro-fleet on top, **Drop / Up** lower left and **Send All** lower right.
+- **Drop / Up.** One tap sends everything from the moon you are on to its own
+  planet (Drop), or from a planet to its own moon (Up), and then moves on to
+  the next body of the same kind. The dashboard's Routes tab has three new
+  settings for it, synced like the rest of your routes: Ships (Most / All),
+  Resources (Most / All) and Next (On / Off).
+- **Micro-fleet to the body you stand on.** When a route's target is the moon
+  you are on, the micro-fleet no longer skips it. It flies Espionage to
+  position 16 of the same system and back, with one probe added to the fleet.
+  Without a probe on that body, the target is skipped as before.
+- **Target names on the button.** Send All and Drop / Up show their target by
+  its in-game name, with the moon picture for moons. The micro-fleet zone
+  shows "moon" for moon targets.
+
+### Fixed
+
+- **The colonization button no longer asks for a refresh too early.** The game
+  creates a new colony 10–16 seconds after the fleet lands, but the button
+  offered "Refresh" after 2 seconds, so the reloaded page often had no new
+  colony yet and the button started counting down to the next one. The button
+  now shows **Wait** until the game reports the new colony through its message
+  counter, then turns into **Refresh**. If no report arrives, Refresh appears
+  20 seconds after landing anyway. If you reload the page during Wait, the
+  button keeps waiting for the same colony.
+- **"Set password" fits the button.** The label is smaller and its hint reads
+  "(open dashboard)". All button hints are now in italics.
+
 ## [1.72.0] — 2026-11-22
 
 ### Added
