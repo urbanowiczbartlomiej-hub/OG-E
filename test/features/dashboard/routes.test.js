@@ -50,6 +50,18 @@ const MARKUP = `
   <div class="chip-group seg" id="routesCollectResources" data-value="most">
     <button type="button" data-value="most">Most</button>
     <button type="button" data-value="all">All</button>
+  </div>
+  <div class="chip-group seg" id="routesPairShips" data-value="most">
+    <button type="button" data-value="most">Most</button>
+    <button type="button" data-value="all">All</button>
+  </div>
+  <div class="chip-group seg" id="routesPairResources" data-value="most">
+    <button type="button" data-value="most">Most</button>
+    <button type="button" data-value="all">All</button>
+  </div>
+  <div class="chip-group seg" id="routesPairNext" data-value="on">
+    <button type="button" data-value="on">On</button>
+    <button type="button" data-value="off">Off</button>
   </div>`;
 
 const planet = (/** @type {number} */ g, /** @type {number} */ s, /** @type {number} */ p) =>
@@ -152,11 +164,15 @@ describe('build a route by clicking', () => {
         },
       ],
       collectTarget: moon(4, 472, 15),
-      // Save persists the full config: the collect "Send All" defaults
-      // (deployment mission + "most" ships + "most" cargo) ride along untouched.
+      // Save persists the full config: the collect "Send All" and Drop / Up
+      // defaults (deployment mission + "most" ships + "most" cargo) ride along
+      // untouched.
       collectMission: MISSION_DEPLOYMENT,
       collectShips: 'most',
       collectResources: 'most',
+      pairShips: 'most',
+      pairResources: 'most',
+      pairNext: true,
     });
     expect($('#routesStatus').textContent).toContain('Saved 1 route');
     // Save also stamps the cross-device sync clock and pokes any open game
@@ -499,5 +515,23 @@ describe('Send All collect config chips (mission / ships / resources)', () => {
     click('routesCollectResources', 'all');
     await flush();
     expect(store.get(ROUTES_KEY)).toMatchObject({ collectShips: 'all', collectResources: 'all' });
+  });
+
+  it('writes the Drop / Up knobs instantly, leaving the collect ones alone', async () => {
+    seedRoutes([], null);
+    install().refresh();
+    await flush();
+
+    click('routesPairShips', 'all');
+    await flush();
+    expect(store.get(ROUTES_KEY)).toMatchObject({ pairShips: 'all', pairResources: 'most', collectShips: 'most' });
+
+    click('routesPairResources', 'all');
+    await flush();
+    expect(store.get(ROUTES_KEY)).toMatchObject({ pairShips: 'all', pairResources: 'all' });
+
+    click('routesPairNext', 'off');
+    await flush();
+    expect(store.get(ROUTES_KEY)).toMatchObject({ pairNext: false });
   });
 });

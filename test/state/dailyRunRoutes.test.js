@@ -32,12 +32,16 @@ import {
 import { parseDailyRunRoutes } from '../../src/domain/dailyRunRoutes.js';
 import { MISSION_DEPLOYMENT } from '../../src/domain/rules.js';
 
-/** The three "collect" config defaults parseDailyRunRoutes / emptyConfig fill
- * in (junk/missing input ⇒ deployment mission + "most" ships + "most" cargo). */
+/** The "collect" + Drop / Up config defaults parseDailyRunRoutes / emptyConfig
+ * fill in (junk/missing input ⇒ deployment mission + "most" ships + "most"
+ * cargo, for both actions; Drop / Up walks on after a send). */
 const COLLECT_DEFAULTS = /** @type {const} */ ({
   collectMission: MISSION_DEPLOYMENT,
   collectShips: 'most',
   collectResources: 'most',
+  pairShips: 'most',
+  pairResources: 'most',
+  pairNext: true,
 });
 
 /**

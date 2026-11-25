@@ -11,6 +11,9 @@ import {
   COLO_ARRIVAL_KEY,
   readColoArrival,
   writeColoArrival,
+  COLO_SETTLING_KEY,
+  readColoSettling,
+  writeColoSettling,
 } from '../../src/state/coloArrival.js';
 
 beforeEach(() => {
@@ -50,5 +53,27 @@ describe('coloArrival', () => {
     expect(readColoArrival()).toBe(0);
     localStorage.setItem(COLO_ARRIVAL_KEY, JSON.stringify('soon'));
     expect(readColoArrival()).toBe(0);
+  });
+});
+
+describe('coloArrival — settling (landed, not yet processed)', () => {
+  it('uses its own key, separate from the upcoming-arrival cache', () => {
+    expect(COLO_SETTLING_KEY).toBe('oge-colo-settling');
+    writeColoSettling(1_784_000_200);
+    expect(readColoSettling()).toBe(1_784_000_200);
+    expect(readColoArrival()).toBe(0);
+  });
+
+  it('returns 0 when absent and clears on 0', () => {
+    expect(readColoSettling()).toBe(0);
+    writeColoSettling(1_784_000_200);
+    writeColoSettling(0);
+    expect(localStorage.getItem(COLO_SETTLING_KEY)).toBeNull();
+    expect(readColoSettling()).toBe(0);
+  });
+
+  it('reads 0 for a stored junk value', () => {
+    localStorage.setItem(COLO_SETTLING_KEY, JSON.stringify('later'));
+    expect(readColoSettling()).toBe(0);
   });
 });

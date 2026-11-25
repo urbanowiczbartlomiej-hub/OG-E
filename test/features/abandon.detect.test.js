@@ -11,6 +11,7 @@ import {
   buildOverviewUrl,
   overviewUrl,
   readColoArrivals,
+  readNewMessageCount,
 } from '../../src/features/abandon/detect.js';
 
 /**
@@ -149,5 +150,29 @@ describe('readColoArrivals', () => {
       { mission: '7', ret: 'false', arrival: '1784000500' },
     ]);
     expect(readColoArrivals()).toEqual([1784000500]);
+  });
+});
+
+describe('readNewMessageCount', () => {
+  /** Stage the game's header indicator as its websocket-driven reload renders it. @param {string} n */
+  const stageIndicator = (n) => {
+    const wrap = document.createElement('div');
+    wrap.id = 'newmessagesindicatorcomponent';
+    wrap.innerHTML = `<div class="messagesIndicator tooltipBottom new" data-new-messages="${n}"><div class="newCount">${n}</div></div>`;
+    document.body.appendChild(wrap);
+  };
+
+  it('returns null when the indicator is not on the page', () => {
+    expect(readNewMessageCount()).toBeNull();
+  });
+
+  it('reads the unread count from data-new-messages', () => {
+    stageIndicator('20');
+    expect(readNewMessageCount()).toBe(20);
+  });
+
+  it('returns null for a junk count', () => {
+    stageIndicator('');
+    expect(readNewMessageCount()).toBeNull();
   });
 });

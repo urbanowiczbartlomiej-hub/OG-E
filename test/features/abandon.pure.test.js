@@ -7,6 +7,8 @@ import { describe, it, expect } from 'vitest';
 import {
   LANDING_WINDOW_S,
   LANDING_GRACE_S,
+  SETTLE_FALLBACK_S,
+  carriedLatch,
   deriveLanding,
   nextLandingTickMs,
   formatLandingCountdown,
@@ -65,10 +67,30 @@ describe('abandon/pure — deriveLanding', () => {
     expect(r.arrivalAt).toBe(at(-1));
   });
 
-  it('flips to refresh once the landed arrival is past the grace window', () => {
+  it('waits (settling) past the grace window until the server is seen to process the landing', () => {
     const r = deriveLanding(input({ domArrivals: [at(-(LANDING_GRACE_S + 1))] }));
-    expect(r.phase).toBe('refresh');
+    expect(r.phase).toBe('settling');
     expect(r.latch).toBe(at(-(LANDING_GRACE_S + 1)));
+  });
+
+  it('flips to refresh once the new-message push is seen after the arrival', () => {
+    const r = deriveLanding(input({ domArrivals: [at(-10)], msgPushMs: NOW - 1_000 }));
+    expect(r.phase).toBe('refresh');
+  });
+
+  it('flips to refresh even inside the grace slice when the push already came', () => {
+    const r = deriveLanding(input({ domArrivals: [at(-1)], msgPushMs: NOW }));
+    expect(r.phase).toBe('refresh');
+  });
+
+  it('ignores a message push from BEFORE the arrival (some other report)', () => {
+    const r = deriveLanding(input({ domArrivals: [at(-10)], msgPushMs: NOW - 15_000 }));
+    expect(r.phase).toBe('settling');
+  });
+
+  it('falls back to refresh after SETTLE_FALLBACK_S with no push at all', () => {
+    expect(deriveLanding(input({ domArrivals: [at(-(SETTLE_FALLBACK_S - 1))] })).phase).toBe('settling');
+    expect(deriveLanding(input({ domArrivals: [at(-SETTLE_FALLBACK_S)] })).phase).toBe('refresh');
   });
 
   it('never latches an arrival older than the page (page born after it)', () => {
@@ -81,8 +103,18 @@ describe('abandon/pure — deriveLanding', () => {
   it('keeps a latch passed back in even after the leg disappears', () => {
     // domArrivals empty (leg gone from the list) but the latch persists.
     const r = deriveLanding(input({ domArrivals: [], latchedArrival: at(-(LANDING_GRACE_S + 1)) }));
-    expect(r.phase).toBe('refresh');
+    expect(r.phase).toBe('settling');
     expect(r.arrivalAt).toBe(at(-(LANDING_GRACE_S + 1)));
+  });
+
+  it('honours a latch carried over a reload even though the page is younger than it', () => {
+    // The previous page reloaded mid-wait: this page was born AFTER the
+    // arrival, yet the carried latch keeps it waiting for that same landing.
+    const r = deriveLanding(input({
+      domArrivals: [at(25)], latchedArrival: at(-6), pageBornMs: NOW - 1_000,
+    }));
+    expect(r.phase).toBe('settling');
+    expect(r.arrivalAt).toBe(at(-6));
   });
 
   it('falls back to the cache when the live list is unreadable (null)', () => {
@@ -112,8 +144,9 @@ describe('abandon/pure — deriveLanding', () => {
 });
 
 describe('abandon/pure — nextLandingTickMs', () => {
-  it('ticks at 1 Hz while landing', () => {
+  it('ticks at 1 Hz while landing or settling', () => {
     expect(nextLandingTickMs('landing', at(30), NOW)).toBe(1000);
+    expect(nextLandingTickMs('settling', at(-5), NOW)).toBe(1000);
   });
 
   it('needs no timer for refresh or an empty board', () => {
@@ -126,6 +159,23 @@ describe('abandon/pure — nextLandingTickMs', () => {
     expect(nextLandingTickMs('idle', at(120), NOW)).toBe(30_000);
     // Arrival just outside the window → wake in ~1 s (floored at 1 s).
     expect(nextLandingTickMs('idle', at(61), NOW)).toBe(1000);
+  });
+});
+
+describe('abandon/pure — carriedLatch', () => {
+  it('carries a landing that is still inside the fallback window', () => {
+    expect(carriedLatch(at(-5), NOW)).toBe(at(-5));
+    expect(carriedLatch(at(0), NOW)).toBe(at(0));
+  });
+
+  it('drops a landing whose fallback already expired (the page is fresh)', () => {
+    expect(carriedLatch(at(-SETTLE_FALLBACK_S), NOW)).toBe(0);
+    expect(carriedLatch(at(-300), NOW)).toBe(0);
+  });
+
+  it('drops nothing-stored and future values', () => {
+    expect(carriedLatch(0, NOW)).toBe(0);
+    expect(carriedLatch(at(30), NOW)).toBe(0);
   });
 });
 

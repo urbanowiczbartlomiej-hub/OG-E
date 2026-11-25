@@ -13,12 +13,23 @@ import {
   findRouteForBody,
   findNextMicroTarget,
   countRemainingMicroTargets,
+  SPY_SAVE_POSITION,
+  microLegs,
+  isMicroLegSent,
+  planMicro,
+  spyFleet,
+  pairTarget,
+  pairedOriginKeys,
 } from '../../src/features/dailyRun/pure.js';
 import {
   TARGET_PLANET,
   TARGET_MOON,
   SHIP_SMALL_CARGO,
   SHIP_LARGE_CARGO,
+  SHIP_ESPIONAGE_PROBE,
+  MISSION_DEPLOYMENT,
+  MISSION_TRANSPORT,
+  MISSION_ESPIONAGE,
 } from '../../src/domain/rules.js';
 
 /**
@@ -122,5 +133,100 @@ describe('findRouteForBody', () => {
     expect(findRouteForBody(routes, null)).toBeNull();
     // @ts-expect-error intentional bad input
     expect(findRouteForBody(null, tgt(1, 1, 1, 1))).toBeNull();
+  });
+});
+
+describe('microLegs (own-body target → Spy-16)', () => {
+  const hub = tgt(4, 470, 15, TARGET_MOON);
+  const other = tgt(4, 480, 15, TARGET_MOON);
+  const route = { targets: [hub, other], mission: MISSION_TRANSPORT };
+
+  it('keeps every other target as-is with the route mission', () => {
+    expect(microLegs(route, other, true)).toEqual([
+      { target: hub, mission: MISSION_TRANSPORT, spy: false },
+      { target: tgt(4, 480, SPY_SAVE_POSITION, TARGET_PLANET), mission: MISSION_ESPIONAGE, spy: true },
+    ]);
+  });
+
+  it('turns the body itself into Espionage to [g:s:16] of its own system', () => {
+    const legs = microLegs(route, hub, true);
+    expect(legs[0]).toEqual({ target: tgt(4, 470, 16, TARGET_PLANET), mission: MISSION_ESPIONAGE, spy: true });
+    expect(legs[1]).toEqual({ target: other, mission: MISSION_TRANSPORT, spy: false });
+  });
+
+  it('drops the own-body leg when there is no probe to fly it', () => {
+    expect(microLegs(route, hub, false)).toEqual([{ target: other, mission: MISSION_TRANSPORT, spy: false }]);
+  });
+
+  it('defaults the mission to deployment', () => {
+    expect(microLegs({ targets: [other] }, hub, true)[0].mission).toBe(MISSION_DEPLOYMENT);
+  });
+});
+
+describe('isMicroLegSent / planMicro', () => {
+  const hub = tgt(4, 470, 15, TARGET_MOON);
+  const other = tgt(4, 480, 15, TARGET_MOON);
+  const spot = tgt(4, 470, 16, TARGET_PLANET);
+  const route = { targets: [hub, other], mission: MISSION_DEPLOYMENT };
+
+  it('counts a normal leg as sent by any inbound fleet of its mission to its target', () => {
+    const leg = { target: other, mission: MISSION_DEPLOYMENT, spy: false };
+    expect(isMicroLegSent(leg, hub, [{ origin: null, dest: other, mission: MISSION_DEPLOYMENT }])).toBe(true);
+    expect(isMicroLegSent(leg, hub, [{ origin: null, dest: other, mission: MISSION_TRANSPORT }])).toBe(false);
+  });
+
+  it('counts a Spy-16 leg only when it flies from THIS body', () => {
+    const leg = { target: spot, mission: MISSION_ESPIONAGE, spy: true };
+    const fromHub = { origin: hub, dest: spot, mission: MISSION_ESPIONAGE };
+    const fromPlanet = { origin: tgt(4, 470, 15, TARGET_PLANET), dest: spot, mission: MISSION_ESPIONAGE };
+    expect(isMicroLegSent(leg, hub, [fromHub])).toBe(true);
+    expect(isMicroLegSent(leg, hub, [fromPlanet])).toBe(false);
+    expect(isMicroLegSent(leg, hub, [{ origin: null, dest: spot, mission: MISSION_ESPIONAGE }])).toBe(false);
+  });
+
+  it('plans the next unsent leg in route order and counts what is left', () => {
+    expect(planMicro(route, hub, [], true)).toEqual({
+      next: { target: spot, mission: MISSION_ESPIONAGE, spy: true }, left: 2,
+    });
+    const afterSpy = planMicro(route, hub, [{ origin: hub, dest: spot, mission: MISSION_ESPIONAGE }], true);
+    expect(afterSpy).toEqual({ next: { target: other, mission: MISSION_DEPLOYMENT, spy: false }, left: 1 });
+    const done = planMicro(route, hub, [
+      { origin: hub, dest: spot, mission: MISSION_ESPIONAGE },
+      { origin: hub, dest: other, mission: MISSION_DEPLOYMENT },
+    ], true);
+    expect(done).toEqual({ next: null, left: 0 });
+  });
+});
+
+describe('spyFleet', () => {
+  it('adds one probe to a fleet without any', () => {
+    expect(spyFleet([{ shipId: SHIP_LARGE_CARGO, count: 5 }])).toEqual([
+      { shipId: SHIP_LARGE_CARGO, count: 5 },
+      { shipId: SHIP_ESPIONAGE_PROBE, count: 1 },
+    ]);
+  });
+
+  it('leaves a fleet that already carries probes alone', () => {
+    const fleet = [{ shipId: SHIP_ESPIONAGE_PROBE, count: 3 }];
+    expect(spyFleet(fleet)).toBe(fleet);
+  });
+});
+
+describe('pairTarget / pairedOriginKeys (Drop / Up)', () => {
+  it('maps a moon to its planet and a planet to its moon', () => {
+    expect(pairTarget(tgt(4, 470, 15, TARGET_MOON))).toEqual(tgt(4, 470, 15, TARGET_PLANET));
+    expect(pairTarget(tgt(4, 470, 15, TARGET_PLANET))).toEqual(tgt(4, 470, 15, TARGET_MOON));
+  });
+
+  it('collects origins of same-slot deployments only', () => {
+    const moon = tgt(4, 470, 15, TARGET_MOON);
+    const planet = tgt(4, 470, 15, TARGET_PLANET);
+    const keys = pairedOriginKeys([
+      { origin: moon, dest: planet, mission: MISSION_DEPLOYMENT }, // Drop ✓
+      { origin: tgt(5, 1, 1, TARGET_PLANET), dest: tgt(5, 1, 1, TARGET_MOON), mission: MISSION_TRANSPORT }, // not deployment ✗
+      { origin: tgt(6, 1, 1, TARGET_MOON), dest: tgt(6, 2, 1, TARGET_PLANET), mission: MISSION_DEPLOYMENT }, // other slot ✗
+      { origin: null, dest: planet, mission: MISSION_DEPLOYMENT }, // unknown origin ✗
+    ]);
+    expect([...keys]).toEqual(['4:470:15:3']);
   });
 });
