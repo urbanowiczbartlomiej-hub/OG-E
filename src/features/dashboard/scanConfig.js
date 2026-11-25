@@ -377,7 +377,14 @@ const buildColonizationFields = (body, getUniverseId) => {
   const outlook = createFreeOutlook(getUniverseId);
   // Recount as soon as the positions change, before the autosave lands.
   positionsInput.addEventListener('change', () => outlook.paint(positionsInput.value));
-  body.appendChild(cell('Positions', [positionsInput, 'to hunt (8, 10-12)', outlook.el]));
+  // The note and the outlook stack in one column beside the input, so the
+  // outlook reads as part of the note instead of a new row across the cell.
+  const positionsNote = mk('div');
+  positionsNote.className = 'cmd-stack';
+  const positionsUnit = mk('span', undefined, 'to hunt (8, 10-12)');
+  positionsUnit.className = 'cmd-unit';
+  positionsNote.append(positionsUnit, outlook.el);
+  body.appendChild(cell('Positions', [positionsInput, positionsNote]));
   body.appendChild(cell('Galaxies', [preferInput, 'for closer arrival times']));
   body.appendChild(cell('Arrival gap', [colonyMinGapInput, 's between arrivals']));
   body.appendChild(cell('Systems', [preferFarthestInput, 'to keep the arrival gap']));

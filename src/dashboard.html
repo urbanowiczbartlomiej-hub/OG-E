@@ -604,13 +604,15 @@
   .cmd-note .via-galaxy { color: #7fb389; font-weight: 600; }
   /* Full-width footnote row (e.g. the zone hint) — always separated. */
   .cmd-wide { grid-column: 1 / -1; }
+  /* A cell's note with a second line under it (Positions: the hint, then the
+     free-slot outlook), stacked beside the control. */
+  .cmd-stack { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   /* Free-slot outlook under Positions: one quiet line, a per-galaxy table on
-     tap. Indented to the control column (past the 84px caption + gap). The
-     table is a popover OVER the form, not inline: inline it stretched the
-     whole grid row. The grid's overflow:hidden would clip it, so this one
+     tap. The table is a popover OVER the form, not inline: inline it stretched
+     the whole grid row. The grid's overflow:hidden would clip it, so this one
      grid lets it out (its cells carry no background, so the corners hold). */
   #colonizationConfigBody { overflow: visible; }
-  .free-outlook { position: relative; flex: 1 0 100%; margin-left: 94px; font-size: 11px; color: #8a97a3; }
+  .free-outlook { position: relative; font-size: 11px; color: #8a97a3; }
   .free-outlook > summary { cursor: pointer; list-style-position: inside; }
   .free-outlook > table {
     position: absolute; top: calc(100% + 4px); left: 0; z-index: 30;
@@ -625,7 +627,6 @@
   .free-outlook th:first-child, .free-outlook td:first-child { text-align: left; }
   .free-outlook th { color: #5f6c7b; font-weight: normal; }
   .free-outlook tr.free-outlook-none { color: #4a5563; }
-  @media (max-width: 640px) { .free-outlook { margin-left: 0; } }
   .cmd-grid > .cmd-cell { border-top: 1px solid #1a2735; }
   .cmd-grid > .cmd-cell:nth-child(-n+2):not(.cmd-wide) { border-top: none; }
   .cmd-grid > .cmd-cell:nth-child(even):not(.cmd-wide) { border-left: 1px solid #1a2735; }
