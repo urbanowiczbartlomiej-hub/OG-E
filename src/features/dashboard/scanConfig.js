@@ -35,6 +35,81 @@ import {
   normalizeGalaxyScanConfig,
 } from '../../domain/galaxyScanConfig.js';
 import { toggleChipOn, setToggleChip, wireToggleChip } from './chips.js';
+import { readApiCacheFor } from '../../state/apiCache.js';
+import { colonizeDecisionsKeyFor } from '../../state/colonizeDecisions.js';
+import { scansKeyFor } from '../../state/scans.js';
+import { parsePositions } from '../../domain/positions.js';
+import { freeSlotOutlook } from '../../domain/freeSlots.js';
+
+/** Short weekday + 03:00, e.g. "Thu 03:00". @param {number} ms */
+const cleanupLabel = (ms) =>
+  `${new Date(ms).toLocaleDateString('en-GB', { weekday: 'short' })} 03:00`;
+
+/**
+ * The free-slot outlook under Positions: one summary line (free now, released
+ * at the next two 03:00 cleanups) that unfolds a per-galaxy table. Visible
+ * text, not a tooltip — touch has no hover (CLAUDE.md UI rules). Same count as
+ * the colonize button's "N free" (see domain/freeSlots.js).
+ *
+ * @param {() => string} getUniverseId
+ * @returns {{ el: HTMLElement, paint: (positions: string) => void }}
+ */
+const createFreeOutlook = (getUniverseId) => {
+  const el = /** @type {HTMLDetailsElement} */ (mk('details'));
+  el.className = 'free-outlook';
+  el.hidden = true;
+  const summary = mk('summary');
+  const table = mk('table');
+  el.append(summary, table);
+  // A popover closes on any tap outside it (the summary itself toggles).
+  document.addEventListener('click', (e) => {
+    if (el.open && e.target instanceof Node && !el.contains(e.target)) el.open = false;
+  });
+  let token = 0;
+
+  /** @param {string} positions */
+  const paint = async (positions) => {
+    const my = ++token;
+    const uni = getUniverseId();
+    const targets = parsePositions(positions);
+    if (!uni || targets.length === 0) { el.hidden = true; return; }
+    const [api, decisions, scans] = await Promise.all([
+      readApiCacheFor(uni),
+      chromeStore.get(colonizeDecisionsKeyFor(uni)),
+      chromeStore.get(scansKeyFor(uni)),
+    ]);
+    if (my !== token) return; // a newer paint (edit / universe switch) won
+    const galaxies = Number(api.server?.data?.galaxies);
+    const systems = Number(api.server?.data?.systems);
+    if (!api.universe || !(galaxies > 0) || !(systems > 0)) { el.hidden = true; return; }
+    const o = freeSlotOutlook({
+      occupied: api.universe.planets.map((p) => p.coords),
+      galaxies,
+      systems,
+      targets,
+      decisions: /** @type {any} */ (decisions && typeof decisions === 'object' ? decisions : {}),
+      scans: /** @type {any} */ (scans && typeof scans === 'object' ? scans : {}),
+      now: Date.now(),
+    });
+    const next = cleanupLabel(o.nextAt);
+    const after = cleanupLabel(o.afterAt);
+    summary.textContent = `${o.free} free · +${o.next} ${next} · +${o.after} ${after}`;
+    table.textContent = '';
+    const head = mk('tr');
+    for (const h of ['Galaxy', 'Free', next, after]) head.appendChild(mk('th', undefined, h));
+    table.appendChild(head);
+    for (const r of o.rows) {
+      const tr = mk('tr');
+      if (r.free + r.next + r.after === 0) tr.className = 'free-outlook-none';
+      for (const v of [`G${r.galaxy}`, r.free, r.next ? `+${r.next}` : '', r.after ? `+${r.after}` : '']) {
+        tr.appendChild(mk('td', undefined, String(v)));
+      }
+      table.appendChild(tr);
+    }
+    el.hidden = false;
+  };
+  return { el, paint: (positions) => void paint(positions) };
+};
 
 /**
  * Make an element with inline CSS + optional text (same tiny builder as
@@ -227,9 +302,10 @@ const installConfigEditor = ({ getUniverseId, containerId, build }) => {
  * flow. ids are OG-E's own hooks (not a game DOM contract).
  *
  * @param {HTMLElement} body
+ * @param {() => string} getUniverseId
  * @returns {EditorFields}
  */
-const buildColonizationFields = (body) => {
+const buildColonizationFields = (body, getUniverseId) => {
   const positionsInput = /** @type {HTMLInputElement} */ (mk('input'));
   positionsInput.type = 'text';
   positionsInput.id = 'scanCfgPositions';
@@ -298,7 +374,10 @@ const buildColonizationFields = (body) => {
   // Best Colony Spots' command block: two columns, stacking on phones.
   // Each control carries a short visible note (like a unit) instead of a
   // hover — touch has no hover (CLAUDE.md UI rules).
-  body.appendChild(cell('Positions', [positionsInput, 'to hunt (8, 10-12)']));
+  const outlook = createFreeOutlook(getUniverseId);
+  // Recount as soon as the positions change, before the autosave lands.
+  positionsInput.addEventListener('change', () => outlook.paint(positionsInput.value));
+  body.appendChild(cell('Positions', [positionsInput, 'to hunt (8, 10-12)', outlook.el]));
   body.appendChild(cell('Galaxies', [preferInput, 'for closer arrival times']));
   body.appendChild(cell('Arrival gap', [colonyMinGapInput, 's between arrivals']));
   body.appendChild(cell('Systems', [preferFarthestInput, 'to keep the arrival gap']));
@@ -308,6 +387,7 @@ const buildColonizationFields = (body) => {
   return {
     fill: (cfg) => {
       positionsInput.value = cfg.positions;
+      outlook.paint(cfg.positions);
       setToggleChip(preferInput, cfg.preferOtherGalaxies);
       setToggleChip(preferFarthestInput, cfg.preferFarthestSystems);
       colonyMinGapInput.value = String(cfg.colonyMinGap);
@@ -332,12 +412,13 @@ const buildColonizationFields = (body) => {
  * colonization & abandon group under a single Save/Reset.
  *
  * @param {HTMLElement} body
+ * @param {() => string} getUniverseId
  * @returns {EditorFields}
  */
-const buildScanColonyFields = (body) => {
+const buildScanColonyFields = (body, getUniverseId) => {
   // Subtitle intentionally dropped — the panel's <summary> now reads
   // "Colonization & abandon settings", so a repeated group heading is noise.
-  return buildColonizationFields(body);
+  return buildColonizationFields(body, getUniverseId);
 };
 
 /**
@@ -352,5 +433,5 @@ export const installScanColonyConfig = ({ getUniverseId }) =>
   installConfigEditor({
     getUniverseId,
     containerId: 'colonizationConfigBody',
-    build: buildScanColonyFields,
+    build: (body) => buildScanColonyFields(body, getUniverseId),
   });

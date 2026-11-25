@@ -230,6 +230,15 @@ written:
 Neither reads anything new (the event list and the fleet form already on the
 page) nor sends anything the player didn't tap.
 
+## Free-slot outlook under Positions — classification (GREEN)
+
+**Allowed** (a calculator over data OG-E already holds, §5 / §6). The
+Colonizations tab shows how many target slots are free per galaxy and how many
+of the player's own abandoned slots the next two 03:00 cleanups release. It
+reads only the extension's own storage (the cached public-API `universe.xml`
+and `serverData.xml`, the decision log, stored scans). It sends no request,
+runs no timer, and starts no game action. It is a count, not an alarm.
+
 ## What OG-E never does (all grep-verified)
 
 - No origination of a game **request**, and no modification of one beyond the
