@@ -366,7 +366,9 @@ export const installColonyFab = () => {
         // (its ⚙ Settings hold the password) so the user can set it; fall back
         // to an in-place hint when the runtime URL isn't available.
         const opened = openDashboardColony();
-        paintGo({ main: 'Set password', sub: opened ? 'opening dashboard…' : 'in dashboard', shrink: true });
+        // 'Set password' is sized in labelLines (SHRUNK_PRIMARY) — no
+        // `shrink` here, it would override that smaller size.
+        paintGo({ main: 'Set password', hint: opened ? '(open dashboard)' : '(in dashboard)' });
         return;
       }
       flow = createAbandonFlow();

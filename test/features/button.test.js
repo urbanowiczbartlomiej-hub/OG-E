@@ -86,6 +86,21 @@ describe('single-zone button', () => {
     expect(btn.style.getPropertyValue('--rim')).toBe('#38bdf8');
   });
 
+  it('labelLines shrinks the long "Set password" primary to 0.75em', () => {
+    expect(labelLines({ main: 'Set password' })[0].em).toBe('0.75em');
+  });
+
+  it('labelLines renders the hint line italic and dimmed; main and caption stay upright', () => {
+    const [main, sub, hint] = labelLines({ main: 'Abandon', sub: '120 fields', hint: '(open dashboard)' });
+    expect(hint).toMatchObject({ text: '(open dashboard)', italic: true, opacity: 0.55 });
+    expect(main.italic).toBeUndefined();
+    expect(sub.italic).toBeUndefined();
+    const ctl = make();
+    ctl.paintLines('main', labelLines({ main: 'Abandon', hint: 'too small' }));
+    const lines = [...document.querySelectorAll('div')].filter((d) => d.textContent === 'too small');
+    expect(lines.some((d) => d.style.fontStyle === 'italic')).toBe(true);
+  });
+
   it('labelLines shrinks the shared "Max fleets" verdict to 0.9em (all other primaries stay 1em)', () => {
     expect(labelLines({ main: 'Max fleets' })[0].em).toBe('0.9em');
     expect(labelLines({ main: 'All sent' })[0].em).toBe('1em');

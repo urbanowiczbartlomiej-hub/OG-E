@@ -49,6 +49,7 @@ export const LABEL_CLASS = 'oge-btn-label';
  * @property {number} [opacity]       0..1 (default 1).
  * @property {number} [marginTop]     px gap above this line (default 0).
  * @property {number} [letterSpacing] px letter-spacing (default 0).
+ * @property {boolean} [italic]       italic (the hint line wears it).
  * @property {LabelIcon} [icon]       sprite cell drawn after the text, about
  *   one line-height tall (e.g. the game's own planet / moon icon).
  */
@@ -237,6 +238,7 @@ export const renderLines = (span, lines) => {
     if (line.opacity != null && line.opacity !== 1) css += `opacity:${line.opacity};`;
     if (line.marginTop) css += `margin-top:${line.marginTop}px;`;
     if (line.letterSpacing) css += `letter-spacing:${line.letterSpacing}px;`;
+    if (line.italic) css += 'font-style:italic;';
     div.style.cssText = css;
     col.appendChild(div);
   }
@@ -263,8 +265,9 @@ export const labelLines = ({ main, sub, hint, subIcon }) => {
   // without each paint site knowing about it:
   //   • 'Max fleets' — the shared fleet-cap verdict (see shared/statusTones.js)
   //   • "Can't send" — the lifeform blocked/failed verdict
+  //   • 'Set password' — the abandon FAB with no password configured
   /** @type {Record<string, string>} */
-  const SHRUNK_PRIMARY = { 'Max fleets': '0.9em', "Can't send": '0.85em' };
+  const SHRUNK_PRIMARY = { 'Max fleets': '0.9em', "Can't send": '0.85em', 'Set password': '0.75em' };
   /** @type {LabelLine[]} */
   const lines = [{ text: main, em: SHRUNK_PRIMARY[main] || '1em' }];
   if (sub != null && sub !== '') {
@@ -281,6 +284,7 @@ export const labelLines = ({ main, sub, hint, subIcon }) => {
       opacity: 0.55,
       marginTop: 2,
       letterSpacing: 0.5,
+      italic: true,
     });
   }
   return lines;
