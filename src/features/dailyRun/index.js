@@ -200,18 +200,21 @@ const targetLabel = (t) =>
   t ? `→ ${t.galaxy}:${t.system}:${t.position}` : '';
 
 /** Like {@link targetLabel} but prefers the body's NAME (resolved from the
- * live planet list) over its coords. Falls back to coords when the name can't
- * be resolved (e.g. the Spy-16 point, which is no body of ours).
+ * live planet list) over its coords — planet AND moon. Falls back to coords
+ * when the name can't be resolved (e.g. the Spy-16 point, no body of ours).
+ * Used where the one target matters by name: Send All (the hub) and Drop / Up.
  * @param {import('../../state/dailyRunRoutes.js').TargetCoord | null | undefined} t */
-const collectTargetLabel = (t) => {
+const namedTargetLabel = (t) => {
   if (!t) return '';
-  // A moon reads as the game's own word for it: its stored name is usually a
-  // localised default (identical on every moon), and the moon icon drawn
-  // after the caption already marks the kind.
-  if (t.type === TARGET_MOON) return '→ moon';
   const name = bodyNameByCoord(t);
   return name ? `→ ${name}` : targetLabel(t);
 };
+
+/** The micro zone's caption: a moon reads as the game's own word for it
+ * (the micro run walks many moons whose stored names are often the same
+ * localised default; the moon icon marks the kind), a planet by its name.
+ * @param {import('../../state/dailyRunRoutes.js').TargetCoord | null | undefined} t */
+const microTargetLabel = (t) => (t && t.type === TARGET_MOON ? '→ moon' : namedTargetLabel(t));
 
 /**
  * URL of the OG-E Dashboard extension page, resolved once via
@@ -1054,7 +1057,7 @@ const refresh = () => {
     if (!route) {
       setLabel(microZone, 'Setup', undefined, '(no routes)');
     } else if (armed && armed.mode === 'micro') {
-      setLabel(microZone, armed.spy ? 'Spy' : 'Send', collectTargetLabel(armed.target), '(tap to send)', targetIcon(armed.target));
+      setLabel(microZone, armed.spy ? 'Spy' : 'Send', microTargetLabel(armed.target), '(tap to send)', targetIcon(armed.target));
     } else {
       const { next, left } = microPlan(route);
       if (!next) {
@@ -1067,7 +1070,7 @@ const refresh = () => {
           setLabel(microZone, 'No ships', `${short.have}/${short.want}`);
         } else {
           // 'Spy' = the own-body Spy-16 trip (see pure.js microLegs).
-          setLabel(microZone, next.spy ? 'Spy' : 'Send', collectTargetLabel(next.target), `${left} left`, targetIcon(next.target));
+          setLabel(microZone, next.spy ? 'Spy' : 'Send', microTargetLabel(next.target), `${left} left`, targetIcon(next.target));
         }
       }
     }
@@ -1081,12 +1084,12 @@ const refresh = () => {
     if (!target) {
       setLabel(pairZone, 'Up', undefined, 'no moon');
     } else if (armed && armed.mode === 'pair') {
-      setLabel(pairZone, word, collectTargetLabel(target), '(tap to send)', targetIcon(target));
+      setLabel(pairZone, word, namedTargetLabel(target), '(tap to send)', targetIcon(target));
     } else if (collectPlanetEmpty()) {
       // Nothing to take here — the tap walks on (see buildOrder).
       setLabel(pairZone, 'Empty', body?.type === TARGET_MOON ? '→ next moon' : '→ next planet');
     } else {
-      setLabel(pairZone, word, collectTargetLabel(target), undefined, targetIcon(target));
+      setLabel(pairZone, word, namedTargetLabel(target), undefined, targetIcon(target));
     }
   }
 
@@ -1096,7 +1099,7 @@ const refresh = () => {
     if (!t) {
       setLabel(collectZone, 'Send All', undefined, '(hold to set)');
     } else if (armed && armed.mode === 'collect') {
-      setLabel(collectZone, 'Send All', collectTargetLabel(t), '(tap to send)', targetIcon(t));
+      setLabel(collectZone, 'Send All', namedTargetLabel(t), '(tap to send)', targetIcon(t));
     } else if (collectPlanetEmpty()) {
       // Nothing to take here — propose the jump; the tap performs it
       // (see handleZone). Mirrors the post-send "advance to the next
@@ -1107,7 +1110,7 @@ const refresh = () => {
         collectSourceType() === TARGET_MOON ? '→ next moon' : '→ next planet',
       );
     } else {
-      setLabel(collectZone, 'Send All', collectTargetLabel(t), '(hold to change)', targetIcon(t));
+      setLabel(collectZone, 'Send All', namedTargetLabel(t), '(hold to change)', targetIcon(t));
     }
   }
 };
