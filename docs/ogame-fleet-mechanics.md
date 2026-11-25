@@ -524,6 +524,33 @@ either the hold after a give-up is longer than "first 03:00 ≥ 24h" on some
 servers, or the sweep does not release every slot it should. We do not yet know
 which, nor how long the hold really lasts.
 
+**A colonization is processed well AFTER its arrival time.** Measured
+2026-11-25 on a busy young universe, six landings in a row: the colonization
+report was filed **10–16 s** after the fleet's `data-arrival-time` (10, 10, 12,
+16, 14, 12 s). Until then the server has not created the planet, so a full page
+load in that gap serves a `#planetList` without the new colony. Pages loaded
+4–6 s after the report always had it. The wrong intuition was *"a page loaded
+a second or two after arrival already shows the colony"*. OG-E's first
+version waited a fixed 2 s and kept offering a reload that came too early.
+Shortly after landing, the planet count can look one short of the astrophysics
+cap while the server is in fact still creating the colony.
+
+How the open page learns about it, without any request of its own:
+
+- The report is a message of type **30** ("Raport osiedleń"), in the Economy
+  sub-tab (`getMessagesList` with `activeSubTab=3`). Its `rawMessageData`
+  carries `data-raw-coords` / `data-raw-targetPlanetCoordinates` (the colonized
+  slot), `data-raw-colonizationSuccessful` (`'1'` on success, empty on failure),
+  and a `data-raw-timestamp` that marks when the server **processed** the
+  landing, not the arrival itself.
+- When a report is filed, the server pushes
+  `42/frontendactions,["refreshMessagesData",{"type":"refreshMsgData"}]` over
+  the game's own socket.io connection (port 24465). The game's handler does
+  only one thing with it: `reloadComponent('newmessagesindicator')`, one GET
+  that re-renders `#newmessagesindicatorcomponent` with the new unread count
+  in `data-new-messages`. A growing counter on an open page is therefore the
+  server saying "a report was just filed". It does not say which kind.
+
 The wrong intuition worth writing down: *"once the release time has passed, the
 `abandoned` record is just history, and a later `reserved` about the same slot
 can never conflict with it."* It can. A given-up slot that the game keeps
