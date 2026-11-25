@@ -4,6 +4,16 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.74.0] — 2026-11-25
+
+### Added
+
+- **Free positions at a glance.** In the Colonizations settings, a short line
+  under Positions shows how many of your target positions are free now, and
+  how many of your abandoned colonies the game releases at the next two 03:00
+  cleanups. Tap the line to see the same numbers for each galaxy. The count
+  matches the "free" number on the colonization button.
+
 ## [1.73.0] — 2026-11-25
 
 ### Added
