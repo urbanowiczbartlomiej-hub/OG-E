@@ -40,3 +40,28 @@ export const writeColoArrival = (arrivalAt) => {
   if (arrivalAt > 0) safeLS.setJSON(COLO_ARRIVAL_KEY, arrivalAt);
   else safeLS.remove(COLO_ARRIVAL_KEY);
 };
+
+// A landing that HAS arrived but that the server has not been seen to process
+// yet (epoch SECONDS). The "landed while this page was open" fact lives only
+// in page memory, so a reload during the server's processing lag used to lose
+// it: the fresh page had no colony yet and simply counted down to the NEXT
+// arrival. Persisting it lets the reloaded page keep waiting for this one.
+// Same owner / same reader as the key above.
+
+/** localStorage key holding the landed-but-unprocessed arrival (epoch SECONDS). */
+export const COLO_SETTLING_KEY = 'oge-colo-settling';
+
+/** @returns {number} landed-but-unprocessed arrival, epoch SECONDS (0 = none). */
+export const readColoSettling = () => {
+  const v = safeLS.json(COLO_SETTLING_KEY, 0);
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0;
+};
+
+/**
+ * @param {number} arrivalAt epoch seconds; `0` removes the key.
+ * @returns {void}
+ */
+export const writeColoSettling = (arrivalAt) => {
+  if (arrivalAt > 0) safeLS.setJSON(COLO_SETTLING_KEY, arrivalAt);
+  else safeLS.remove(COLO_SETTLING_KEY);
+};

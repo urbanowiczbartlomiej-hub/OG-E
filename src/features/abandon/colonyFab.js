@@ -56,11 +56,17 @@ import { ABANDON_GLYPH } from '../shared/buttonGlyphs.js';
 import { parseUniverseId } from '../../lib/universeId.js';
 import { debounce } from '../../lib/debounce.js';
 import { EVENT_BOX_LOADED_EVENT } from '../../lib/ogeEvents.js';
-import { readColoArrival, writeColoArrival } from '../../state/coloArrival.js';
+import {
+  readColoArrival, writeColoArrival, readColoSettling, writeColoSettling,
+} from '../../state/coloArrival.js';
 import {
   findFirstFreshPlanet, getOverviewCp, buildOverviewUrl, overviewUrl, readColoArrivals,
+  readNewMessageCount,
 } from './detect.js';
-import { deriveLanding, nextLandingTickMs, formatLandingCountdown, landingProgress } from './pure.js';
+import {
+  deriveLanding, nextLandingTickMs, formatLandingCountdown, landingProgress,
+  carriedLatch, SETTLE_FALLBACK_S,
+} from './pure.js';
 import { serverNow } from '../../lib/serverClock.js';
 import { checkAbandonState, createAbandonFlow } from './index.js';
 
@@ -76,7 +82,10 @@ const RING_ID = 'oge-ring-colony';
  */
 const ABANDON_COLOR = '#fb7185';
 
-/** @typedef {'none' | 'navigate' | 'abandon' | 'landing' | 'refresh'} ColonyState */
+/** @typedef {'none' | 'navigate' | 'abandon' | 'landing' | 'settling' | 'refresh'} ColonyState */
+
+/** The pre-decision states that share one mounted button. @param {ColonyState} s */
+const isLandingState = (s) => s === 'landing' || s === 'settling' || s === 'refresh';
 
 /**
  * URL of the OG-E Dashboard extension page, resolved once via
@@ -191,8 +200,27 @@ export const installColonyFab = () => {
    *  landing/refresh. Server-based so it shares the clock of the event rows'
    *  `data-arrival-time` even when the OS clock is wrong. */
   const pageBornMs = serverNow();
-  /** Arrival latched as "landed while this page was open" (epoch s; 0 = none). */
-  let landedAt = 0;
+  /** The landed-but-unprocessed arrival as persisted (mirror of the key). */
+  let settlingStored = readColoSettling();
+  /** Arrival latched as "landed while this page was open" (epoch s; 0 = none).
+   *  Seeded from a landing the PREVIOUS page was still waiting on: a reload
+   *  during the server's processing lag must keep waiting for that colony
+   *  instead of counting down to the next one. */
+  let landedAt = carriedLatch(settlingStored, pageBornMs);
+  /** The game's unread-messages counter as last sampled (null = not seen yet)
+   *  and the server-clock ms it was last seen to GROW — the game's own "a new
+   *  report just arrived" push (see `detect.js readNewMessageCount`). */
+  /** @type {number | null} */
+  let lastMsgCount = null;
+  let msgPushMs = 0;
+
+  /** Sample the counter; a growth stamps `msgPushMs`. @returns {void} */
+  const sampleMsgPush = () => {
+    const count = readNewMessageCount();
+    if (count === null) return;
+    if (lastMsgCount !== null && count > lastMsgCount) msgPushMs = serverNow();
+    lastMsgCount = count;
+  };
   /** Last landing derivation — the countdown repaint reads its `arrivalAt`. */
   /** @type {import('./pure.js').LandingResult} */
   let lastLanding = { phase: 'idle', arrivalAt: 0, cacheWrite: null, latch: 0 };
@@ -226,15 +254,24 @@ export const installColonyFab = () => {
     // SERVER clock — the arrivals come from OGame's `data-arrival-time` (server
     // epoch), so the whole derivation must live on the same clock or a wrong OS
     // clock skews the countdown away from the game's own timer.
+    sampleMsgPush();
     const nowMs = serverNow();
     const derived = deriveLanding({
       domArrivals: readColoArrivals(),
       cachedArrival: readColoArrival(),
       latchedArrival: landedAt,
       pageBornMs,
+      msgPushMs,
       nowMs,
     });
     landedAt = derived.latch;
+    // Remember a landed-but-unprocessed arrival across a reload; forget it the
+    // moment it is processed (or nothing is pending).
+    const settling = derived.latch && derived.phase !== 'refresh' ? derived.latch : 0;
+    if (settling !== settlingStored) {
+      writeColoSettling(settling);
+      settlingStored = settling;
+    }
     if (derived.cacheWrite !== null) writeColoArrival(derived.cacheWrite);
     if (derived.phase === 'landing' && derived.arrivalAt !== landingWindowArrival) {
       landingWindowArrival = derived.arrivalAt;
@@ -400,7 +437,7 @@ export const installColonyFab = () => {
       controller.paintLines('go', labelLines({ main: 'Abandon', sub: `${info.max} fields`, hint: 'too small' }));
       currentState = 'abandon';
       setActiveFabModule(MODULE_ID);
-    } else if (state === 'landing' || state === 'refresh') {
+    } else if (isLandingState(state)) {
       // Same module identity as the decision states — this IS the abandon
       // button showing up early: countdown (dimmed — a tap does nothing yet),
       // then an actionable full reload to overview, where the planet list is
@@ -416,8 +453,11 @@ export const installColonyFab = () => {
           glyph: ABANDON_GLYPH,
           // Read the LIVE state, not the mount-time one: the landing →
           // refresh flip repaints this same button in place (see refresh()),
-          // so one handler serves both — a no-op while the dimmed countdown
-          // runs, the overview reload once the landing is processed.
+          // so one handler serves all — a no-op while the dimmed countdown
+          // and the dimmed "Wait" run, the overview reload once the landing
+          // is processed. "Wait" cannot strand a series: it flips to Refresh
+          // on the fallback, and a manual page reload keeps waiting for the
+          // same landing (the persisted settling arrival).
           onTap: () => { if (currentState === 'refresh') location.href = overviewUrl(); },
         }],
       });
@@ -440,6 +480,12 @@ export const installColonyFab = () => {
       // Landed — the ring is full (mirrors the countdown reaching arrival).
       paintGo({ main: 'Refresh', sub: 'colo landed' });
       controller?.setProgress(1);
+    } else if (state === 'settling') {
+      // Landed, not processed yet. Dimmed = a tap does nothing. The ring
+      // drains toward the fallback flip.
+      paintGo({ main: 'Wait', sub: 'colo settling', dim: true });
+      const sinceS = (serverNow() - lastLanding.arrivalAt * 1000) / 1000;
+      controller?.setProgress(Math.max(0, Math.min(1, 1 - sinceS / SETTLE_FALLBACK_S)));
     } else {
       // Progress arc fills as the landing nears (same feel as sendColony's
       // min-gap wait), repainted each 1 Hz tick alongside the countdown text.
@@ -468,20 +514,16 @@ export const installColonyFab = () => {
     // countdown running, or a landed arrival awaiting the reload) — matches
     // Spyglass's "pulse while anything is queued" rule, not just a subset of
     // its states.
-    setFabModuleAlert(MODULE_ID, want === 'landing' || want === 'refresh');
+    setFabModuleAlert(MODULE_ID, isLandingState(want));
     if (want === currentState && wantCp === currentCp) {
       // Same state — but a running countdown still needs its 1 Hz repaint.
-      if (want === 'landing') paintLanding('landing');
+      if (want === 'landing' || want === 'settling') paintLanding(want);
       return;
     }
     // The landing → refresh flip repaints the SAME mounted button in place —
     // remounting would churn the DOM at the exact moment the user reaches for
     // the tap (and could eat it).
-    if (
-      controller &&
-      (want === 'landing' || want === 'refresh') &&
-      (currentState === 'landing' || currentState === 'refresh')
-    ) {
+    if (controller && isLandingState(want) && isLandingState(currentState)) {
       currentState = want;
       paintLanding(want);
       return;

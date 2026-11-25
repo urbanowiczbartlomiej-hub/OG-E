@@ -75,6 +75,27 @@ export const buildOverviewUrl = (cp) =>
 export const overviewUrl = () => ingameComponentUrl(location.href, 'overview', {});
 
 /**
+ * The game's unread-messages counter (header indicator), or `null` when it is
+ * not on the page.
+ *
+ * Why the colony FAB reads it: when the server finishes processing a fleet
+ * event it files the report and pushes `refreshMessagesData` over its own
+ * websocket; the game's handler then re-fetches this one component and swaps
+ * its children in place (`#newmessagesindicatorcomponent`). So the counter
+ * GROWING is the game telling the open page "a new report just landed" — read
+ * here from the DOM the game already rendered, with no request of our own.
+ * Used by this feature only, hence local rather than in `lib/gameDom.js`.
+ *
+ * @returns {number | null}
+ */
+export const readNewMessageCount = () => {
+  const el = document.querySelector('#newmessagesindicatorcomponent .messagesIndicator');
+  if (!el) return null;
+  const n = parseInt(el.getAttribute('data-new-messages') || '', 10);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+};
+
+/**
  * Outbound colonization arrivals in the live event list, epoch SECONDS.
  *
  * `null` when the event table is absent (unknown — the caller falls back to
