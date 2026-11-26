@@ -228,9 +228,10 @@ export const renderColonyModelChart = (o) => {
     const group = el('div', 'bar-group');
     group.dataset.i = String(i);
     // Natural / Today counts are fractional (each colony spread over the span
-    // it can come from): label them as such, or a 0.4 bar reads as an empty
-    // label over a visible bar.
-    group.appendChild(el('div', 'bar-count', bin.count >= 0.05 ? fmtCount(bin.count) : ''));
+    // it can come from). The label over the bar stays a whole number — decimals
+    // there read as noise; the exact share is in the tap card ("Mine 0.4").
+    const shownCount = Math.round(bin.count);
+    group.appendChild(el('div', 'bar-count', shownCount ? String(shownCount) : ''));
     const bar = el('div', 'bar');
     const visible = bin.count >= 0.05;
     bar.style.height = (visible ? Math.max(Math.round((bin.count / scale) * BAR_AREA_PX), MIN_BAR_PX) : 0) + 'px';
