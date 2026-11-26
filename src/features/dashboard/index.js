@@ -2054,7 +2054,8 @@ const renderColonyView = (entries, filterValue) => {
     modelEl: colonyModelEl,
     entries,
     position: pos,
-    mode: chipValue(colonyModeChips) === 'natural' ? 'natural' : 'shown',
+    mode: /** @type {'shown' | 'natural' | 'today'} */ (
+      ['natural', 'today'].includes(chipValue(colonyModeChips)) ? chipValue(colonyModeChips) : 'shown'),
     showModel: toggleChipOn(colonyModelToggle),
     // The server's flat bonus fields, from its public serverData (30 on most).
     serverBonus: typeof apiBounds.bonusFields === 'number' ? apiBounds.bonusFields : 30,

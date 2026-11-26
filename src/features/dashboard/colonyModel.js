@@ -6,6 +6,9 @@
 //   • Shown / Natural: bars over the fields as the game shows them, or over the
 //     natural roll back-solved through EACH colony's own stamped size bonus
 //     (`ColonyEntry.b`, domain/planetRoll.js) — never through today's bonus;
+//   • Today: that natural roll scaled back up through TODAY's bonus — every
+//     colony as it would have come out had it been rolled now, so all of them
+//     sit on one axis with the odds the bar card quotes;
 //   • the model as one thin continuous line with a soft shade under it — the
 //     roll is a continuous distribution, so it is drawn as one, behind the bars.
 //
@@ -82,7 +85,7 @@ export const hasStampedBonus = (entries) => entries.some((e) => entryMultiplier(
  *   modelEl: HTMLElement,
  *   entries: ReadonlyArray<ColonyEntry>,
  *   position: number,
- *   mode: 'shown' | 'natural',
+ *   mode: 'shown' | 'natural' | 'today',
  *   showModel: boolean,
  *   serverBonus: number,
  *   todayK: number | null,
@@ -98,9 +101,11 @@ export const renderColonyModelChart = (o) => {
 
   const range = POSITION_FIELD_RANGE[position];
   const stamped = o.entries.filter((e) => entryMultiplier(e) != null);
-  const mode = stamped.length ? o.mode : 'shown';
+  // Today needs today's bonus; without it the view falls back to Shown.
+  const mode = !stamped.length || (o.mode === 'today' && o.todayK == null) ? 'shown' : o.mode;
+  const todayK = o.todayK;
   const showModel = o.showModel && stamped.length > 0;
-  const entries = mode === 'natural' || showModel ? stamped : o.entries;
+  const entries = mode !== 'shown' || showModel ? stamped : o.entries;
   if (!entries.length || !range) {
     countInfoEl.textContent = '';
     chartEl.appendChild(el('div', 'empty', 'No colony data for this position yet.'));
@@ -108,9 +113,16 @@ export const renderColonyModelChart = (o) => {
   }
   const [min, max] = range;
   const n = entries.length;
+  /** Today's shown fields for a natural roll S: floor(S × today) + server fields. @param {number} s */
+  const toToday = (s) => Math.floor(s * /** @type {number} */ (todayK)) + serverBonus;
   const values = mode === 'natural'
     ? entries.map((e) => /** @type {number} */ (naturalFields(e, serverBonus)))
-    : entries.map((e) => e.fields);
+    : mode === 'today'
+      ? entries.map((e) => {
+        const [a, b] = /** @type {[number, number]} */ (naturalInterval(e, serverBonus));
+        return toToday((a + b) / 2);
+      })
+      : entries.map((e) => e.fields);
   countInfoEl.textContent = n === o.entries.length
     ? `${n} colonies · P${position}`
     : `${n} of ${o.entries.length} colonies · P${position}`;
@@ -135,7 +147,8 @@ export const renderColonyModelChart = (o) => {
 
   // The model curve needs a multiplier for every colony on screen — true by
   // construction whenever it is on (the view is filtered to stamped colonies).
-  const ks = entries.map((e) => entryMultiplier(e));
+  // In Today every colony is drawn at today's multiplier, so the model uses it too.
+  const ks = mode === 'today' ? entries.map(() => todayK) : entries.map((e) => entryMultiplier(e));
   const modelled = showModel && ks.every((k) => k != null);
   const kList = /** @type {number[]} */ (modelled ? ks : []);
 
@@ -146,19 +159,18 @@ export const renderColonyModelChart = (o) => {
   if (mode === 'natural') {
     lo = Math.min(lo, min);
     hi = Math.max(hi, max);
-  } else if (modelled) {
-    lo = Math.min(lo, Math.floor(min * Math.min(...kList)) + serverBonus);
-    // Axis ends at the largest field count the game can show for the top
-    // natural roll: floor(max × multiplier) + server fields (e.g. 252 × 1.44889
-    // → 395). The roll model allows a sliver above (a natural "252" is any draw
-    // in [252, 253)), but that bin would be empty forever (~1 in 3 million).
-    hi = Math.max(hi, Math.floor(max * Math.max(...kList)) + serverBonus);
-  }
-  // Also reach today's top: the bar card prices odds at TODAY's bonus, so when
-  // the colonies on screen were rolled at a smaller one, the bars between their
-  // ceiling and today's (e.g. P7 385 → 389) must exist to be tapped.
-  if (mode === 'shown' && o.todayK != null) {
-    hi = Math.max(hi, Math.floor(max * o.todayK) + serverBonus);
+  } else if (modelled || todayK != null) {
+    lo = Math.min(lo, Math.floor(min * Math.min(...(kList.length ? kList : [/** @type {number} */ (todayK)]))) + serverBonus);
+    // Axis ends at the largest field count the game can show TODAY for the top
+    // natural roll: floor(max × today's multiplier) + server fields (e.g. 252 ×
+    // 1.44889 → 395) — the bar card prices odds at today's bonus, so that is the
+    // ceiling that matters. A colony rolled at a bigger bonus than today's still
+    // gets its bar (the axis always covers every value; its card says "not
+    // reachable"). Without today's bonus, the shown colonies' own ceiling. The
+    // roll model allows a sliver above (a natural "252" is any draw in [252,
+    // 253)), but that bin would be empty forever (~1 in 3 million).
+    const ceilK = todayK ?? Math.max(...kList);
+    hi = Math.max(hi, Math.floor(max * ceilK) + serverBonus);
   }
   // Bar width follows the SCREEN only (as the plain chart): one field per bar
   // whenever it fits, grouped just enough to keep bars legible.
@@ -168,11 +180,18 @@ export const renderColonyModelChart = (o) => {
   /** @type {Array<{ start: number, end: number, count: number }>} */
   const bins = [];
   for (let s = lo; s <= hi; s += w) bins.push({ start: s, end: Math.min(s + w - 1, hi), count: 0 });
-  if (mode === 'natural') {
+  if (mode !== 'shown') {
     // Spread each colony over the natural interval it can come from — counting
     // it at one natural field draws a false saw-tooth (domain spreadOverBars).
+    // Today: the same interval scaled through today's multiplier (field f is
+    // the continuous span [f, f + 1) once the server fields are added).
     const spread = spreadOverBars(
-      entries.map((e) => /** @type {[number, number]} */ (naturalInterval(e, serverBonus))),
+      entries.map((e) => {
+        const [a, b] = /** @type {[number, number]} */ (naturalInterval(e, serverBonus));
+        return /** @type {[number, number]} */ (mode === 'today'
+          ? [a * /** @type {number} */ (todayK) + serverBonus, b * /** @type {number} */ (todayK) + serverBonus]
+          : [a, b]);
+      }),
       lo, w, bins.length,
     );
     spread.forEach((c, i) => { bins[i].count = c; });
@@ -182,7 +201,7 @@ export const renderColonyModelChart = (o) => {
 
   /** @type {Map<number, number> | undefined} */
   let byK;
-  if (modelled && mode === 'shown') {
+  if (modelled && mode !== 'natural') {
     byK = new Map();
     for (const k of kList) byK.set(k, (byK.get(k) || 0) + 1);
   }
@@ -269,7 +288,7 @@ export const renderColonyModelChart = (o) => {
     group.classList.add('sel');
     pop.textContent = '';
     const label = bin.start === bin.end ? String(bin.start) : `${bin.start}–${bin.end}`;
-    pop.appendChild(el('div', 'rp-head', mode === 'natural' ? `Natural ${label}` : `${label} fields`));
+    pop.appendChild(el('div', 'rp-head', mode === 'natural' ? `Natural ${label}` : mode === 'today' ? `Today ${label} fields` : `${label} fields`));
     row('Mine', String(Math.round(bin.count)));
     if (modelled) {
       // Expected for the colonies actually on screen (not the 50-colony target).
