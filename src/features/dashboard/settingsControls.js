@@ -61,10 +61,10 @@ const writeShared = async (patch) => {
  * @returns {Promise<void>}
  */
 const requestSyncAll = async () => {
-  const all = await chromeStore.getAll();
+  const keys = await chromeStore.getKeys();
   /** @type {Set<string>} */
   const ids = new Set();
-  for (const key of Object.keys(all)) {
+  for (const key of keys) {
     const parsed = parsePerUniverseKey(key);
     if (parsed) ids.add(parsed.universeId);
   }

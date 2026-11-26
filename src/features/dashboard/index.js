@@ -311,6 +311,17 @@ let alarmTabsApi = null;
  * @type {{ refresh: () => void } | null}
  */
 let allianceShareApi = null;
+/**
+ * Sync tab handle — `shown()` paints the inventory it skipped while hidden.
+ *
+ * @type {{ refresh: () => void, shown: () => void } | null}
+ */
+let syncTabApi = null;
+/**
+ * True until boot has restored the saved Free-regions / Targets controls;
+ * renderAll skips those two (heaviest) paints meanwhile — see boot.
+ */
+let bootDeferAnalyzers = true;
 
 /** @type {ColonyEntry[]} */
 let history = [];
@@ -677,11 +688,31 @@ let installed = false;
 export const installDashboard = () => {
   if (installed) return;
   installed = true;
+  const run = () => {
+    boot()
+      // eslint-disable-next-line no-console -- a dead dashboard must say why even with the logger off
+      .catch((err) => { console.error('[OG-E] dashboard boot failed', err); })
+      .finally(() => { bootDeferAnalyzers = false; hideBootLoader(); });
+  };
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => { void boot(); });
+    document.addEventListener('DOMContentLoaded', run);
   } else {
-    void boot();
+    run();
   }
+};
+
+/**
+ * Fade out and drop the static `#bootLoader` overlay that dashboard.html
+ * paints before any script runs. Called once boot settles — success or
+ * failure — so a thrown boot can never leave the page stuck behind it.
+ *
+ * @returns {void}
+ */
+const hideBootLoader = () => {
+  const el = document.getElementById('bootLoader');
+  if (!el) return;
+  el.classList.add('done');
+  setTimeout(() => el.remove(), 250);
 };
 
 /**
@@ -711,7 +742,7 @@ const boot = async () => {
   // Sync tab is cross-universe (ignores the selector) and self-subscribes to
   // chrome.storage changes, so it needs no universe getter and no post-load
   // repaint — one install wires it for good.
-  installSync();
+  syncTabApi = installSync();
   // The Multi-device-sync + alarmClock master/token controls (moved out of the
   // in-game panel) — they read/write the shared-settings chrome.storage dict.
   installSettingsControls();
@@ -782,16 +813,15 @@ const boot = async () => {
   syncMapProtVisibility();
   validateSlots();
   updateModeControls();
-  // The first renderAll above painted with the DOM defaults — repaint so the
-  // restored zone/find/slots/window/farm actually drive the first ranking
-  // (mirrors the loadTargetPrefs → repaintTargets pattern below; cheap, the
-  // composite cache makes this second paint rebuild only the field).
-  repaintFreeRegions();
+  // The first renderAll above SKIPPED Free regions + Targets (bootDeferAnalyzers)
+  // — both are painted once, below, after their saved controls are restored.
 
   // Restore the Targets table sort + filter controls from the previous session,
   // then repaint so the restored sort/filters show on this first load (the
   // initial renderAll above ran before this restore).
   loadTargetPrefs();
+  bootDeferAnalyzers = false;
+  repaintFreeRegions();
   repaintTargets();
 
   chromeStore.onChanged((changes) => {
@@ -848,7 +878,7 @@ const boot = async () => {
  * @returns {Promise<string[]>}
  */
 const discoverUniverses = async () => {
-  const all = await chromeStore.getAll();
+  const keys = await chromeStore.getKeys();
   /** @type {Set<string>} */
   const ids = new Set();
   const bases = new Set([
@@ -859,7 +889,7 @@ const discoverUniverses = async () => {
     BODIES_KEY_BASE,
     API_CACHE_KEY_BASE,
   ]);
-  for (const key of Object.keys(all)) {
+  for (const key of keys) {
     const parsed = parsePerUniverseKey(key);
     if (parsed && bases.has(parsed.base)) ids.add(parsed.universeId);
   }
@@ -1114,6 +1144,8 @@ const wireTabs = () => {
       if (key === 'colony') repaintFreeRegions();
       // Same for the Spyglass watchlist map (only when it's open).
       if (key === 'spyglass') repaintSpyglassMap();
+      // The Sync inventory defers its (full-storage) paint while hidden.
+      if (key === 'sync') syncTabApi?.shown();
     });
   }
 };
@@ -2097,8 +2129,13 @@ const renderAll = () => {
   // universe changes / storage updates; the controls also have their own
   // onchange listeners that re-paint only this block without paying for the
   // colony pass.
-  repaintFreeRegions();
-  repaintTargets();
+  // During boot the first renderAll runs BEFORE the saved Free-regions /
+  // Targets controls are restored, and boot repaints both right after the
+  // restore — painting them here too was pure waste (~0.5 s measured).
+  if (!bootDeferAnalyzers) {
+    repaintFreeRegions();
+    repaintTargets();
+  }
   renderProximityStrip();
   repaintSpyglassMap();
 };

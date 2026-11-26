@@ -178,6 +178,10 @@ const takeLastStorageError = () => {
  *   Used by the histogram page to enumerate which universes have data
  *   (it scans the keys for the `<universeId>:oge_*` namespacing pattern).
  *   Resolves to `{}` when the WebExtension API is absent.
+ * @property {() => Promise<string[]>} getKeys
+ *   Resolve with every key name in the storage area, without reading the
+ *   values where the browser supports it. Prefer this over `getAll` whenever
+ *   only key names are needed. Resolves to `[]` when the API is absent.
  * @property {(key: string, value: unknown) => Promise<void>} set
  *   Persist `{ [key]: value }`. Resolves when the backing store acks;
  *   REJECTS when the browser reports the write failed (quota, shutdown) —
@@ -224,6 +228,35 @@ export const chromeStore = {
         resolve(items || {});
       };
       /** @type {any} */ (api.local.get)(null, cb);
+    }),
+
+  getKeys: () =>
+    new Promise((resolve) => {
+      const api = pickStorage();
+      if (!api) {
+        resolve([]);
+        return;
+      }
+      // `storage.local.getKeys()` (Chrome 130+, Firefox 143+) lists keys
+      // WITHOUT deserializing values — with multi-MB API caches per universe
+      // a full `get(null)` costs seconds just to learn the key names. Older
+      // browsers fall back to the full read.
+      const local = /** @type {any} */ (api.local);
+      if (typeof local.getKeys === 'function') {
+        try {
+          local.getKeys((/** @type {string[] | undefined} */ keys) => {
+            takeLastStorageError();
+            resolve(Array.isArray(keys) ? keys : []);
+          });
+          return;
+        } catch {
+          // Promise-only / mismatched signature — use the fallback below.
+        }
+      }
+      local.get(null, (/** @type {Record<string, unknown> | undefined} */ items) => {
+        takeLastStorageError();
+        resolve(Object.keys(items || {}));
+      });
     }),
 
   set: (key, value) =>

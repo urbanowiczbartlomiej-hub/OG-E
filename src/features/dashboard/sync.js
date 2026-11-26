@@ -354,9 +354,24 @@ const renderUniverseCard = (u, now) => {
   return card;
 };
 
+/**
+ * The Sync tab's section is not the active tab. Its inventory needs the FULL
+ * storage snapshot (every key's value, tens of MB with per-universe API
+ * caches), so painting it while nobody looks costs seconds on every dashboard
+ * open and every sync write — defer until the tab is shown.
+ *
+ * @returns {boolean}
+ */
+const isHidden = () => {
+  const section = bodyEl?.closest('.tab-section');
+  return !!section && !section.classList.contains('active');
+};
+
 /** Read the storage snapshot and repaint the whole Sync body. */
 const render = async () => {
   if (!bodyEl) return;
+  if (isHidden()) { staleWhileHidden = true; return; }
+  staleWhileHidden = false;
   const all = await chromeStore.getAll();
   const inventory = buildSyncInventory(/** @type {Record<string, unknown>} */ (all));
   bodyEl.textContent = '';
@@ -374,7 +389,7 @@ const render = async () => {
  * a fresh sync updates both the data slices and the `<id>:oge_syncStatus`
  * mirror, both of which match the `:oge_` test.
  *
- * @returns {{ refresh: () => void }}
+ * @returns {{ refresh: () => void, shown: () => void }}
  */
 export const installSync = () => {
   bodyEl = document.getElementById('syncBody');
@@ -384,8 +399,16 @@ export const installSync = () => {
     if (renderTimer != null) clearTimeout(renderTimer);
     renderTimer = setTimeout(() => { renderTimer = null; void render(); }, 300);
   });
-  return { refresh: () => { void render(); } };
+  return {
+    refresh: () => { void render(); },
+    // Called when the Sync tab becomes visible: paint only if a render was
+    // skipped (never painted yet, or storage changed while hidden).
+    shown: () => { if (staleWhileHidden) void render(); },
+  };
 };
+
+/** A render was skipped because the tab was hidden — repaint on next show. */
+let staleWhileHidden = false;
 
 /**
  * Test-only reset for this module's scope: the mount point, the pending
@@ -406,4 +429,5 @@ export const _resetSyncForTest = () => {
   renderTimer = null;
   abandonOpenFor = '';
   abandonFlows.clear();
+  staleWhileHidden = false;
 };

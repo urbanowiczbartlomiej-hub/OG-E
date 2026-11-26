@@ -1551,9 +1551,37 @@
   .rem-status-head { font-size: 12px; }
   .rem-status-head.ok { color: #5fd08a; }
   .rem-status-head.err { color: #ff8a89; }
+
+  /* Boot loader: painted by plain HTML/CSS before any script runs, removed by
+     the dashboard once its first render settles (hideBootLoader). Covers the
+     half-built page so the user sees one calm state instead of tabs filling
+     in piece by piece. */
+  #bootLoader {
+    position: fixed; inset: 0; z-index: 100001;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+    background: #0d1117; transition: opacity 0.2s ease;
+  }
+  #bootLoader.done { opacity: 0; pointer-events: none; }
+  #bootLoader .bl-name { color: #4a9eff; font-size: 20px; font-weight: 600; letter-spacing: 0.08em; }
+  #bootLoader .bl-word { color: #6b7785; font-size: 13px; }
+  #bootLoader .bl-track { width: 160px; height: 3px; border-radius: 2px; background: #1a2a3a; overflow: hidden; }
+  #bootLoader .bl-bar {
+    width: 40%; height: 100%; border-radius: 2px; background: #4a9eff;
+    animation: bl-slide 1.1s ease-in-out infinite;
+  }
+  @keyframes bl-slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+  @media (prefers-reduced-motion: reduce) {
+    #bootLoader .bl-bar { animation: none; width: 100%; opacity: 0.5; }
+  }
 </style>
 </head>
 <body>
+
+<div id="bootLoader" role="status" aria-live="polite">
+  <div class="bl-name">OG-E</div>
+  <div class="bl-track"><div class="bl-bar"></div></div>
+  <div class="bl-word">Loading</div>
+</div>
 
 <div class="top-bar">
   <div class="tabs" role="tablist">
