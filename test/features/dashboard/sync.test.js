@@ -148,6 +148,59 @@ describe('Sync tab renderer', () => {
   });
 });
 
+describe('Sync tab — deferred while hidden', () => {
+  // The inventory needs the FULL storage snapshot; while the Sync tab is not
+  // the active section it must not read it (boot cost, every sync write).
+  const mountHidden = () => {
+    document.body.innerHTML = '<section class="tab-section" id="syncSection"><div id="syncBody"></div></section>';
+  };
+
+  it('does not read storage at install while its section is inactive', async () => {
+    mountHidden();
+    installSync();
+    await flush();
+    expect(mockStore.getAll).not.toHaveBeenCalled();
+    expect($('#syncBody').childElementCount).toBe(0);
+  });
+
+  it('shown() paints the skipped render once the section is active', async () => {
+    mountHidden();
+    store.set('s2-pl:oge_players', { a: 1 });
+    const api = installSync();
+    await flush();
+    $('#syncSection').classList.add('active');
+    api.shown();
+    await flush();
+    expect(mockStore.getAll).toHaveBeenCalledTimes(1);
+    expect($('.sync-universe').textContent).toBe('s2-pl');
+  });
+
+  it('a storage change while hidden is painted on the next show, not before', async () => {
+    vi.useFakeTimers();
+    try {
+      document.body.innerHTML = '<section class="tab-section active" id="syncSection"><div id="syncBody"></div></section>';
+      const api = installSync();
+      await flush();
+      expect(mockStore.getAll).toHaveBeenCalledTimes(1);
+      $('#syncSection').classList.remove('active');
+      store.set('s3-pl:oge_players', { a: 1 });
+      for (const cb of onChangedCbs) cb({ 's3-pl:oge_players': {} });
+      await vi.advanceTimersByTimeAsync(400);
+      expect(mockStore.getAll).toHaveBeenCalledTimes(1);
+      $('#syncSection').classList.add('active');
+      api.shown();
+      await flush();
+      expect(mockStore.getAll).toHaveBeenCalledTimes(2);
+      // Nothing changed since → a second show does not re-read.
+      api.shown();
+      await flush();
+      expect(mockStore.getAll).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('Sync tab — abandon a server (archive → delete gate)', () => {
   // The whole point of these tests: the destructive control must be
   // UNREACHABLE until an archive has actually downloaded AND the universe id

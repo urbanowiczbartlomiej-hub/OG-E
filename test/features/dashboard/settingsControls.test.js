@@ -13,7 +13,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../../src/lib/storage.js', () => ({
   chromeStore: {
-    get: vi.fn(), set: vi.fn(), getAll: vi.fn(), remove: vi.fn(), onChanged: vi.fn(),
+    get: vi.fn(), set: vi.fn(), getAll: vi.fn(), getKeys: vi.fn(), remove: vi.fn(), onChanged: vi.fn(),
   },
   safeLS: { bool: () => false, get: () => null, set: () => {}, remove: () => {}, json: () => null, setJSON: () => {} },
 }));
@@ -60,13 +60,14 @@ const buildDom = () => {
 beforeEach(() => {
   store.clear();
   onChangedCbs = [];
-  for (const k of ['get', 'set', 'getAll', 'remove', 'onChanged']) mockStore[k].mockReset();
+  for (const k of ['get', 'set', 'getAll', 'getKeys', 'remove', 'onChanged']) mockStore[k].mockReset();
   mockStore.get.mockImplementation((/** @type {string} */ k) => Promise.resolve(store.get(k)));
   mockStore.set.mockImplementation((/** @type {string} */ k, /** @type {unknown} */ v) => {
     store.set(k, v); return Promise.resolve();
   });
   mockStore.remove.mockImplementation((/** @type {string} */ k) => { store.delete(k); return Promise.resolve(); });
   mockStore.getAll.mockImplementation(() => Promise.resolve(Object.fromEntries(store)));
+  mockStore.getKeys.mockImplementation(() => Promise.resolve([...store.keys()]));
   mockStore.onChanged.mockImplementation((/** @type {any} */ cb) => { onChangedCbs.push(cb); return () => {}; });
   buildDom();
 });

@@ -274,6 +274,44 @@ describe('chromeStore', () => {
     });
   });
 
+  describe('getKeys', () => {
+    it('uses storage.local.getKeys when the browser has it (no value read)', async () => {
+      const getKeys = vi.fn((/** @type {(keys: string[]) => void} */ cb) => cb(['a', 'b:oge_apiCache']));
+      /** @type {any} */ (localApi).getKeys = getKeys;
+      const keys = await chromeStore.getKeys();
+      expect(keys).toEqual(['a', 'b:oge_apiCache']);
+      expect(getKeys).toHaveBeenCalledTimes(1);
+      expect(localApi.get).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the full get(null) read when getKeys is absent', async () => {
+      localApi.get.mockImplementationOnce(
+        (
+          /** @type {string | null} */ _k,
+          /** @type {(items: Record<string, unknown>) => void} */ cb,
+        ) => {
+          cb({ x: 1, 'y:oge_colonyHistory': [] });
+        },
+      );
+      const keys = await chromeStore.getKeys();
+      expect(keys).toEqual(['x', 'y:oge_colonyHistory']);
+      expect(localApi.get).toHaveBeenCalledWith(null, expect.any(Function));
+    });
+
+    it('falls back to get(null) when getKeys throws (promise-only signature)', async () => {
+      /** @type {any} */ (localApi).getKeys = vi.fn(() => { throw new TypeError('no callback form'); });
+      localApi.get.mockImplementationOnce(
+        (
+          /** @type {string | null} */ _k,
+          /** @type {(items: Record<string, unknown>) => void} */ cb,
+        ) => {
+          cb({ only: true });
+        },
+      );
+      expect(await chromeStore.getKeys()).toEqual(['only']);
+    });
+  });
+
   describe('remove', () => {
     it('forwards a string key to api.remove and resolves void', async () => {
       const result = await chromeStore.remove('my-key');
@@ -339,6 +377,10 @@ describe('chromeStore', () => {
     it('get resolves with undefined', async () => {
       const value = await chromeStore.get('k');
       expect(value).toBeUndefined();
+    });
+
+    it('getKeys resolves with [] (no throw)', async () => {
+      expect(await chromeStore.getKeys()).toEqual([]);
     });
 
     it('getAll resolves with {} (no throw)', async () => {
