@@ -64,6 +64,17 @@ const el = (tag, cls, text) => {
 /** @param {number} v */
 const fmtInt = (v) => (Number.isFinite(v) ? Math.round(v).toLocaleString('en-US').replace(/,/g, ' ') : '∞');
 
+/**
+ * A bar's colony count: whole numbers as such, a spread (fractional) count
+ * with one decimal — "0.4", "1.6".
+ *
+ * @param {number} c
+ */
+const fmtCount = (c) => {
+  const r = Math.round(c * 10) / 10;
+  return Number.isInteger(r) ? String(r) : r.toFixed(1);
+};
+
 /** One document-level "click elsewhere closes the card" listener for the page. */
 let outsideCloseWired = false;
 
@@ -216,14 +227,15 @@ export const renderColonyModelChart = (o) => {
     const label = bin.start === bin.end ? String(bin.start) : `${bin.start}-${bin.end}`;
     const group = el('div', 'bar-group');
     group.dataset.i = String(i);
-    // Natural counts are fractional (spread colonies): label the rounded value.
-    const shownCount = Math.round(bin.count);
-    group.appendChild(el('div', 'bar-count', shownCount ? String(shownCount) : ''));
+    // Natural / Today counts are fractional (each colony spread over the span
+    // it can come from): label them as such, or a 0.4 bar reads as an empty
+    // label over a visible bar.
+    group.appendChild(el('div', 'bar-count', bin.count >= 0.05 ? fmtCount(bin.count) : ''));
     const bar = el('div', 'bar');
     const visible = bin.count >= 0.05;
     bar.style.height = (visible ? Math.max(Math.round((bin.count / scale) * BAR_AREA_PX), MIN_BAR_PX) : 0) + 'px';
     if (!visible) bar.style.minHeight = '0';
-    bar.title = `${label}: ${Number.isInteger(bin.count) ? bin.count : bin.count.toFixed(1)}x`;
+    bar.title = `${label}: ${fmtCount(bin.count)}x`;
     group.appendChild(bar);
     group.appendChild(el('div', 'bar-label', label));
     chartEl.appendChild(group);
@@ -289,7 +301,7 @@ export const renderColonyModelChart = (o) => {
     pop.textContent = '';
     const label = bin.start === bin.end ? String(bin.start) : `${bin.start}–${bin.end}`;
     pop.appendChild(el('div', 'rp-head', mode === 'natural' ? `Natural ${label}` : mode === 'today' ? `Today ${label} fields` : `${label} fields`));
-    row('Mine', String(Math.round(bin.count)));
+    row('Mine', fmtCount(bin.count));
     if (modelled) {
       // Expected for the colonies actually on screen (not the 50-colony target).
       const exp = mode === 'natural'
