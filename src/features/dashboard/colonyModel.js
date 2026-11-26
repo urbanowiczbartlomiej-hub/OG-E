@@ -154,6 +154,12 @@ export const renderColonyModelChart = (o) => {
     // in [252, 253)), but that bin would be empty forever (~1 in 3 million).
     hi = Math.max(hi, Math.floor(max * Math.max(...kList)) + serverBonus);
   }
+  // Also reach today's top: the bar card prices odds at TODAY's bonus, so when
+  // the colonies on screen were rolled at a smaller one, the bars between their
+  // ceiling and today's (e.g. P7 385 → 389) must exist to be tapped.
+  if (mode === 'shown' && o.todayK != null) {
+    hi = Math.max(hi, Math.floor(max * o.todayK) + serverBonus);
+  }
   // Bar width follows the SCREEN only (as the plain chart): one field per bar
   // whenever it fits, grouped just enough to keep bars legible.
   const availableWidth = chartEl.clientWidth || Math.max(200, window.innerWidth - 40);
