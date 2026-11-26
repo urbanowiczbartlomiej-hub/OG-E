@@ -4,6 +4,34 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.75.0] — 2026-11-26
+
+### Added
+
+- **Today view in the colony histogram.** A third chip next to Shown and
+  Natural redraws every colony at the size bonus you have today, so colonies
+  taken at a smaller bonus can be compared with what you would roll now. Tap a
+  bar to see its odds at today's bonus.
+- **Loading screen for the dashboard.** The dashboard shows a short loading
+  screen until it is ready, instead of tabs filling in piece by piece.
+
+### Changed
+
+- **The dashboard opens about twice as fast.** It no longer reads all stored
+  data just to list your universes, the Sync tab reads its data only when you
+  open it, and two Colonizations views are drawn once instead of twice.
+
+### Fixed
+
+- **The histogram axis reaches today's largest size.** With a model shown, the
+  axis now ends at the biggest planet you can get at today's size bonus, so the
+  top bars and their odds no longer stop short at the size of your older
+  colonies.
+- **No numbers on near-empty bars.** In Natural and Today, a colony is spread
+  over the sizes it can come from. Bars now show whole numbers only, and a bar
+  holding less than half a colony shows none. The exact share (for example
+  0.4) is in the card when you tap the bar.
+
 ## [1.74.0] — 2026-11-25
 
 ### Added
