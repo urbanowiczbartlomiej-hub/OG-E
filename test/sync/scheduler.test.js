@@ -48,6 +48,7 @@ vi.mock('../../src/sync/gist.js', () => ({
   writeGistData: vi.fn(),
   getToken: vi.fn(() => 'ghp_testtoken'),
   setStatus: vi.fn(),
+  dataWriteBlockedUntil: vi.fn(() => 0),
 }));
 
 import {
@@ -60,6 +61,7 @@ import {
   writeGistData,
   setStatus,
   getToken,
+  dataWriteBlockedUntil,
 } from '../../src/sync/gist.js';
 import { historyStore } from '../../src/state/history.js';
 import { colonizeDecisionsStore } from '../../src/state/colonizeDecisions.js';
@@ -178,6 +180,9 @@ beforeEach(() => {
   // so each test starts from a known "no map yet" state (installSync re-seeds
   // deterministically under fake timers).
   localStorage.removeItem('oge_settingsTs');
+  // Data-write spacing (60 s) is persisted; start each test with no prior write.
+  localStorage.removeItem('oge_lastDataWriteAt');
+  /** @type {import('vitest').Mock} */ (dataWriteBlockedUntil).mockReturnValue(0);
 });
 
 afterEach(() => {
@@ -267,6 +272,49 @@ describe('installSync — initial boot', () => {
     // returned the cached handle (the onChanged listener / store subs were
     // installed once; disposing once tears everything down).
     expect(dispose2).toBe(dispose1);
+  });
+});
+
+describe('data upload — gist write budget', () => {
+  // GitHub meters gist PATCHes at 100/h (gist_update); the data sync must
+  // leave the alarm clock's reserve alone and PATCH at most once a minute.
+  const arm = () => {
+    /** @type {import('vitest').Mock} */ (fetchGistData).mockResolvedValue(payload());
+    /** @type {import('vitest').Mock} */ (writeGistData).mockResolvedValue(undefined);
+  };
+
+  it('a second change inside 60 s of the last PATCH waits for the spacing', async () => {
+    arm();
+    installSync();
+    await tick(0);
+    clearSyncSpies();
+    colonizeDecisionsStore.set({ '4:30:5': dec(1000) });
+    await tick(15_000);
+    expect(writeGistData).toHaveBeenCalledTimes(1);
+    colonizeDecisionsStore.set({ '4:30:5': dec(1000), '4:31:5': dec(2000) });
+    await tick(15_000);
+    // Debounce fired 15 s after the change, but only ~15 s since the PATCH:
+    // deferred, and the deferral costs no pre-merge GET either.
+    expect(writeGistData).toHaveBeenCalledTimes(1);
+    await tick(46_000);
+    expect(writeGistData).toHaveBeenCalledTimes(2);
+  });
+
+  it('waits for the reset while the hour is down to the alarm-clock reserve', async () => {
+    arm();
+    installSync();
+    await tick(0);
+    clearSyncSpies();
+    const resetAt = Date.now() + 5 * 60_000;
+    /** @type {import('vitest').Mock} */ (dataWriteBlockedUntil).mockReturnValue(resetAt);
+    colonizeDecisionsStore.set({ '4:30:5': dec(1000) });
+    await tick(15_000);
+    expect(fetchGistData).not.toHaveBeenCalled();
+    expect(writeGistData).not.toHaveBeenCalled();
+    // The bucket refills at resetAt — the deferred upload then goes through.
+    /** @type {import('vitest').Mock} */ (dataWriteBlockedUntil).mockReturnValue(0);
+    await tick(5 * 60_000);
+    expect(writeGistData).toHaveBeenCalledTimes(1);
   });
 });
 

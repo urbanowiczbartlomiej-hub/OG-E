@@ -57,6 +57,9 @@ import {
   API_BASE,
   BACKOFF_KEY,
   SYNC_STATUS_MIRROR_BASE,
+  GIST_WRITE_BUDGET_KEY,
+  GIST_WRITE_RESERVE,
+  dataWriteBlockedUntil,
 } from '../../src/sync/gist.js';
 import { readGhCalls, readGhErrors } from '../../src/state/ghCallLog.js';
 import { chromeStore } from '../../src/lib/storage.js';
@@ -277,6 +280,51 @@ describe('gh() API client', () => {
     const body = '{\n  "message": "Bad credentials",\n  "documentation_url": "https://docs.github.com/rest",\n  "status": "401"\n}';
     mockFetch(makeResponse({ ok: false, status: 401, body }));
     await expect(gh('/gists')).rejects.toThrow('HTTP 401: Bad credentials');
+  });
+});
+
+describe('gist write budget (gist_update bucket)', () => {
+  const resetSec = () => Math.floor(Date.now() / 1000) + 30 * 60;
+  const patchResponse = (/** @type {string} */ remaining, /** @type {number} */ reset) => makeResponse({
+    headers: { 'X-RateLimit-Resource': 'gist_update', 'X-RateLimit-Remaining': remaining, 'X-RateLimit-Reset': String(reset) },
+  });
+
+  it('records remaining + reset from a gist_update response', async () => {
+    const reset = resetSec();
+    mockFetch(patchResponse('42', reset));
+    await gh('/gists/x', { method: 'PATCH', body: '{}' });
+    expect(JSON.parse(localStorage.getItem(GIST_WRITE_BUDGET_KEY) || 'null'))
+      .toEqual({ remaining: 42, resetAt: reset * 1000 });
+  });
+
+  it('ignores the core bucket a GET reports', async () => {
+    mockFetch(makeResponse({
+      headers: { 'X-RateLimit-Resource': 'core', 'X-RateLimit-Remaining': '4900', 'X-RateLimit-Reset': String(resetSec()) },
+    }));
+    await gh('/gists/x');
+    expect(localStorage.getItem(GIST_WRITE_BUDGET_KEY)).toBeNull();
+  });
+
+  it('blocks data writes at the reserve until the reset, not above it', async () => {
+    const reset = resetSec();
+    mockFetch(patchResponse(String(GIST_WRITE_RESERVE + 1), reset));
+    await gh('/gists/x', { method: 'PATCH', body: '{}' });
+    expect(dataWriteBlockedUntil(Date.now())).toBe(0);
+    mockFetch(patchResponse(String(GIST_WRITE_RESERVE), reset));
+    await gh('/gists/x', { method: 'PATCH', body: '{}' });
+    expect(dataWriteBlockedUntil(Date.now())).toBe(reset * 1000);
+    // Past the reset the bucket is full again.
+    expect(dataWriteBlockedUntil(reset * 1000 + 1)).toBe(0);
+  });
+
+  it('a 403 from the spent bucket still records the budget', async () => {
+    const reset = resetSec();
+    mockFetch(makeResponse({
+      ok: false, status: 403, body: 'API rate limit exceeded',
+      headers: { 'X-RateLimit-Resource': 'gist_update', 'X-RateLimit-Remaining': '0', 'X-RateLimit-Reset': String(reset) },
+    }));
+    await expect(gh('/gists/x', { method: 'PATCH', body: '{}' })).rejects.toThrow();
+    expect(dataWriteBlockedUntil(Date.now())).toBe(reset * 1000);
   });
 });
 
