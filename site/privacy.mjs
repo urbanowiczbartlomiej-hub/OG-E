@@ -18,12 +18,12 @@ const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, 
 const inline = (s) => {
   /** @type {string[]} */
   const codes = [];
-  let out = esc(s).replace(/`([^`]+)`/g, (_, c) => `\u0000${codes.push(c) - 1}\u0000`);
+  let out = esc(s).replace(/`([^`]+)`/g, (_, c) => `@@CODE${codes.push(c) - 1}@@`);
   out = out
     .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, t, u) => `<a href="${u}">${t}</a>`)
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/(^|[^*])\*([^*\s][^*]*)\*/g, '$1<em>$2</em>');
-  return out.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${codes[Number(i)]}</code>`);
+  return out.replace(/@@CODE(\d+)@@/g,(_, i) => `<code>${codes[Number(i)]}</code>`);
 };
 
 /**
