@@ -154,6 +154,7 @@ import {
   writeGistData,
   setStatus,
   getToken,
+  dataWriteBlockedUntil,
 } from './gist.js';
 import {
   pickSyncedValues,
@@ -281,6 +282,52 @@ const LAST_ACTIVE_KEY = 'oge_lastActiveAt';
  * gets flushed on the next load (the case the boot upload exists for).
  */
 const UPLOAD_PENDING_KEY = 'oge_uploadPending';
+
+/**
+ * Minimum spacing between two data PATCHes from this browser (shared across
+ * tabs and reloads via {@link LAST_DATA_WRITE_KEY}). The 15-s debounce alone
+ * let a colonization wave PATCH after every new colony (~every 24 s → 100
+ * writes in 40 min), exhausting GitHub's 100/h gist_update bucket that the
+ * alarm clock's reminder writes share. One write a minute caps the data sync
+ * at 60/h; cross-device data simply arrives up to a minute later.
+ */
+const DATA_WRITE_SPACING_MS = 60_000;
+
+/** localStorage key: epoch ms of this browser's last data PATCH. */
+const LAST_DATA_WRITE_KEY = 'oge_lastDataWriteAt';
+
+/** The one pending deferred-upload timer (see {@link deferUpload}). */
+/** @type {ReturnType<typeof setTimeout> | null} */
+let deferredUploadTimer = null;
+
+/**
+ * Epoch ms before which a data upload must wait: the spacing since our last
+ * data PATCH, and the gist write reserve kept for the alarm clock. 0 = go.
+ *
+ * @param {number} now
+ * @returns {number}
+ */
+const dataUploadWaitUntil = (now) => {
+  const spaced = safeLS.int(LAST_DATA_WRITE_KEY, 0) + DATA_WRITE_SPACING_MS;
+  const until = Math.max(spaced, dataWriteBlockedUntil(now));
+  return until > now ? until : 0;
+};
+
+/**
+ * Re-run the upload once its wait is over. The dirty flag stays set meanwhile,
+ * so a reload that kills this timer still gets the boot catch-up (which is
+ * gated the same way and simply re-defers).
+ *
+ * @param {number} until Epoch ms.
+ * @returns {void}
+ */
+const deferUpload = (until) => {
+  if (deferredUploadTimer !== null) clearTimeout(deferredUploadTimer);
+  deferredUploadTimer = setTimeout(() => {
+    deferredUploadTimer = null;
+    if (installed) void upload();
+  }, Math.max(1000, until - Date.now() + 1000));
+};
 
 /**
  * Monotonic per-page counter feeding {@link scheduleUpload}'s arm tokens —
@@ -1265,6 +1312,14 @@ const downloadAndMerge = async () => {
 const upload = async () => {
   if (!canStartSync({ cloudSync: settingsStore.get().cloudSync, hasToken: !!getToken(), inFlight }))
     return;
+  // Write budget first: a data upload never spends the gist writes the alarm
+  // clock's ntfy reminders need, and never PATCHes more than once a minute.
+  // Checked before the pre-merge GET so a deferred round costs no request.
+  const waitUntil = dataUploadWaitUntil(Date.now());
+  if (waitUntil) {
+    deferUpload(waitUntil);
+    return;
+  }
   inFlight = true;
   // Snapshot the dirty-flag token BEFORE any local read. A store write landing
   // mid-flight re-arms the flag with a FRESH token (see scheduleUpload), so the
@@ -1381,6 +1436,7 @@ const upload = async () => {
     // burn a request and produce a no-op gist revision.
     if (!gistIsCurrent(remote, mergedSlots)) {
       const updatedAt = new Date().toISOString();
+      safeLS.set(LAST_DATA_WRITE_KEY, String(Date.now()));
       await writeGistData({
         version: 1,
         updatedAt,
@@ -1837,6 +1893,8 @@ export const installSync = () => {
       document.removeEventListener(DAILY_STATE_CHANGED_EVENT, onDailyStateChanged);
       document.removeEventListener(FLEET_REMINDER_CHANGED_EVENT, onFleetReminderChanged);
       unsubStorage();
+      if (deferredUploadTimer !== null) clearTimeout(deferredUploadTimer);
+      deferredUploadTimer = null;
       installed = null;
     },
   };
@@ -1859,6 +1917,8 @@ export const _resetSchedulerForTest = () => {
     installed = null;
   }
   inFlight = false;
+  if (deferredUploadTimer !== null) clearTimeout(deferredUploadTimer);
+  deferredUploadTimer = null;
   applyDepth.clear();
   routesUniverseId = '';
   localUniverseTsMap = {};

@@ -392,6 +392,58 @@ const writtenFiles = (body) => {
 /** Epoch-ms until which {@link gh} short-circuits (0 / past = no backoff). */
 export const getBackoffUntil = () => backoffUntil;
 
+// ── Gist WRITE budget (GitHub's `gist_update` bucket) ────────────────
+//
+// GitHub meters gist PATCHes in their OWN bucket — `X-RateLimit-Resource:
+// gist_update`, **100 writes per hour per user** — independent of the 5000/h
+// core quota every GET reports. Seen live (2026-11-27): a colonization wave
+// re-uploaded the data payload after every new colony (~every 24 s), spent all
+// 100 writes, and the 403 that followed blocked the alarm-clock PATCHes that
+// arm ntfy reminders for landing fleet-saves — the one write that must never
+// starve. So the data sync spends only what is left ABOVE a reserve, and the
+// last {@link GIST_WRITE_RESERVE} writes of each hour stay for the alarm clock.
+// The budget is learned from our own PATCH responses (another device's writes
+// only show up in the next response we get), persisted so it survives OGame's
+// constant reloads.
+
+/** localStorage key: `{ remaining, resetAt }` of the gist_update bucket. */
+export const GIST_WRITE_BUDGET_KEY = 'oge_gistWriteBudget';
+
+/** Gist writes per hour kept for the alarm clock — the data sync stops above it. */
+export const GIST_WRITE_RESERVE = 25;
+
+/**
+ * Record the gist_update bucket from a response's rate headers. No-op for any
+ * other bucket (GETs report `core`).
+ *
+ * @param {Response} res
+ * @returns {void}
+ */
+const noteGistWriteBudget = (res) => {
+  if (res.headers.get('X-RateLimit-Resource') !== 'gist_update') return;
+  const remaining = parseInt(res.headers.get('X-RateLimit-Remaining') || '', 10);
+  const reset = parseInt(res.headers.get('X-RateLimit-Reset') || '', 10);
+  if (!Number.isFinite(remaining) || !(reset > 0)) return;
+  safeLS.setJSON(GIST_WRITE_BUDGET_KEY, { remaining, resetAt: reset * 1000 });
+};
+
+/**
+ * Epoch-ms until which the DATA sync must not write, because the hour's gist
+ * writes are down to the alarm clock's reserve; 0 = free to write. A budget
+ * whose window already reset is ignored (the bucket is full again).
+ *
+ * @param {number} now Epoch ms.
+ * @returns {number}
+ */
+export const dataWriteBlockedUntil = (now) => {
+  const b = /** @type {{ remaining?: number, resetAt?: number } | null} */ (
+    safeLS.json(GIST_WRITE_BUDGET_KEY, null)
+  );
+  if (!b || typeof b.remaining !== 'number' || typeof b.resetAt !== 'number') return 0;
+  if (b.resetAt <= now) return 0;
+  return b.remaining <= GIST_WRITE_RESERVE ? b.resetAt : 0;
+};
+
 // ── Module-local state ──────────────────────────────────────────────
 
 /**
@@ -634,6 +686,7 @@ export const gh = async (path, options = {}) => {
     ...hdr('x-ratelimit-remaining'), ...hdr('x-ratelimit-used'), ...hdr('x-ratelimit-resource'),
   });
 
+  noteGistWriteBudget(res);
   if (res.ok) recordGhCall(call);
   if (!res.ok) {
     // `.catch` makes the read defensive: some error bodies aren't text
