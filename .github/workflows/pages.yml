@@ -16,6 +16,7 @@ on:
     # Tylko realne wejścia strony — commit w src/ nie musi redeployować.
     paths:
       - 'site/**'
+      - 'PRIVACY.md'
       - '.github/workflows/pages.yml'
   workflow_dispatch: # ręczne "opublikuj teraz"
 

@@ -34,6 +34,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { CATEGORIES, CATEGORY_IDS } from './content/_categories.mjs';
 import { validateFeature } from './content/_schema.mjs';
 import { STRINGS } from './content/_strings.mjs';
+import { renderPrivacyPage } from './privacy.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const REPO = join(ROOT, '..');
@@ -689,6 +690,11 @@ const main = async () => {
   // który POMIJA ścieżki zaczynające się od `_`. Nic takiego dziś nie
   // publikujemy, ale plik jest darmowy i zdejmuje całą klasę niespodzianek.
   await writeFile(join(DIST, '.nojekyll'), '', 'utf8');
+
+  // Polityka prywatności jako zwykła strona — to jej adres podaje listing w
+  // Chrome Web Store (widok "blob" na github.com sklep uznał za nieosiągalny).
+  // Źródłem prawdy zostaje PRIVACY.md w repo.
+  await writeFile(join(DIST, 'privacy.html'), renderPrivacyPage(await readFile(join(REPO, 'PRIVACY.md'), 'utf8')), 'utf8');
 
   const pl = byLocale.get('pl') ?? [];
   const drafted = pl.filter((f) => f.status === 'drafted').length;
