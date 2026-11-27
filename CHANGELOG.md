@@ -4,6 +4,18 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.75.1] — 2026-11-27
+
+### Fixed
+
+- **Fleet-save reminders are no longer blocked by cloud sync.** GitHub allows
+  100 gist writes per hour. During a fast colonization run, cloud sync used all
+  of them, and new fleet-save reminders could not be sent to ntfy for up to
+  half an hour (the hourglasses kept pulsing). Cloud sync now keeps the last 25
+  writes of each hour for reminders, and sends your data at most once a
+  minute. Data reaches your other devices up to a minute later; reminders are
+  not delayed.
+
 ## [1.75.0] — 2026-11-26
 
 ### Added
