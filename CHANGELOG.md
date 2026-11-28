@@ -4,6 +4,48 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.76.0] — 2026-11-28
+
+### Added
+
+- **Reminders no longer need GitHub.** The alarm clock used to keep its list of
+  set reminders in your GitHub gist, so a GitHub limit or outage could stop the
+  phone alarms. Your devices now agree on reminders through ntfy itself. An
+  ntfy token is all the alarm clock needs, and one device can no longer cancel
+  a reminder another device set.
+- **Tap a reminder to open the game.** Tapping a notification opens fleet
+  movement on that server.
+- **Planet list fits the window.** With Readability on, the planet list
+  shrinks its rows just enough for every planet to fit without scrolling.
+- **Where to get a token.** The Sync tab shows the path to a GitHub token,
+  with a link that opens the form with the right permission ticked.
+
+### Changed
+
+- **Alarm clock tab is one view.** The five sub-tabs are gone. The ntfy token
+  and topic sit in an open settings block, Ad-hoc, Fleet-save and Expeditions
+  are sections that open their settings in place, and every set reminder is in
+  one list ordered by time.
+- **Fleet-save reminders are always on** while the alarm clock is on. To leave
+  a fleet out, raise Min ships or Min flight. A fleet-save always keeps at
+  least one reminder after landing; if you remove the last one, 10m is put
+  back. The landed-fleet reminder rings at the first after-landing time, and
+  the in-game ACK prompt comes after a quarter of it.
+- **Sync tab.** Your devices and Alliance share sit side by side, each with an
+  On / Off switch and its token. The long explanations open on demand. Stored
+  data is one row per universe that opens its details, and the alliance pool
+  table is folded until you open it.
+- **Daily Run tab.** The Send All and Drop / Up settings are an open block at
+  the top. Moons are marked with the game's moon picture; planets have no icon.
+
+### Fixed
+
+- **Reminders on Firefox Nightly.** Firefox 163 adds a header to requests that
+  ntfy mistook for a message priority, so no reminder could be set. OG-E now
+  states the priority itself.
+- **The micro-fleet caption names the moon** instead of showing "moon".
+- **Sync token check is coloured** green or red, like the ntfy one.
+
 ## [1.75.1] — 2026-11-27
 
 ### Fixed
