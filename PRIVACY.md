@@ -56,6 +56,11 @@ service [ntfy.sh](https://ntfy.sh):
 - Requests go to `https://ntfy.sh/<topic>` only (POST to schedule a
   notification, GET to reconcile the queue, DELETE to cancel). No other
   ntfy endpoint is contacted.
+- The ntfy queue is also where your devices agree on which reminders are
+  set — reminders are **not** stored in your GitHub gist, and work without
+  a GitHub token. For that, each notification carries a link that opens the
+  game's fleet-movement page and, after the `#`, the reminder's identity:
+  its kind, the flight's row id or the body's coordinates, and its times.
 - `<topic>` is derived one-way from your token (`oge-` + a SHA-256
   prefix), so it is unguessable but reproducible across your devices.
   The token is never sent in the URL path — only as ntfy's auth header.

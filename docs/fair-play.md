@@ -239,6 +239,45 @@ reads only the extension's own storage (the cached public-API `universe.xml`
 and `serverData.xml`, the decision log, stored scans). It sends no request,
 runs no timer, and starts no game action. It is a count, not an alarm.
 
+## Alarm-clock reminder kinds — classification (developer's reading of §1.4)
+
+The alarm clock rings on the player's phone (ntfy) for four kinds of reminder.
+Ad-hoc is the textbook §1.4 case — the player taps one fleet. The other three
+are set **per kind**, not per fleet, so they are recorded here explicitly:
+
+- **Fleet-save** — every own fleet above the player's ship threshold and
+  minimum flight time gets reminders around its landing. No separate switch
+  since 1.76.0: it is on whenever the alarm clock is, and the thresholds are
+  the opt-out.
+- **Expedition waves** — reminders around a wave's return (own switch).
+- **Landed fleet** — one reminder after a fleet-save lands, at the first
+  after-landing time, until the player clears it.
+
+**Why this is read as allowed.** §1.4 forbids a tool that *watches the game on
+its own and alerts the player to events* — its stated reason is alerting a
+player "especially while away/inactive". None of these does that:
+
+1. **Only the player's own dispatches.** A reminder exists only for a fleet the
+   player sent themselves. Its time is the flight time the game showed before
+   the send — nothing the player does not already know and could not put into
+   their phone's own alarm.
+2. **Read on the player's page load, never in their absence.** The event list
+   is read when the player loads a game page. OG-E runs no timer, no poll and
+   no background reader; with the game closed it learns nothing and sends
+   nothing. The ring is scheduled in advance at ntfy — it is a clock, not a
+   watcher. Nothing that happens while the player is away (an attack, a
+   recall by someone else, a new event) can ever produce a notification.
+3. **Player-set scope.** The alarm clock is off by default, needs the player's
+   own ntfy token, and each kind's thresholds and times are the player's.
+
+**The honest difference from the letter of §1.4.** Its allowed example is one
+click per fleet; here the player sets a rule for a kind of fleet once, and the
+push goes to an external channel (the §1.4 edge note asks to confirm that with
+a ToolDev). This classification is the developer's interpretation of the
+rule's intent, decided 2026-11-28 — it has not been confirmed by the ToolDev
+team. If they read it differently, the fall-back is a per-kind opt-in switch
+(as before 1.76.0) or per-fleet arming only (the ad-hoc path).
+
 ## What OG-E never does (all grep-verified)
 
 - No origination of a game **request**, and no modification of one beyond the
