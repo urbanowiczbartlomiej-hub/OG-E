@@ -1321,7 +1321,7 @@
   .alarm-state:empty { display: none; }
   .alarm-field { flex: 1 1 220px; min-width: 0; }
   .alarm-field > #remTopic { flex: 1 1 120px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  #remBody .cmd-note a { color: #f2c877; }
+  #remBody .cmd-note a, #syncChannels .cmd-note a { color: #f2c877; }
   /* Privacy: one quiet word under the topic; its text opens as a popover over
      the block instead of stretching the grid (cf. .free-outlook). */
   .alarm-privacy { position: relative; flex: 1 0 100%; font-size: 11px; color: #8a97a3; }
@@ -2333,6 +2333,7 @@
             title="Show token" aria-label="Show token" aria-pressed="false">👁</button>
             <button id="syncNowBtn" type="button">Sync now</button>
           </span>
+          <span class="cmd-note"><a href="https://github.com/settings/tokens/new?scopes=gist&amp;description=OG-E%20sync" target="_blank" rel="noopener">github.com</a> → Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate · scope: gist</span>
           <span id="syncTokenStatus" class="rem-status cmd-note">—</span>
         </div>
         <div class="cmd-cell">
@@ -2370,6 +2371,7 @@
             <button id="allySyncBtn" type="button"
               title="Force one share round now, both ways: writes your observations into the alliance gist AND pulls everyone else's back. While Alliance share is on it also runs automatically about once a day; this button just does it on demand. Same action as the Alliance sync button on the Spyglass tab.">Alliance sync</button>
           </span>
+          <span class="cmd-note"><a href="https://github.com/settings/tokens/new?scopes=gist&amp;description=OG-E%20alliance" target="_blank" rel="noopener">github.com</a> → Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate · scope: gist · on a dedicated account</span>
           <span id="allyShareStatus" class="rem-status cmd-note">—</span>
         </div>
         <div class="cmd-cell">
