@@ -63,7 +63,7 @@ describe('Sync tab renderer', () => {
     expect(empty.textContent).toMatch(/No synced data/i);
   });
 
-  it('renders a card with the universe id, a freshness chip, and ↑/↓ line', async () => {
+  it('renders a row with the universe id, a freshness chip, last sync and sizes', async () => {
     const now = Date.now();
     store.set('s1-en:oge_syncStatus', { up: new Date(now - 5 * 60 * 1000).toISOString(), down: null });
     store.set('s1-en:oge_players', { a: 1, b: 2 });
@@ -76,9 +76,15 @@ describe('Sync tab renderer', () => {
     const chip = $('.sync-chip');
     expect(chip.className).toContain('sync-chip-ok');
     expect(chip.textContent).toBe('5m ago');
-    const line = $('.sync-status-line');
-    expect(line.textContent).toContain('↑');
-    expect(line.textContent).toContain('↓');
+    const row = $('.sync-row:not(.sync-row-cols)');
+    expect(row.querySelector('.sync-when')?.textContent).toMatch(/^up .* · down /);
+    expect(row.querySelectorAll('.num')).toHaveLength(2); // synced | local
+    // Closed by default; a click opens the detail (category table + Abandon).
+    expect($('.sync-detail').classList.contains('open')).toBe(false);
+    row.click();
+    await flush();
+    expect($('.sync-detail').classList.contains('open')).toBe(true);
+    expect($('.sync-detail .sync-table')).toBeTruthy();
   });
 
   it('renders an error line when status.err is present, as literal text', async () => {

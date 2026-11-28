@@ -251,28 +251,50 @@ const renderAbandonPanel = (u) => {
 };
 
 /**
- * Build one universe's card: header (id + freshness chip), the ↑/↓ status
- * line (+ error), and the inventory table with a total row.
+ * Build one universe's entry in the list: a one-line ROW (id, freshness chip,
+ * last sync or the error, synced / local size) that opens its DETAIL — the
+ * category table with totals, and Abandon. The detail is always built (hidden
+ * while closed), so a background repaint never loses a half-finished Abandon.
  *
  * @param {UniverseInventory} u
  * @param {number} now  Epoch-ms for the freshness calc.
  * @returns {HTMLElement}
  */
 const renderUniverseCard = (u, now) => {
-  const card = el('div', 'sync-card');
+  const wrap = el('div', 'sync-card');
+  const open = isOpen(u.universeId);
 
-  const head = el('div', 'sync-card-head');
-  head.appendChild(el('span', 'sync-universe', u.universeId));
+  const row = el('div', open ? 'sync-row open' : 'sync-row');
+  row.setAttribute('role', 'button');
+  row.tabIndex = 0;
+  row.setAttribute('aria-expanded', String(open));
+  row.appendChild(el('span', 'sync-universe', u.universeId));
   const fresh = classifySyncFreshness(u.status, now);
-  head.appendChild(el('span', `sync-chip sync-chip-${fresh.tone}`, fresh.label));
-  card.appendChild(head);
-
+  row.appendChild(el('span', `sync-chip sync-chip-${fresh.tone}`, fresh.label));
   const status = u.status || {};
-  const line = el('div', 'sync-status-line');
-  line.appendChild(el('span', null, `↑ ${fmtTime(status.up)}`));
-  line.appendChild(el('span', null, `↓ ${fmtTime(status.down)}`));
-  card.appendChild(line);
-  if (status.err) card.appendChild(el('div', 'sync-err', `⚠ ${status.err}`));
+  // One line: the error when there is one (that is what needs reading),
+  // otherwise when data last went up / came down.
+  row.appendChild(status.err
+    ? el('span', 'sync-when err sync-err', status.err)
+    : el('span', 'sync-when', `up ${fmtTime(status.up)} · down ${fmtTime(status.down)}`));
+  row.appendChild(el('span', 'num', formatBytes(u.syncedBytes)));
+  row.appendChild(el('span', 'num', formatBytes(u.localBytes)));
+  const toggleOpen = () => {
+    if (openUniverses.has(u.universeId)) openUniverses.delete(u.universeId);
+    else openUniverses.add(u.universeId);
+    closedByUser.add(u.universeId);
+    void render();
+  };
+  row.addEventListener('click', toggleOpen);
+  row.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    toggleOpen();
+  });
+  wrap.appendChild(row);
+
+  const card = el('div', open ? 'sync-detail open' : 'sync-detail');
+  wrap.appendChild(card);
 
   if (u.categories.length) {
     const table = el('table', 'sync-table');
@@ -351,7 +373,36 @@ const renderUniverseCard = (u, now) => {
   card.appendChild(foot);
   if (abandonOpenFor === u.universeId) card.appendChild(renderAbandonPanel(u));
 
-  return card;
+  return wrap;
+};
+
+/** Universes whose detail is open. */
+/** @type {Set<string>} */
+const openUniverses = new Set();
+/** Universes the player toggled by hand — the default-open rule no longer applies to them. */
+/** @type {Set<string>} */
+const closedByUser = new Set();
+
+/** The universe the dashboard was opened for (`?host=`) — open by default. */
+const hostUniverse = () => {
+  try {
+    return new URLSearchParams(location.search).get('host') ?? '';
+  } catch {
+    return '';
+  }
+};
+
+/**
+ * Is this universe's detail open? By hand-toggle when there was one; otherwise
+ * open for the dashboard's own universe and whenever Abandon is in progress.
+ *
+ * @param {string} universeId
+ * @returns {boolean}
+ */
+const isOpen = (universeId) => {
+  if (abandonOpenFor === universeId) return true;
+  if (closedByUser.has(universeId)) return openUniverses.has(universeId);
+  return universeId === hostUniverse();
 };
 
 /**
@@ -380,7 +431,18 @@ const render = async () => {
     return;
   }
   const now = Date.now();
+  // Column captions, once, over the rows.
+  const cols = el('div', 'sync-row sync-row-cols');
+  for (const [cls, text] of [['', 'Universe'], ['', ''], ['sync-when', 'Last sync'], ['num', 'Synced'], ['num', 'Local']]) {
+    cols.appendChild(el('span', cls || null, text));
+  }
+  bodyEl.appendChild(cols);
   for (const u of inventory) bodyEl.appendChild(renderUniverseCard(u, now));
+  const total = document.getElementById('syncStoreTotal');
+  if (total) {
+    const bytes = inventory.reduce((n, u) => n + u.totalBytes, 0);
+    total.textContent = `${inventory.length} universe${inventory.length === 1 ? '' : 's'} · ${formatBytes(bytes)}`;
+  }
 };
 
 /**
@@ -429,5 +491,7 @@ export const _resetSyncForTest = () => {
   renderTimer = null;
   abandonOpenFor = '';
   abandonFlows.clear();
+  openUniverses.clear();
+  closedByUser.clear();
   staleWhileHidden = false;
 };
