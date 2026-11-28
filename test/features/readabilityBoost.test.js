@@ -457,3 +457,53 @@ describe('readabilityBoost', () => {
     expect(body).toMatch(/margin:\s*0\s*!important/);
   });
 });
+
+describe('readabilityBoost — planet list that fits the window', () => {
+  /** A planet bar with `n` rows. @param {number} n */
+  const planetBar = (n) => {
+    document.body.innerHTML =
+      `<div id="planetList">${'<div class="smallplanet"></div>'.repeat(n)}</div>`;
+  };
+  const root = () => document.documentElement;
+
+  beforeEach(() => {
+    _resetReadabilityBoostForTest();
+    document.getElementById(STYLE_ID)?.remove();
+    settingsStore.update((s) => ({ ...s, readabilityBoost: true }));
+  });
+  afterEach(() => {
+    _resetReadabilityBoostForTest();
+    document.body.innerHTML = '';
+  });
+
+  it('leaves the game height alone while the list fits', () => {
+    planetBar(5);
+    installReadabilityBoost();
+    expect(root().classList.contains('oge-fit-planets')).toBe(false);
+    expect(root().style.getPropertyValue('--oge-planet-row-h')).toBe('');
+  });
+
+  it('shrinks the rows to the height that fits, and re-fits on resize', () => {
+    // happy-dom: list top = 0. Room = innerHeight − 24; a row = room / n − 1.
+    const fitFor = (/** @type {number} */ n) =>
+      Math.max(36, Math.floor((window.innerHeight - 24) / n) - 1);
+    planetBar(18);
+    installReadabilityBoost();
+    expect(fitFor(18)).toBeLessThan(52);
+    expect(root().classList.contains('oge-fit-planets')).toBe(true);
+    expect(root().style.getPropertyValue('--oge-planet-row-h')).toBe(`${fitFor(18)}px`);
+
+    planetBar(60); // far too many → floor at the minimum, never smaller
+    window.dispatchEvent(new Event('resize'));
+    expect(root().style.getPropertyValue('--oge-planet-row-h')).toBe('36px');
+  });
+
+  it('dispose puts the game height back', () => {
+    planetBar(60);
+    const dispose = installReadabilityBoost();
+    expect(root().classList.contains('oge-fit-planets')).toBe(true);
+    dispose();
+    expect(root().classList.contains('oge-fit-planets')).toBe(false);
+    expect(root().style.getPropertyValue('--oge-planet-row-h')).toBe('');
+  });
+});

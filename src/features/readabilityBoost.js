@@ -1,6 +1,7 @@
 // @ts-check
 
 import { settingsStore } from '../state/settings.js';
+import { GAME } from '../lib/gameDom.js';
 import { createVisibilityObserver } from '../lib/visibilityObserver.js';
 
 // Contrast + legibility boost for two chronically painful AGR / OGame
@@ -568,7 +569,22 @@ body:has(.messagePaginator) {
   padding: 0 calc(4px * var(--oge-touch-k, 1)) !important;
   white-space: nowrap !important;
 }
+/* Planet list that fits the window. The game gives every row a fixed 52px
+   (#planetbarcomponent #rechts #myPlanets .smallplanet), so with many colonies
+   the last ones fall below the fold and the list has to be scrolled. While the
+   list overflows, syncPlanetRowHeight() publishes the row height that fits as
+   --oge-planet-row-h and flags <html>; with room to spare nothing is touched. */
+html.oge-fit-planets #planetbarcomponent #rechts #myPlanets .smallplanet {
+  height: var(--oge-planet-row-h) !important;
+}
 `;
+
+/** The game's own planet-list row height (px). */
+const PLANET_ROW_GAME_PX = 52;
+/** Smallest row we shrink to — below it the planet picture and coords clip. */
+const PLANET_ROW_MIN_PX = 36;
+/** Kept free under the list: the game's fixed footer strip (19px) + a little air. */
+const PLANET_LIST_BOTTOM_GAP_PX = 24;
 
 /**
  * Active install handle, or `null` when not installed. Held at module
@@ -633,10 +649,44 @@ export const installReadabilityBoost = () => {
     document.documentElement?.style.setProperty('--oge-touch-k', k.toFixed(3));
   };
 
+  /**
+   * Shrink the planet-list rows just enough for the whole list to fit the
+   * window (see the CSS note). Rows never go below {@link PLANET_ROW_MIN_PX}
+   * — past that the planet picture and coords stop fitting — and are never
+   * enlarged: with room to spare the game's own height stays.
+   *
+   * @returns {void}
+   */
+  const syncPlanetRowHeight = () => {
+    const root = document.documentElement;
+    const list = document.querySelector(GAME.PLANET_LIST);
+    const rows = list ? list.querySelectorAll('.smallplanet').length : 0;
+    let fit = PLANET_ROW_GAME_PX;
+    if (list && rows > 0) {
+      const top = list.getBoundingClientRect().top + (globalThis.scrollY ?? 0);
+      const room = window.innerHeight - top - PLANET_LIST_BOTTOM_GAP_PX;
+      // Each row carries a 1px bottom margin.
+      fit = Math.floor(room / rows) - 1;
+    }
+    if (fit >= PLANET_ROW_GAME_PX) {
+      root.classList.remove('oge-fit-planets');
+      root.style.removeProperty('--oge-planet-row-h');
+      return;
+    }
+    root.style.setProperty('--oge-planet-row-h', `${Math.max(PLANET_ROW_MIN_PX, fit)}px`);
+    root.classList.add('oge-fit-planets');
+  };
+  const onPlanetsReady = () => syncPlanetRowHeight();
+
   const inject = () => {
     if (styleEl && styleEl.parentNode) return;
     syncTouchScale();
     window.addEventListener('resize', syncTouchScale);
+    // The planet bar does not exist yet at document_start — measure once the
+    // DOM is there, and again whenever the window changes size.
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onPlanetsReady);
+    else syncPlanetRowHeight();
+    window.addEventListener('resize', syncPlanetRowHeight);
     styleEl = document.createElement('style');
     styleEl.id = STYLE_ID;
     styleEl.textContent = CSS;
@@ -654,6 +704,10 @@ export const installReadabilityBoost = () => {
     styleEl = null;
     window.removeEventListener('resize', syncTouchScale);
     document.documentElement?.style.removeProperty('--oge-touch-k');
+    window.removeEventListener('resize', syncPlanetRowHeight);
+    document.removeEventListener('DOMContentLoaded', onPlanetsReady);
+    document.documentElement?.classList.remove('oge-fit-planets');
+    document.documentElement?.style.removeProperty('--oge-planet-row-h');
   };
 
   // ─── Countdown suffix trimmer ─────────────────────────────────────
