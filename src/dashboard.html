@@ -596,8 +596,17 @@
     letter-spacing: .02em; color: #a7b8cb;
   }
   .cmd-unit { font-size: 11px; color: #5f6c7b; }
-  /* A keyword + its control that must wrap as ONE unit (Daily Run settings). */
-  .cmd-pair { display: inline-flex; align-items: center; gap: 6px; }
+  /* Daily Run settings: the two grid columns ARE the two button zones (Send
+     All | Drop / Up), each a heading cell over its keyword cells — so the
+     block reads like the Colonizations config instead of two long rows. */
+  #routesConfig .routes-cfg-col { display: flex; flex-direction: column; min-width: 0; }
+  #routesConfig .routes-cfg-col + .routes-cfg-col { border-left: 1px solid #1a2735; }
+  #routesConfig .routes-cfg-col > .cmd-cell + .cmd-cell { border-top: 1px solid #1a2735; }
+  #routesConfig .routes-cfg-head { min-height: 0; padding-top: 8px; padding-bottom: 8px; background: #0f1a26; }
+  #routesConfig .routes-cfg-head > span:first-child { font-size: 12px; font-weight: bold; color: #4a9eff; }
+  @media (max-width: 640px) {
+    #routesConfig .routes-cfg-col + .routes-cfg-col { border-left: none; border-top: 1px solid #1a2735; }
+  }
   /* One-line visible description inside a cell (wraps under the control) —
      tooltips explain, but on touch they don't exist, so the essence lives
      here. The channel tag wears the dossier's Watch-via chip hue. */
@@ -2152,44 +2161,59 @@
        walk on to the next body after a Drop / Up. Saved instantly; wired by
        features/dashboard/routes.js (the chip-group ids are the contract). -->
   <div class="gv-card gv-config cmd-grid" id="routesConfig">
-    <div class="cmd-cell cmd-wide" id="routesCollectRow"
-      title="What the in-game Send All zone does when tapped. The collect target is set in game by holding the Send All zone.">
-      <span class="cmd-cap">Send All</span>
-      <span class="cmd-pair"><span class="cmd-unit">Mission</span>
-      <div class="chip-group seg" id="routesCollectMission" data-value="4">
-        <button type="button" data-value="4" title="Fleet stays at the collect target (default)">Deployment</button>
-        <button type="button" data-value="3" title="Drop the resources and fly back">Transport</button>
-      </div></span>
-      <span class="cmd-pair"><span class="cmd-unit">Ships</span>
-      <div class="chip-group seg" id="routesCollectShips" data-value="most">
-        <button type="button" data-value="most" title="Leave a small reserve on the source (default)">Most</button>
-        <button type="button" data-value="all" title="Send every ship">All</button>
-      </div></span>
-      <span class="cmd-pair"><span class="cmd-unit">Resources</span>
-      <div class="chip-group seg" id="routesCollectResources" data-value="most">
-        <button type="button" data-value="most" title="Leave some resources behind (default)">Most</button>
-        <button type="button" data-value="all" title="Load everything the fleet can carry">All</button>
-      </div></span>
-      <span class="cmd-note">Target: hold Send All in game</span>
+    <div class="routes-cfg-col">
+      <div class="cmd-cell routes-cfg-head"
+        title="What the in-game Send All zone does when tapped. The collect target is set in game by holding the Send All zone.">
+        <span>Send All</span><span class="cmd-unit">target: hold Send All in game</span>
+      </div>
+      <div class="cmd-cell">
+        <span class="cmd-cap">Mission</span>
+        <div class="chip-group seg" id="routesCollectMission" data-value="4">
+          <button type="button" data-value="4" title="Fleet stays at the collect target (default)">Deployment</button>
+          <button type="button" data-value="3" title="Drop the resources and fly back">Transport</button>
+        </div>
+      </div>
+      <div class="cmd-cell">
+        <span class="cmd-cap">Ships</span>
+        <div class="chip-group seg" id="routesCollectShips" data-value="most">
+          <button type="button" data-value="most" title="Leave a small reserve (default)">Most</button>
+          <button type="button" data-value="all" title="Send every ship">All</button>
+        </div>
+      </div>
+      <div class="cmd-cell">
+        <span class="cmd-cap">Resources</span>
+        <div class="chip-group seg" id="routesCollectResources" data-value="most">
+          <button type="button" data-value="most" title="Leave some resources behind (default)">Most</button>
+          <button type="button" data-value="all" title="Load everything the fleet can carry">All</button>
+        </div>
+      </div>
     </div>
-    <div class="cmd-cell cmd-wide" id="routesPairRow"
-      title="The in-game Drop / Up zone: everything from a moon down to its planet, or from a planet up to its moon.">
-      <span class="cmd-cap">Drop / Up</span>
-      <span class="cmd-pair"><span class="cmd-unit">Ships</span>
-      <div class="chip-group seg" id="routesPairShips" data-value="most">
-        <button type="button" data-value="most" title="Leave a small reserve (default)">Most</button>
-        <button type="button" data-value="all" title="Send every ship">All</button>
-      </div></span>
-      <span class="cmd-pair"><span class="cmd-unit">Resources</span>
-      <div class="chip-group seg" id="routesPairResources" data-value="most">
-        <button type="button" data-value="most" title="Leave some resources behind (default)">Most</button>
-        <button type="button" data-value="all" title="Load everything the fleet can carry">All</button>
-      </div></span>
-      <span class="cmd-pair"><span class="cmd-unit">Next</span>
-      <div class="chip-group seg" id="routesPairNext" data-value="on">
-        <button type="button" data-value="on" title="After a send, go to the next moon / planet (default)">On</button>
-        <button type="button" data-value="off" title="Stay on this body after a send">Off</button>
-      </div></span>
+    <div class="routes-cfg-col">
+      <div class="cmd-cell routes-cfg-head"
+        title="The in-game Drop / Up zone: everything from a moon down to its planet, or from a planet up to its moon.">
+        <span>Drop / Up</span><span class="cmd-unit">moon ↔ its planet</span>
+      </div>
+      <div class="cmd-cell">
+        <span class="cmd-cap">Ships</span>
+        <div class="chip-group seg" id="routesPairShips" data-value="most">
+          <button type="button" data-value="most" title="Leave a small reserve (default)">Most</button>
+          <button type="button" data-value="all" title="Send every ship">All</button>
+        </div>
+      </div>
+      <div class="cmd-cell">
+        <span class="cmd-cap">Resources</span>
+        <div class="chip-group seg" id="routesPairResources" data-value="most">
+          <button type="button" data-value="most" title="Leave some resources behind (default)">Most</button>
+          <button type="button" data-value="all" title="Load everything the fleet can carry">All</button>
+        </div>
+      </div>
+      <div class="cmd-cell">
+        <span class="cmd-cap">Next</span>
+        <div class="chip-group seg" id="routesPairNext" data-value="on">
+          <button type="button" data-value="on" title="After a send, go to the next moon / planet (default)">On</button>
+          <button type="button" data-value="off" title="Stay on this body after a send">Off</button>
+        </div>
+      </div>
     </div>
   </div>
 
