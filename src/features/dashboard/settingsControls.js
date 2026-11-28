@@ -222,10 +222,18 @@ export const installSettingsControls = () => {
 
   // "Sync now" folds in token validation (mirrors the old in-game UX): validate
   // first (painted), then signal every universe's scheduler.
+  // The validation line wears its verdict as colour too (✓ green / ✗ red),
+  // the same as the ntfy token's status in the Alarm clock tab.
+  const paintGistStatus = (/** @type {string} */ text) => {
+    if (!gistStatus) return;
+    gistStatus.textContent = text;
+    gistStatus.classList.toggle('ok', text.startsWith('✓'));
+    gistStatus.classList.toggle('err', text.startsWith('✗'));
+  };
   syncNow?.addEventListener('click', () => {
-    if (gistStatus) gistStatus.textContent = 'Validating…';
+    paintGistStatus('Validating…');
     void validateGistToken(gist?.value.trim() ?? '').then((line) => {
-      if (gistStatus) gistStatus.textContent = `${line} · syncing…`;
+      paintGistStatus(`${line} · syncing…`);
       void requestSyncAll();
       // Drop the "syncing…" suffix once a sync round actually lands (any
       // per-universe status mirror changes) or after a fallback timeout — the
@@ -239,7 +247,7 @@ export const installSettingsControls = () => {
         settled = true;
         stop();
         clearTimeout(timer);
-        if (gistStatus) gistStatus.textContent = line;
+        paintGistStatus(line);
       };
       stop = chromeStore.onChanged((changes) => {
         if (Object.keys(changes).some((k) => k.endsWith(`:${SYNC_STATUS_BASE}`))) settle();
