@@ -106,6 +106,45 @@ export const shipCountOf = (row) =>
 export const isOwnFleet = (row) => Boolean(row.querySelector(GAME.ROW_FRIENDLY));
 
 /**
+ * Body keys (`g:s:p:type`) of every planet and moon the player owns, read from
+ * the planet list on the page. Empty when the list is not there to read.
+ *
+ * @param {ParentNode} [root=document]
+ * @returns {Set<string>}
+ */
+export const ownBodyKeys = (root = document) => {
+  /** @type {Set<string>} */
+  const keys = new Set();
+  for (const row of root.querySelectorAll(GAME.SMALL_PLANET)) {
+    const planetLink = row.querySelector(`a${GAME.PLANET_LINK}`);
+    const coords = denseCoords(planetLink?.querySelector(GAME.PLANET_KOORDS)?.textContent);
+    if (!coords) continue;
+    keys.add(bodyKey(coords, 1));
+    if (row.querySelector(GAME.MOON_LINK)) keys.add(bodyKey(coords, 3));
+  }
+  return keys;
+};
+
+/**
+ * Whether the PLAYER dispatched this fleet: its launch body (`.coordsOrigin` —
+ * the same on the outbound and the return leg) is one of their own.
+ *
+ * The game's `friendly` mark alone is wider than "mine": it also covers an
+ * alliance-mate's or buddy's fleet flying TO the player. Reminders are set only
+ * from the player's own sends (docs/fair-play.md, "The alarm clock and §1.4"),
+ * so a fleet somebody else sent must never become a fleet-save.
+ *
+ * @param {Element} row
+ * @param {Set<string>} ownKeys  From {@link ownBodyKeys}.
+ * @returns {boolean}
+ */
+export const isOwnDispatch = (row, ownKeys) => {
+  const coords = denseCoords(row.querySelector(GAME.COORDS_ORIGIN)?.textContent);
+  if (!coords) return false;
+  return ownKeys.has(bodyKey(coords, figureType(row.querySelector(GAME.ORIGIN_FLEET))));
+};
+
+/**
  * Push label naming where the leg LANDS, e.g. `"Deployment → [4:478:14]"`.
  * A return flight lands at its origin (`.coordsOrigin`); an outbound leg at
  * its destination (`.destCoords`). Mirrors the ad-hoc labeller in
@@ -142,8 +181,13 @@ export const fleetSaveLabelFor = (row) => {
 export const extractFleetSaveCandidates = (root = document) => {
   /** @type {FleetSaveCandidate[]} */
   const out = [];
+  // Without a readable planet list we cannot tell whose fleet a friendly row
+  // is — keep the friendly rows rather than drop everything (an empty result
+  // would make every known fleet-save look landed).
+  const ownKeys = ownBodyKeys();
   for (const row of root.querySelectorAll(GAME.EVENT_FLEET_ROWS)) {
     if (!isOwnFleet(row)) continue;
+    if (ownKeys.size > 0 && !isOwnDispatch(row, ownKeys)) continue;
     const isReturn = row.getAttribute('data-return-flight') === 'true';
     const missionType = row.getAttribute('data-mission-type') || '';
     if (!isFleetSaveLeg(missionType, isReturn)) continue;

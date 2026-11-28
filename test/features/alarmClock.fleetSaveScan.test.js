@@ -157,3 +157,44 @@ describe('extractFleetSaveCandidates', () => {
     expect(extractFleetSaveCandidates()).toEqual([]);
   });
 });
+
+describe('extractFleetSaveCandidates — only the player’s own dispatches', () => {
+  // The game's `friendly` mark also covers an alliance-mate's fleet flying TO
+  // the player. Reminders are set only from the player's own sends, so such a
+  // fleet must never become a fleet-save (docs/fair-play.md).
+  /** Event rows + a planet list owning the given bodies. @param {string} rowsHtml @param {Array<{ coords: string, moon?: boolean }>} bodies */
+  const paintWithPlanets = (rowsHtml, bodies) => {
+    document.body.innerHTML = `
+      <div id="planetList">${bodies.map((b) => `
+        <div class="smallplanet">
+          <a class="planetlink"><span class="planet-koords">[${b.coords}]</span></a>
+          ${b.moon ? '<a class="moonlink"></a>' : ''}
+        </div>`).join('')}
+      </div>
+      <table id="eventContent"><tbody>${rowsHtml}</tbody></table>`;
+  };
+  const ids = () => extractFleetSaveCandidates().map((c) => c.id);
+
+  it('keeps a fleet launched from an own planet, drops a friendly fleet from someone else', () => {
+    paintWithPlanets(
+      row({ id: '1', arrival: '100', ships: '500.000', origin: '7:281:15' })       // mine
+      + row({ id: '2', arrival: '100', ships: '900.000', origin: '2:300:8', dest: '7:281:15' }), // an ally's, to me
+      [{ coords: '7:281:15' }],
+    );
+    expect(ids()).toEqual(['eventRow-1']);
+  });
+
+  it('tells a planet from its moon: a launch from a moon the player does not own is not theirs', () => {
+    const fromMoon = row({ id: '3', arrival: '100', ships: '500.000', origin: '7:281:15' })
+      .replace('planetIcon planet', 'planetIcon moon');
+    paintWithPlanets(fromMoon, [{ coords: '7:281:15' }]);
+    expect(ids()).toEqual([]);
+    paintWithPlanets(fromMoon, [{ coords: '7:281:15', moon: true }]);
+    expect(ids()).toEqual(['eventRow-3']);
+  });
+
+  it('with no readable planet list, keeps the friendly rows rather than dropping everything', () => {
+    paint(row({ id: '4', arrival: '100', ships: '500.000' }));
+    expect(ids()).toEqual(['eventRow-4']);
+  });
+});
