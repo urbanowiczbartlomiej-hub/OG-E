@@ -97,6 +97,23 @@ import { logger } from '../lib/logger.js';
 /* global fetch */
 
 /**
+ * Why every ntfy request sends `X-Priority` explicitly.
+ *
+ * Browsers now attach the HTTP-level `Priority` request header (RFC 9218:
+ * `Priority: i`, `u=4`, …) to fetches on their own — seen live on Firefox
+ * Nightly 163, desktop and Android, 2026-11-28. ntfy reads ITS OWN priority
+ * parameter from the headers `X-Priority`, `Priority`, `Prio`, `P` (in that
+ * order, before the query string), so it took the browser's `i` for a
+ * message priority / subscribe filter and refused every request with 400
+ * "invalid priority parameter" (code 40007) — the queue poll failed first, so
+ * no reminder could be scheduled at all. Sending `X-Priority` ourselves wins
+ * that lookup on every request. ntfy answers preflights with
+ * `Access-Control-Allow-Headers: *`, which covers it.
+ */
+/** Poll filter matching every priority, so the poll still returns the whole queue. */
+const POLL_ALL_PRIORITIES = '1,2,3,4,5';
+
+/**
  * Return the `auth=…` query-string parameter that authenticates the
  * request without an `Authorization` header.
  *
@@ -297,7 +314,10 @@ export const fetchScheduledMessages = async ({ topic, token, now }) => {
   const url = `https://ntfy.sh/${topic}/json?poll=1&scheduled=1&${ntfyAuthParam(token)}`;
   // Timeout: a poll that never settles would wedge the alarmClock producer's
   // serialized run (and with it every later arm/disarm) until a reload.
-  const res = await fetch(url, { signal: AbortSignal.timeout(NTFY_TIMEOUT_MS) });
+  const res = await fetch(url, {
+    headers: { 'X-Priority': POLL_ALL_PRIORITIES },
+    signal: AbortSignal.timeout(NTFY_TIMEOUT_MS),
+  });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new Error(`ntfy poll ${res.status}: ${body.slice(0, 200)}`);
@@ -349,6 +369,8 @@ export const cancelWaveAlarmClock = async ({ ids, topic, token }) => {
       // schedule while the UI already shows it cancelled.
       const res = await fetch(`https://ntfy.sh/${topic}/${id}?${ntfyAuthParam(token)}`, {
         method: 'DELETE',
+        // See POLL_ALL_PRIORITIES: shields the browser's own `Priority` header.
+        headers: { 'X-Priority': '3' },
         keepalive: true,
       });
       if (res.ok) ok++;
@@ -385,7 +407,9 @@ const postMessage = async ({ topic, token, fireAt, now, title, body, priority, i
   /** @type {Record<string, string>} */
   const headers = {
     Title: title,
-    Priority: String(priority),
+    // `X-Priority`, not `Priority`: ntfy checks it first, so a browser-set
+    // HTTP `Priority` header (RFC 9218) can never override ours.
+    'X-Priority': String(priority),
     Icon: icon || OGE_ICON_URL,
   };
   if (delay >= NTFY_MIN_DELAY_SEC) headers['X-Delay'] = String(fireAt);
