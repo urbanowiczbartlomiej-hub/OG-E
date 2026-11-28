@@ -1309,50 +1309,50 @@
     .cfg-field { flex-basis: 100%; }
   }
 
-  /* ── Alarm clock: one view (channel bar · kind tiles + drawers · list) ── */
-  #alarmTop { padding: 0; overflow: hidden; }
-  #alarmTop.off { display: none; }
+  /* ── Alarm clock: one view (channel grid · kind cards · queue) ── */
+  #alarmTop { padding: 0; }
+  #alarmTop.off, #alarmTop.off ~ #alarmKinds, #alarmTop.off ~ #alarmRemCard { display: none; }
+  #alarmTop > #remBody { overflow: visible; }
   .alarm-intro { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 12px; }
   .alarm-intro > p { color: #888; font-size: 13px; margin: 0; }
-  .alarm-intro > #remMasterToggle { margin-left: auto; }
-  .alarm-field { flex: 1 1 220px; min-width: 0; }
-  .alarm-field > #remTopic { flex: 1 1 120px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  #remBody .cmd-note a { color: #f2c877; }
-  .alarm-privacy { flex: 1 1 220px; min-width: 0; }
-  .alarm-privacy > summary { cursor: pointer; color: #8a97a3; font-size: 12px; }
+  .alarm-intro > #remMasterToggle { margin-left: auto; min-width: 52px; }
   .alarm-state { font-size: 12px; padding: 2px 8px; border-radius: 10px; background: #14301f; color: #7fd49b; }
   .alarm-state.warn { background: #3a3320; color: #d8b45a; }
   .alarm-state:empty { display: none; }
-  /* Tiles in row 1, the open drawer full-width in row 2. In the DOM each
-     drawer follows its tile, so on phones (one column) it opens right under it. */
-  .alarm-kinds { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid #1a2735; }
-  #alarmTop:not(.ready) .alarm-kinds { opacity: .45; pointer-events: none; }
-  .alarm-kind { grid-row: 1; padding: 10px 12px; cursor: pointer; border-left: 1px solid #1a2735; min-width: 0; }
-  .alarm-kind:first-child { border-left: none; }
-  .alarm-kind.open { background: #0f1a26; }
+  .alarm-field { flex: 1 1 220px; min-width: 0; }
+  .alarm-field > #remTopic { flex: 1 1 120px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  #remBody .cmd-note a { color: #f2c877; }
+  /* Privacy: one quiet word under the topic; its text opens as a popover over
+     the block instead of stretching the grid (cf. .free-outlook). */
+  .alarm-privacy { position: relative; flex: 1 0 100%; font-size: 11px; color: #8a97a3; }
+  .alarm-privacy > summary { cursor: pointer; list-style-position: inside; width: max-content; }
+  .alarm-privacy-pop {
+    position: absolute; top: calc(100% + 4px); right: 0; z-index: 30;
+    width: min(460px, calc(100vw - 2 * var(--page-pad) - 24px)); padding: 10px 12px;
+    background: #0e1620; border: 1px solid #22344a; border-radius: 6px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, .5); color: #a7b8cb; font-size: 12px; line-height: 1.5;
+  }
+  .alarm-privacy-pop > p { margin: 0 0 8px; }
+  .alarm-privacy-pop > p:last-child { margin-bottom: 0; }
+  /* Kind cards: a one-line header that opens the settings grid below it. */
+  #alarmTop:not(.ready) ~ #alarmKinds { opacity: .45; pointer-events: none; }
+  .alarm-kind-card { padding: 0; overflow: hidden; }
+  .alarm-kind { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; cursor: pointer; }
   .alarm-kind:focus-visible { outline: 1px solid #4a9eff; outline-offset: -1px; }
   @media (hover: hover) { .alarm-kind:hover { background: #0f1a26; } }
-  .ak-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .ak-name { color: #c9d4de; font-size: 14px; font-weight: bold; }
   .ak-name::before { content: '\25B8\00A0'; color: #5f6c7b; }
   .alarm-kind.open .ak-name::before { content: '\25BE\00A0'; }
   .ak-state { font-size: 11px; }
+  .ak-times { font-size: 12px; color: #66788a; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ak-count { margin-left: auto; font-size: 12px; color: #8a97a3; font-variant-numeric: tabular-nums; }
-  .ak-times { margin-top: 3px; font-size: 12px; color: #66788a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .alarm-drawer { display: none; grid-column: 1 / -1; grid-row: 2; border-top: 1px solid #1a2735; background: #0f1a26; }
+  .alarm-drawer { display: none; border-top: 1px solid #1a2735; }
   .alarm-drawer.open { display: block; }
-  /* A drawer IS a settings grid (cmd-grid): keyword · control · quiet note. */
+  /* A drawer IS a settings grid (cmd-grid): keyword · control · the rest of the sentence. */
   .alarm-drawer .cmd-cell > .alarm-ctl { flex: 1 1 260px; min-width: 0; }
   .alarm-drawer .cmd-cell input[type="number"], .alarm-drawer .cmd-cell input[type="text"] { width: 110px; }
-  .alarm-drawer .alarm-inline { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-  #alarmCfgFooter { grid-column: 1 / -1; grid-row: 3; padding: 8px 12px; background: #0f1a26; border-top: 1px solid #1a2735; }
+  #alarmCfgFooter { padding: 8px 12px; border-top: 1px solid #1a2735; }
   #alarmCfgFooter .controls { margin: 0 !important; }
-  @media (max-width: 640px) {
-    .alarm-kinds { grid-template-columns: minmax(0, 1fr); }
-    .alarm-kind, .alarm-drawer, #alarmCfgFooter { grid-row: auto; }
-    .alarm-kind { border-left: none; border-top: 1px solid #1a2735; }
-    .alarm-kind:first-child { border-top: none; }
-  }
   /* The queue: every kind in ONE time-ordered flow of cards. */
   #alarmTop:not(.ready) ~ #alarmRemCard { display: none; }
   .rem-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 8px; align-items: start; }
@@ -2093,7 +2093,7 @@
   <div class="alarm-intro">
     <p>Reminders that ring on your phone — set the clock, close the game.</p>
     <span class="alarm-state" id="alarmChannelState"></span>
-    <button type="button" class="toggle-chip" id="remMasterToggle">Alarm clock</button>
+    <button type="button" class="toggle-chip" id="remMasterToggle" title="Alarm clock on / off">Off</button>
   </div>
 
   <!-- ONE view, no sub-tabs. Top block: the push channel as an always-open
@@ -2126,76 +2126,60 @@
           <button id="remCopyTopic" type="button">Copy</button>
         </span>
         <span class="cmd-note">Subscribe to it in the ntfy app on your phone.</span>
-      </div>
-      <div class="cmd-cell cmd-wide">
-        <span class="cmd-cap">Privacy</span>
-        <details class="rem-privacy alarm-privacy">
-          <summary>The topic is a secret URL — treat it like a password</summary>
-          <p class="rem-hint" style="margin-top:0">
-          OG-E derives this topic from your ntfy <strong>access token</strong> (SHA-256, 88
-          random bits). Nobody can guess it — that's roughly 3×10²⁶ possibilities — and ntfy.sh
-          does not let anyone list or browse topics, so it can only be found if you reveal it.
-          Treat it like a password: it is a <strong>secret URL</strong>, and anyone who learns it
-          can read your fleet reminders and inject fake ones. Never share or post it.
-        </p>
-        <p class="rem-hint">
-          <strong>Worried someone got hold of it?</strong> Change your ntfy access token.
-          That instantly derives a brand-new topic — the old one goes silent on its own, no
-          other cleanup needed.
-        </p>
-        <details class="rem-privacy" style="margin-top:8px">
-          <summary>Lock the topic to your account</summary>
-          <p class="rem-hint">
-            Want absolute certainty that only you can read it? Lock the topic to your account
-            so even someone who knows its name is shut out:
-          </p>
-          <ol>
-            <li>On ntfy.sh (web), reserve this exact topic and set its access to
-              <em>“deny everyone else”</em> (only you).</li>
-            <li>On your phone, <strong>delete the current subscription</strong> to this topic, then
-              add it again.</li>
-            <li>This time, sign in to the ntfy app with your ntfy username and password.</li>
-          </ol>
-          <p class="rem-hint">
-            After that the topic is access-controlled: only your logged-in account can read or
-            publish to it. (Reserving a topic is a paid ntfy.sh feature, or free on your own
-            self-hosted ntfy server.)
-          </p>
-        </details>
+        <!-- A popover OVER the block (like the free-slot outlook under
+             Positions): opening it must not stretch the grid. -->
+        <details class="alarm-privacy">
+          <summary>Privacy</summary>
+          <div class="alarm-privacy-pop">
+            <p>OG-E derives this topic from your ntfy <strong>access token</strong> (SHA-256, 88
+              random bits). Nobody can guess it, and ntfy.sh does not let anyone list or browse
+              topics, so it can only be found if you reveal it. Treat it like a password: it is a
+              <strong>secret URL</strong>, and anyone who learns it can read your fleet reminders
+              and inject fake ones. Never share or post it.</p>
+            <p><strong>Worried someone got hold of it?</strong> Change your ntfy access token.
+              That derives a brand-new topic; the old one goes silent on its own.</p>
+            <p><strong>Lock the topic to your account.</strong> On ntfy.sh (web), reserve this
+              exact topic and set its access to “deny everyone else”. On your phone, delete the
+              subscription to this topic, add it again, and sign in to the ntfy app with your ntfy
+              account. After that only your logged-in account can read or publish to it.
+              (Reserving a topic is a paid ntfy.sh feature, or free on your own ntfy server.)</p>
+          </div>
         </details>
       </div>
     </div>
+  </div>
 
-    <div class="alarm-kinds" id="alarmKinds">
+  <!-- One card per reminder kind: its header line (name · state · times ·
+       queued count) opens the kind's settings grid inside the same card. -->
+  <div class="alarm-kinds" id="alarmKinds">
+    <div class="gv-card alarm-kind-card">
       <div class="alarm-kind" data-kind="adhoc" role="button" tabindex="0" aria-expanded="false">
-        <div class="ak-head">
-          <span class="ak-name">Ad-hoc</span>
-          <span class="alarm-state ak-state" data-kind-state="adhoc"></span>
-          <span class="ak-count" data-kind-count="adhoc"></span>
-        </div>
-        <div class="ak-times" data-kind-times="adhoc"></div>
+        <span class="ak-name">Ad-hoc</span>
+        <span class="alarm-state ak-state" data-kind-state="adhoc"></span>
+        <span class="ak-times" data-kind-times="adhoc"></span>
+        <span class="ak-count" data-kind-count="adhoc"></span>
       </div>
       <div class="alarm-drawer settings-panel" data-kind="adhoc" id="alarmPaneAdhoc"></div>
+    </div>
+    <div class="gv-card alarm-kind-card">
       <div class="alarm-kind" data-kind="fs" role="button" tabindex="0" aria-expanded="false">
-        <div class="ak-head">
-          <span class="ak-name">Fleet-save</span>
-          <span class="alarm-state ak-state" data-kind-state="fs"></span>
-          <span class="ak-count" data-kind-count="fs"></span>
-        </div>
-        <div class="ak-times" data-kind-times="fs"></div>
+        <span class="ak-name">Fleet-save</span>
+        <span class="alarm-state ak-state" data-kind-state="fs"></span>
+        <span class="ak-times" data-kind-times="fs"></span>
+        <span class="ak-count" data-kind-count="fs"></span>
       </div>
       <div class="alarm-drawer settings-panel" data-kind="fs" id="alarmPaneFs"></div>
+    </div>
+    <div class="gv-card alarm-kind-card">
       <div class="alarm-kind" data-kind="expo" role="button" tabindex="0" aria-expanded="false">
-        <div class="ak-head">
-          <span class="ak-name">Expeditions</span>
-          <span class="alarm-state ak-state" data-kind-state="expo"></span>
-          <span class="ak-count" data-kind-count="expo"></span>
-        </div>
-        <div class="ak-times" data-kind-times="expo"></div>
+        <span class="ak-name">Expeditions</span>
+        <span class="alarm-state ak-state" data-kind-state="expo"></span>
+        <span class="ak-times" data-kind-times="expo"></span>
+        <span class="ak-count" data-kind-count="expo"></span>
       </div>
       <div class="alarm-drawer settings-panel" data-kind="expo" id="alarmPaneExpo"></div>
-      <div class="settings-panel" id="alarmCfgFooter" style="display:none"></div>
     </div>
+    <div class="settings-panel" id="alarmCfgFooter" style="display:none"></div>
   </div>
 
   <div class="gv-card" id="alarmRemCard">

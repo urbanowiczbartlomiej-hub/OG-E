@@ -15,6 +15,7 @@ import {
   defaultGalaxyScanConfig,
   normalizeGalaxyScanConfig,
   sanitizeGalaxyScanConfigForWire,
+  deriveFsGuardian,
 } from '../../src/domain/galaxyScanConfig.js';
 
 describe('defaultGalaxyScanConfig', () => {
@@ -40,19 +41,19 @@ describe('defaultGalaxyScanConfig', () => {
     expect(d.colonyPassword).toBe('');
   });
 
-  it('carries the fleet-save alarmClock knobs (moved here from settingsStore, B3)', () => {
+  it('carries the fleet-save knobs — detection always on', () => {
     const d = defaultGalaxyScanConfig();
-    expect(d.fsEnabled).toBe(false);
+    expect(d.fsEnabled).toBe(true);
     expect(d.fsThreshold).toBe(100000);
     expect(d.fsMinFlightSec).toBe(600);
     expect(d.fsOffsets).toBe('-10m, 0m, 10m');
   });
 
-  it('carries the bare-fleet guardian knobs', () => {
+  it('carries the landed-fleet (guardian) timing that follows from the default times', () => {
     const d = defaultGalaxyScanConfig();
     expect(d.guardianEnabled).toBe(true);
-    expect(d.guardianIntervalMin).toBe(20);
-    expect(d.guardianAckIntervalMin).toBe(3);
+    expect(d.guardianIntervalMin).toBe(10); // first after-landing time
+    expect(d.guardianAckIntervalMin).toBe(3); // a quarter of it, rounded
   });
 });
 
@@ -112,38 +113,48 @@ describe('normalizeGalaxyScanConfig', () => {
     expect(normalizeGalaxyScanConfig({ colonyMinGap: -5 }).colonyMinGap).toBe(d.colonyMinGap);
   });
 
-  it('keeps / coerces the fleet-save alarmClock knobs (B3)', () => {
+  it('keeps / coerces the fleet-save knobs; detection has no off switch', () => {
     const d = defaultGalaxyScanConfig();
     const out = normalizeGalaxyScanConfig({
-      fsEnabled: true,
+      fsEnabled: false, // a stored "off" from an older build is ignored
       fsThreshold: '50000',
       fsMinFlightSec: -5,
-      fsOffsets: '-5m, 0m',
+      fsOffsets: '-5m, 0m, 20m',
     });
     expect(out.fsEnabled).toBe(true);
     expect(out.fsThreshold).toBe(50000);               // coerced from string
     expect(out.fsMinFlightSec).toBe(d.fsMinFlightSec); // negative → default
-    expect(out.fsOffsets).toBe('-5m, 0m');
-    // Non-boolean enable / non-string offsets fall back to defaults.
-    const bad = normalizeGalaxyScanConfig({ fsEnabled: 'yes', fsOffsets: 42 });
-    expect(bad.fsEnabled).toBe(false);
-    expect(bad.fsOffsets).toBe(d.fsOffsets);
-    // Missing → defaults.
-    const bare = normalizeGalaxyScanConfig({});
-    expect(bare.fsEnabled).toBe(false);
-    expect(bare.fsThreshold).toBe(d.fsThreshold);
+    expect(out.fsOffsets).toBe('-5m, 0m, 20m');
+    // Non-string offsets fall back to the defaults.
+    expect(normalizeGalaxyScanConfig({ fsOffsets: 42 }).fsOffsets).toBe(d.fsOffsets);
+    expect(normalizeGalaxyScanConfig({}).fsThreshold).toBe(d.fsThreshold);
   });
 
-  it('keeps / coerces the guardian knobs', () => {
-    const d = defaultGalaxyScanConfig();
+  it('the landed-fleet timing is derived from the times, never taken from storage', () => {
     const out = normalizeGalaxyScanConfig({
+      fsOffsets: '-5m, 0m, 20m, 40m',
       guardianEnabled: false,
-      guardianIntervalMin: '45',
-      guardianAckIntervalMin: -1,
+      guardianIntervalMin: 99,
+      guardianAckIntervalMin: 99,
     });
-    expect(out.guardianEnabled).toBe(false);
-    expect(out.guardianIntervalMin).toBe(45);                       // coerced from string
-    expect(out.guardianAckIntervalMin).toBe(d.guardianAckIntervalMin); // negative → default
+    expect(out.guardianEnabled).toBe(true);
+    expect(out.guardianIntervalMin).toBe(20);   // FIRST after-landing time
+    expect(out.guardianAckIntervalMin).toBe(5); // a quarter of it
+  });
+});
+
+describe('deriveFsGuardian', () => {
+  it('adds the default after-landing time when the list has none', () => {
+    expect(deriveFsGuardian('-10m, 0m')).toEqual({
+      fsOffsets: '-10m, 0m, 10m', guardianIntervalMin: 10, guardianAckIntervalMin: 3,
+    });
+    expect(deriveFsGuardian('').fsOffsets).toBe('10m');
+  });
+
+  it('leaves a list that already has one untouched; ACK is at least a minute', () => {
+    expect(deriveFsGuardian('0m, 2m')).toEqual({
+      fsOffsets: '0m, 2m', guardianIntervalMin: 2, guardianAckIntervalMin: 1,
+    });
   });
 });
 

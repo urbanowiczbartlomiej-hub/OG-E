@@ -51,10 +51,14 @@ let unsubscribeStorage = null;
 /** @returns {HTMLElement | null} */
 const top = () => document.getElementById('alarmTop');
 
+/** The three kind sections (each its own card: tile header + drawer). */
+/** @returns {HTMLElement | null} */
+const kindsRoot = () => document.getElementById('alarmKinds');
+
 /** @returns {HTMLElement[]} */
 const tiles = () => {
-  const t = top();
-  return t ? /** @type {HTMLElement[]} */ ([...t.querySelectorAll('.alarm-kind')]) : [];
+  const k = kindsRoot();
+  return k ? /** @type {HTMLElement[]} */ ([...k.querySelectorAll('.alarm-kind')]) : [];
 };
 
 /**
@@ -64,7 +68,7 @@ const tiles = () => {
  * @returns {void}
  */
 const openDrawer = (key) => {
-  const t = top();
+  const t = kindsRoot();
   if (!t) return;
   const target = KINDS.includes(key) ? key : '';
   for (const tile of tiles()) {
@@ -75,9 +79,14 @@ const openDrawer = (key) => {
   for (const d of t.querySelectorAll('.alarm-drawer')) {
     d.classList.toggle('open', /** @type {HTMLElement} */ (d).dataset.kind === target);
   }
-  // The shared "Reset to defaults" row belongs to an open drawer only.
+  // The shared "Reset to defaults" row belongs to an open drawer only — and
+  // sits right under it, inside that kind's card.
   const footer = document.getElementById('alarmCfgFooter');
-  if (footer) footer.style.display = target ? '' : 'none';
+  if (footer) {
+    footer.style.display = target ? '' : 'none';
+    const open = t.querySelector('.alarm-drawer.open');
+    if (open && open.nextElementSibling !== footer) open.insertAdjacentElement('afterend', footer);
+  }
 };
 
 /** @returns {string} The open drawer's kind, or `''`. */
@@ -98,20 +107,20 @@ const timesLine = (schedule) =>
  * @returns {void}
  */
 const setTimes = (kind, text) => {
-  const el = top()?.querySelector(`[data-kind-times="${kind}"]`);
+  const el = kindsRoot()?.querySelector(`[data-kind-times="${kind}"]`);
   if (el) el.textContent = text;
 };
 
 /**
- * The tile's state pill: green "on", amber "off", nothing for `null` (ad-hoc
- * has no switch — it is armed per fleet in game).
+ * The tile's state pill: green "on", amber "off", nothing for `null` — ad-hoc
+ * (armed per fleet in game) and fleet-save (always on) have no switch.
  *
  * @param {string} kind
  * @param {boolean | null} on
  * @returns {void}
  */
 const setKindState = (kind, on) => {
-  const el = top()?.querySelector(`[data-kind-state="${kind}"]`);
+  const el = kindsRoot()?.querySelector(`[data-kind-state="${kind}"]`);
   if (!el) return;
   el.textContent = on === null ? '' : on ? 'on' : 'off';
   el.classList.toggle('warn', on === false);
@@ -134,6 +143,9 @@ const paint = async () => {
   const ready = masterOn && hasToken;
   t.classList.toggle('off', !masterOn);
   t.classList.toggle('ready', ready);
+  // The master switch reads as its own state: "On" / "Off".
+  const master = document.getElementById('remMasterToggle');
+  if (master) master.textContent = masterOn ? 'On' : 'Off';
 
   // The channel state says WHICH prerequisite is missing; nothing when off
   // (the switch itself already says so).
@@ -162,7 +174,7 @@ const paint = async () => {
   setTimes('fs', timesLine(fs.fsOffsets));
   setTimes('expo', timesLine(ac.alarmClockSchedule));
   setKindState('adhoc', null);
-  setKindState('fs', fs.fsEnabled);
+  setKindState('fs', null);
   setKindState('expo', ac.alarmClockEnabled);
 };
 

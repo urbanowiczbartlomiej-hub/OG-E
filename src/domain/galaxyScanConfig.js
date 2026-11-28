@@ -18,6 +18,40 @@
 // Everything here is PURE: no DOM, no storage, no clock — unit-testable in Node
 // and shared verbatim across the game/dashboard origins.
 
+import { parseDurationList, formatDuration } from './duration.js';
+
+/** The after-landing reminder added when the player's times carry none. */
+export const FS_DEFAULT_AFTER_LANDING_SEC = 600;
+
+/**
+ * Fleet-save times → the landed-fleet (guardian) timing that follows from them.
+ *
+ * A fleet-save must have at least ONE reminder AFTER landing — that is the one
+ * that tells an away player their fleet now sits exposed. If the list has none,
+ * {@link FS_DEFAULT_AFTER_LANDING_SEC} is added. The guardian push rings at the
+ * FIRST after-landing time, and the in-game "still there?" ACK prompt comes
+ * after a quarter of it (at least a minute). Pure.
+ *
+ * @param {string} offsets  The stored times list, e.g. `"-10m, 0m, 10m"`.
+ * @returns {{ fsOffsets: string, guardianIntervalMin: number, guardianAckIntervalMin: number }}
+ */
+export const deriveFsGuardian = (offsets) => {
+  const parsed = parseDurationList(offsets, { signed: true });
+  let after = parsed.filter((o) => o > 0);
+  let fsOffsets = offsets;
+  if (after.length === 0) {
+    after = [FS_DEFAULT_AFTER_LANDING_SEC];
+    fsOffsets = [...new Set([...parsed, FS_DEFAULT_AFTER_LANDING_SEC])]
+      .sort((a, b) => a - b).map(formatDuration).join(', ');
+  }
+  const guardianIntervalMin = Math.max(1, Math.round(Math.min(...after) / 60));
+  return {
+    fsOffsets,
+    guardianIntervalMin,
+    guardianAckIntervalMin: Math.max(1, Math.round(guardianIntervalMin / 4)),
+  };
+};
+
 /**
  * The full Galaxy-Scan config, persisted per-universe.
  *
@@ -89,12 +123,12 @@ export const defaultGalaxyScanConfig = () => ({
   colonyPasswordTs: 0,
   colonySizeBonus: 0,
   colonyBonusReadAt: 0,
-  fsEnabled: false,
+  fsEnabled: true,
   fsThreshold: 100000,
   fsMinFlightSec: 600,
   fsOffsets: '-10m, 0m, 10m',
   guardianEnabled: true,
-  guardianIntervalMin: 20,
+  guardianIntervalMin: 10,
   guardianAckIntervalMin: 3,
 });
 
@@ -159,14 +193,16 @@ export const normalizeGalaxyScanConfig = (raw) => {
     colonyBonusReadAt: coerceInt(r.colonyBonusReadAt, d.colonyBonusReadAt),
     // fs* are the fleet-save alarmClock knobs. Threshold / min-flight are
     // non-negative ints; offsets is a free-form duration-list string.
-    fsEnabled: typeof r.fsEnabled === 'boolean' ? r.fsEnabled : d.fsEnabled,
+    // Fleet-save detection and the landed-fleet (guardian) reminder have no
+    // switch any more — both are always on while the alarm clock is. A stored
+    // `false` from an older build is ignored. To opt out, raise the ship
+    // threshold / min flight. The guardian's timing is not stored either: it
+    // follows the reminder times (see deriveFsGuardian).
+    fsEnabled: true,
     fsThreshold: coerceInt(r.fsThreshold, d.fsThreshold),
     fsMinFlightSec: coerceInt(r.fsMinFlightSec, d.fsMinFlightSec),
-    fsOffsets: typeof r.fsOffsets === 'string' ? r.fsOffsets : d.fsOffsets,
-    guardianEnabled:
-      typeof r.guardianEnabled === 'boolean' ? r.guardianEnabled : d.guardianEnabled,
-    guardianIntervalMin: coerceInt(r.guardianIntervalMin, d.guardianIntervalMin),
-    guardianAckIntervalMin: coerceInt(r.guardianAckIntervalMin, d.guardianAckIntervalMin),
+    guardianEnabled: true,
+    ...deriveFsGuardian(typeof r.fsOffsets === 'string' ? r.fsOffsets : d.fsOffsets),
   };
 };
 

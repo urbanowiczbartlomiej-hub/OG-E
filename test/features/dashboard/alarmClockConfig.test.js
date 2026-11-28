@@ -67,7 +67,7 @@ const install = () => installAlarmClockConfig({ getUniverseId: () => UNI });
 
 const $ = (/** @type {string} */ sel) => /** @type {HTMLInputElement} */ (document.querySelector(sel));
 
-// The Enabled / Guardian toggles are `<button class="toggle-chip">` pills whose
+// The Enabled toggles are `<button class="toggle-chip">` pills whose
 // `.on` class IS the boolean state (see chips.js toggleChipOn/setToggleChip) —
 // they are NOT <input> checkboxes, so read/set them the way production does
 // rather than via `.checked` (which reads/writes undefined on a <button>).
@@ -134,7 +134,8 @@ describe('AlarmClock fleet-save config editor', () => {
   it('fills fields from the default preset when nothing is stored', async () => {
     install().refresh();
     await flush();
-    expect(chipOn('#remCfgFsEnabled')).toBe(false);
+    // Fleet-save has no switch — it is always on.
+    expect(document.querySelector('#remCfgFsEnabled')).toBeNull();
     expect($('#remCfgFsThreshold').value).toBe('100000');
     expect($('#remCfgFsMinFlight').value).toBe('10m');
     expect(readEditor('remCfgFsOffsets')).toBe('-10m, 0m, 10m');
@@ -144,10 +145,10 @@ describe('AlarmClock fleet-save config editor', () => {
     store.set(CFG_KEY, { fsEnabled: true, fsThreshold: 50000, fsMinFlightSec: 900, fsOffsets: '-5m, 0m' });
     install().refresh();
     await flush();
-    expect(chipOn('#remCfgFsEnabled')).toBe(true);
     expect($('#remCfgFsThreshold').value).toBe('50000');
     expect($('#remCfgFsMinFlight').value).toBe('15m');
-    expect(readEditor('remCfgFsOffsets')).toBe('-5m, 0m');
+    // No after-landing time stored → the default one is put back.
+    expect(readEditor('remCfgFsOffsets')).toBe('-5m, 0m, 10m');
   });
 
   it('renders a compact landing-relative impact preview per fleet-save offset chip', async () => {
@@ -172,20 +173,16 @@ describe('AlarmClock fleet-save config editor', () => {
     install().refresh();
     await flush();
 
-    setChip('#remCfgFsEnabled', true);
     $('#remCfgFsThreshold').value = '250000';
     $('#remCfgFsMinFlight').value = '5m';
-    setEditor('remCfgFsOffsets', ['-20m', '0m']);
-    // Guardian off so the offsets pass through verbatim (its "never-enters net"
-    // would otherwise inject a post-landing chip — covered by its own tests).
-    setChip('#remCfgGuardianEnabled', false);
+    setEditor('remCfgFsOffsets', ['-20m', '0m', '15m']);
     await settle();
 
     const saved = /** @type {any} */ (store.get(CFG_KEY));
     expect(saved.fsEnabled).toBe(true);
     expect(saved.fsThreshold).toBe(250000);
     expect(saved.fsMinFlightSec).toBe(300); // 5m → 300s
-    expect(saved.fsOffsets).toBe('-20m, 0m');
+    expect(saved.fsOffsets).toBe('-20m, 0m, 15m');
     expect(typeof store.get(TS_KEY)).toBe('number');
     expect(typeof store.get(SYNC_KEY)).toBe('number');
   });
@@ -208,50 +205,40 @@ describe('AlarmClock fleet-save config editor', () => {
     expect($('#remCfgStatus').textContent || '').toMatch(/flight/i);
   });
 
-  it('allows an empty offset schedule (no fleet-save pings)', async () => {
+  it('an emptied schedule gets the default after-landing time back', async () => {
     install().refresh();
     await flush();
     clearEditor('remCfgFsOffsets');
-    // Guardian off, else it injects a post-landing chip into the empty list.
-    setChip('#remCfgGuardianEnabled', false);
     await settle();
-    expect(/** @type {any} */ (store.get(CFG_KEY)).fsOffsets).toBe('');
+    expect(/** @type {any} */ (store.get(CFG_KEY)).fsOffsets).toBe('10m');
   });
 
-  it('guardian on: injects a post-landing offset at the guardian interval', async () => {
-    // "Never-enters net" — the guardian arms on ENTRY, so a player who never
-    // re-enters after landing would otherwise get no ping. When no offset
-    // fires at or after the guardian interval, save auto-adds one (and reflects
-    // it in the editor) so the classic fleet-save alarmClock still reaches them.
+  it('with no after-landing time: adds the default and derives the landed-fleet timing', async () => {
+    // A player who never re-enters after landing must still be told their
+    // fleet sits exposed — so one reminder AFTER landing is always kept, and
+    // the landed-fleet reminder rings at the first of them.
     install().refresh();
     await flush();
-    setChip('#remCfgFsEnabled', true);
-    $('#remCfgFsThreshold').value = '0';
-    $('#remCfgFsMinFlight').value = '0';
     setEditor('remCfgFsOffsets', ['-20m', '0m']);
-    setChip('#remCfgGuardianEnabled', true);
-    $('#remCfgGuardianInterval').value = '20';
     await settle();
 
     const saved = /** @type {any} */ (store.get(CFG_KEY));
+    expect(saved.fsOffsets).toBe('-20m, 0m, 10m');
     expect(saved.guardianEnabled).toBe(true);
-    expect(saved.guardianIntervalMin).toBe(20);
-    expect(saved.fsOffsets).toBe('-20m, 0m, 20m'); // 20m chip injected
+    expect(saved.guardianIntervalMin).toBe(10);
+    expect(saved.guardianAckIntervalMin).toBe(3);
   });
 
-  it('guardian on: does NOT inject when an offset already covers the interval', async () => {
+  it('landed-fleet timing follows the FIRST after-landing time; ACK is a quarter of it', async () => {
     install().refresh();
     await flush();
-    setChip('#remCfgFsEnabled', true);
-    $('#remCfgFsThreshold').value = '0';
-    $('#remCfgFsMinFlight').value = '0';
-    setEditor('remCfgFsOffsets', ['0m', '30m']);
-    setChip('#remCfgGuardianEnabled', true);
-    $('#remCfgGuardianInterval').value = '20';
+    setEditor('remCfgFsOffsets', ['0m', '30m', '60m']);
     await settle();
 
-    // 30m ≥ the 20m interval already guarantees a post-landing ping — no inject.
-    expect(/** @type {any} */ (store.get(CFG_KEY)).fsOffsets).toBe('0m, 30m');
+    const saved = /** @type {any} */ (store.get(CFG_KEY));
+    expect(saved.fsOffsets).toBe('0m, 30m, 60m');
+    expect(saved.guardianIntervalMin).toBe(30);
+    expect(saved.guardianAckIntervalMin).toBe(8);
   });
 
   it('rejects an unparseable fleet-save offset row and does not save', async () => {
@@ -270,10 +257,10 @@ describe('AlarmClock fleet-save config editor', () => {
     store.set(CFG_KEY, { positions: '12-15', preferOtherGalaxies: false, colonyPassword: 'hunter2' });
     install().refresh();
     await flush();
-    setChip('#remCfgFsEnabled', true);
+    $('#remCfgFsThreshold').value = '250000';
     await settle();
     const saved = /** @type {any} */ (store.get(CFG_KEY));
-    expect(saved.fsEnabled).toBe(true);
+    expect(saved.fsThreshold).toBe(250000);
     // Scan-config fields survive untouched.
     expect(saved.positions).toBe('12-15');
     expect(saved.preferOtherGalaxies).toBe(false);
@@ -281,7 +268,7 @@ describe('AlarmClock fleet-save config editor', () => {
   });
 
   it('scan-config save preserves the fs fields (the reverse direction)', async () => {
-    store.set(CFG_KEY, { fsEnabled: true, fsThreshold: 333000, fsOffsets: '-7m' });
+    store.set(CFG_KEY, { fsEnabled: true, fsThreshold: 333000, fsOffsets: '-7m, 12m' });
     installScanColonyConfig({ getUniverseId: () => UNI }).refresh();
     await flush();
     $('#scanCfgPositions').value = '9';
@@ -291,7 +278,7 @@ describe('AlarmClock fleet-save config editor', () => {
     // fs fields survive a scan-config save untouched.
     expect(saved.fsEnabled).toBe(true);
     expect(saved.fsThreshold).toBe(333000);
-    expect(saved.fsOffsets).toBe('-7m');
+    expect(saved.fsOffsets).toBe('-7m, 12m');
   });
 
   it('reset is two-step: first tap only arms, second tap restores + autosaves defaults', async () => {
@@ -307,7 +294,6 @@ describe('AlarmClock fleet-save config editor', () => {
 
     // Second tap applies + persists via autosave.
     $('#remCfgReset').dispatchEvent(new Event('click', { bubbles: true }));
-    expect(chipOn('#remCfgFsEnabled')).toBe(defaultGalaxyScanConfig().fsEnabled);
     expect($('#remCfgFsThreshold').value).toBe(String(defaultGalaxyScanConfig().fsThreshold));
     vi.advanceTimersByTime(600);
     await flush();
@@ -316,9 +302,7 @@ describe('AlarmClock fleet-save config editor', () => {
   });
 
   it('a no-op interaction writes neither slot (no newest-wins stamp from a stale device)', async () => {
-    // guardianEnabled:false so collectFs's never-enters net has nothing to
-    // inject — the collected config must equal the stored one exactly.
-    store.set(CFG_KEY, { fsEnabled: true, fsThreshold: 50000, guardianEnabled: false });
+    store.set(CFG_KEY, { fsEnabled: true, fsThreshold: 50000 });
     store.set(ALARM_CLOCK_KEY, { alarmClockEnabled: true });
     install().refresh();
     await flush();
@@ -379,7 +363,7 @@ describe('AlarmClock wave + ad-hoc config editor', () => {
   it('a save writes BOTH the fleet-save slot AND the alarmClock slot', async () => {
     install().refresh();
     await flush();
-    setChip('#remCfgFsEnabled', true);
+    $('#remCfgFsThreshold').value = '250000';
     setChip('#remCfgWaveEnabled', true);
     await settle();
     expect(/** @type {any} */ (store.get(CFG_KEY)).fsEnabled).toBe(true);

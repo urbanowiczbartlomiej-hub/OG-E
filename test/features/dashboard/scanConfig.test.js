@@ -151,7 +151,7 @@ describe('Colonization config editor', () => {
 
   it('saving preserves fields the editor does NOT own (fleet-save knobs in the shared slot)', async () => {
     // Stored slot carries fleet-save knobs that no widget in this editor shows.
-    store.set(CFG_KEY, { positions: 'OLD', fsEnabled: true, fsThreshold: 333000, fsOffsets: '-7m' });
+    store.set(CFG_KEY, { positions: 'OLD', fsEnabled: true, fsThreshold: 333000, fsOffsets: '-7m, 12m' });
     install().refresh();
     await flush();
 
@@ -163,6 +163,6 @@ describe('Colonization config editor', () => {
     // fs fields survive untouched via read-modify-write merge.
     expect(saved.fsEnabled).toBe(true);
     expect(saved.fsThreshold).toBe(333000);
-    expect(saved.fsOffsets).toBe('-7m');
+    expect(saved.fsOffsets).toBe('-7m, 12m');
   });
 });

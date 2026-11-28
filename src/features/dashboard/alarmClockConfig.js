@@ -46,6 +46,7 @@ import { wireToggleChip, toggleChipOn, setToggleChip } from './chips.js';
 import {
   defaultGalaxyScanConfig,
   normalizeGalaxyScanConfig,
+  deriveFsGuardian,
 } from '../../domain/galaxyScanConfig.js';
 import {
   defaultAlarmClockConfig,
@@ -485,12 +486,6 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
   });
 
   // ── per-server (fleet-save) field widgets ────────────────────────────
-  const enabledInput = /** @type {HTMLButtonElement} */ (mk('button'));
-  enabledInput.type = 'button';
-  enabledInput.className = 'toggle-chip';
-  enabledInput.id = 'remCfgFsEnabled';
-  enabledInput.textContent = 'Auto-detect fleet-saves';
-  wireToggleChip(enabledInput, () => {});
 
   const thresholdInput = /** @type {HTMLInputElement} */ (mk('input'));
   thresholdInput.type = 'text';
@@ -516,29 +511,6 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
     reference: 'landing',
   });
 
-  const guardianEnableInput = /** @type {HTMLButtonElement} */ (mk('button'));
-  guardianEnableInput.type = 'button';
-  guardianEnableInput.className = 'toggle-chip';
-  guardianEnableInput.id = 'remCfgGuardianEnabled';
-  guardianEnableInput.textContent = 'Enabled';
-  wireToggleChip(guardianEnableInput, () => {});
-
-  const guardianIntervalInput = /** @type {HTMLInputElement} */ (mk('input'));
-  guardianIntervalInput.type = 'text';
-  guardianIntervalInput.id = 'remCfgGuardianInterval';
-  guardianIntervalInput.size = 8;
-  guardianIntervalInput.placeholder = 'e.g. 20';
-  guardianIntervalInput.title =
-    'Minutes after a fleet-save lands that the guardian reminder rings if it is still sitting bare.';
-
-  const guardianAckIntervalInput = /** @type {HTMLInputElement} */ (mk('input'));
-  guardianAckIntervalInput.type = 'text';
-  guardianAckIntervalInput.id = 'remCfgGuardianAckInterval';
-  guardianAckIntervalInput.size = 8;
-  guardianAckIntervalInput.placeholder = 'e.g. 3';
-  guardianAckIntervalInput.title =
-    'Minutes with no page reload before the in-game button starts pulsing for an ACK (presence check). In-game only — no push.';
-
   // ── message template editors (one per kind) ──────────────────────────
   const waveTplEditor = makeTemplateEditor({ kind: 'wave', idBase: 'remCfgTplWave' });
   const adhocTplEditor = makeTemplateEditor({ kind: 'adhoc', idBase: 'remCfgTplAdhoc' });
@@ -558,8 +530,9 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
    *
    * @param {string} cap
    * @param {HTMLElement[]} controls
-   * @param {{ note?: string, wide?: boolean, grow?: boolean }} [o]
-   *   `grow`: let the (single) control take the rest of the row.
+   * @param {{ note?: string, tail?: string, wide?: boolean, grow?: boolean }} [o]
+   *   `grow`: let the (single) control take the rest of the row. `tail`: a few
+   *   words right after the control, finishing the label's sentence.
    * @returns {HTMLElement}
    */
   const cell = (cap, controls, o = {}) => {
@@ -572,6 +545,11 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
       if (o.grow) ctl.classList.add('alarm-ctl');
       c.appendChild(ctl);
     }
+    if (o.tail) {
+      const t = mk('span', undefined, o.tail);
+      t.className = 'cmd-unit';
+      c.appendChild(t);
+    }
     if (o.note) {
       const n = mk('span', undefined, o.note);
       n.className = 'cmd-note';
@@ -579,29 +557,6 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
     }
     return c;
   };
-
-  /**
-   * Hide `host` whenever `chip` is off. The widgets stay MOUNTED
-   * (`display:none`, not detached): the autosave below collects every pane on
-   * every save, so a detached field would persist as empty and silently wipe
-   * a value the user still has.
-   *
-   * Returned re-sync must run after a programmatic fill — `setToggleChip`
-   * only flips the class, it fires no click.
-   *
-   * @param {HTMLButtonElement} chip
-   * @param {HTMLElement} host
-   * @returns {() => void}
-   */
-  const collapseWith = (chip, host) => {
-    const sync = () => { host.style.display = toggleChipOn(chip) ? '' : 'none'; };
-    chip.addEventListener('click', sync);
-    sync();
-    return sync;
-  };
-
-  /** @type {(() => void)[]} */
-  const collapsers = [];
 
   /**
    * Fill a drawer with ONE settings grid. A kind's own switch is just its
@@ -619,48 +574,28 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
     pane.appendChild(grid);
   };
 
-  /** A small inline "label + input" pair inside one cell. @param {string} label @param {HTMLElement} input */
-  const inline = (label, input) => {
-    const w = mk('span');
-    w.className = 'alarm-inline';
-    const l = mk('span', undefined, label);
-    l.className = 'cmd-unit';
-    w.append(l, input);
-    return w;
-  };
-
+  // Labels read as a short sentence — keyword, control, what it does — the
+  // Big Colony Hunting idiom.
   paneGrid(adhocPane, [
-    cell('Times', [adhocEditor.element], { wide: true, grow: true, note: 'relative to arrival: − before, 0 at, + after' }),
-    cell('Message', [adhocTplEditor.element], { wide: true, grow: true }),
+    cell('Times', [adhocEditor.element], { grow: true, note: 'around arrival: − before, 0 at, + after' }),
+    cell('Message', [adhocTplEditor.element], { grow: true }),
   ]);
 
-  // Landed-fleet guardian: its switch and its two intervals share one cell;
-  // the intervals fold away while it is off.
-  const guardianKnobs = mk('span');
-  guardianKnobs.className = 'alarm-inline';
-  guardianKnobs.append(
-    inline('ring after (min)', guardianIntervalInput),
-    inline('ACK after (min)', guardianAckIntervalInput),
-  );
-  collapsers.push(collapseWith(guardianEnableInput, guardianKnobs));
-
+  // No switches: fleet-save detection and the landed-fleet reminder are always
+  // on. The first after-landing time is also when the landed-fleet reminder
+  // rings (see domain/galaxyScanConfig.deriveFsGuardian).
   paneGrid(fsPane, [
-    cell('Reminders', [enabledInput], { note: 'a series of reminders per detected fleet-save' }),
-    cell('Ships', [thresholdInput], { note: 'fleet size that counts as a fleet-save' }),
-    cell('Min flight', [minFlightInput], { note: 'e.g. 10m · 0 = off' }),
-    cell('Landed fleet', [guardianEnableInput, guardianKnobs], { note: 'rings when your fleet sits exposed after landing' }),
-    cell('Times', [fsEditor.element], { wide: true, grow: true, note: 'relative to landing: − before, 0 at, + after' }),
-    cell('Message', [fsTplEditor.element], { wide: true, grow: true }),
+    cell('Min ships', [thresholdInput], { tail: 'make a fleet-save' }),
+    cell('Min flight', [minFlightInput], { tail: 'to count · 0 = any' }),
+    cell('Times', [fsEditor.element], { grow: true, note: 'around landing: − before, 0 at, + after · one after landing is always kept' }),
+    cell('Message', [fsTplEditor.element], { grow: true }),
   ]);
 
   paneGrid(wavePane, [
-    cell('Reminders', [waveEnabledInput], { note: 'a series of reminders per returning wave' }),
-    cell('Times', [waveEditor.element], { grow: true, note: 'relative to the wave’s return' }),
-    cell('Message', [waveTplEditor.element], { wide: true, grow: true }),
+    cell('Reminders', [waveEnabledInput], { tail: 'for every returning wave' }),
+    cell('Message', [waveTplEditor.element], { grow: true }),
+    cell('Times', [waveEditor.element], { wide: true, grow: true, note: 'after the wave returns' }),
   ]);
-
-  /** Re-run every collapse rule — call after a programmatic fill. @returns {void} */
-  const syncCollapsers = () => { for (const f of collapsers) f(); };
 
   const statusEl = mk('span', 'margin-left:12px;font-size:13px;');
   statusEl.id = 'remCfgStatus';
@@ -685,14 +620,9 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
 
   /** Populate the per-server widgets. @param {import('../../domain/galaxyScanConfig.js').GalaxyScanConfig} cfg */
   const fillFs = (cfg) => {
-    setToggleChip(enabledInput, cfg.fsEnabled);
     thresholdInput.value = String(cfg.fsThreshold);
     minFlightInput.value = formatDuration(cfg.fsMinFlightSec);
     fsEditor.setFromString(cfg.fsOffsets);
-    setToggleChip(guardianEnableInput, cfg.guardianEnabled);
-    guardianIntervalInput.value = String(cfg.guardianIntervalMin);
-    guardianAckIntervalInput.value = String(cfg.guardianAckIntervalMin);
-    syncCollapsers();
   };
 
   /**
@@ -707,7 +637,6 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
     waveTplEditor.setFromTemplate(cfg.templates.wave);
     adhocTplEditor.setFromTemplate(cfg.templates.adhoc);
     fsTplEditor.setFromTemplate(cfg.templates.fleetSave);
-    syncCollapsers();
   };
 
   const refresh = async () => {
@@ -750,45 +679,25 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
       setStatus('Fleet-save times — each reminder must be a duration like -10m, 0m, 10m.', '#e66');
       return null;
     }
-    const guardianIntervalMin = parseInt(guardianIntervalInput.value, 10);
-    if (!Number.isFinite(guardianIntervalMin) || guardianIntervalMin < 1) {
-      setStatus('Fleet guardian interval must be a whole number of minutes (≥ 1).', '#e66');
-      return null;
-    }
-    const guardianAckIntervalMin = parseInt(guardianAckIntervalInput.value, 10);
-    if (!Number.isFinite(guardianAckIntervalMin) || guardianAckIntervalMin < 1) {
-      setStatus('Fleet guardian ACK interval must be a whole number of minutes (≥ 1).', '#e66');
-      return null;
-    }
-    // Never-enters net: the guardian arms on ENTRY, so a player who never
-    // re-enters after landing would get no warning at all. With the guardian on,
-    // guarantee the classic FS alarmClock still pings them — auto-add a post-landing
-    // alarmClock at the guardian interval if none already fires at or after it. The
-    // injected chip shows in the editor so the change is visible.
-    let fsOffsets = offsets;
-    if (toggleChipOn(guardianEnableInput)) {
-      const need = guardianIntervalMin * 60;
-      const parsed = parseDurationList(offsets, { signed: true });
-      if (!parsed.some((o) => o >= need)) {
-        fsOffsets = [...new Set([...parsed, need])].sort((a, b) => a - b).map(formatDuration).join(', ');
-        // Reflect the injected chip in the editor — but NOT while the user is
-        // typing in it: under autosave this runs mid-edit, and setFromString
-        // rebuilds every row (destroying the focused one and its in-progress
-        // input). The PERSISTED value carries the injected offset either way;
-        // a skipped repaint surfaces on the next out-of-editor save or load.
-        if (!fsEditor.element.contains(document.activeElement)) {
-          fsEditor.setFromString(fsOffsets);
-        }
+    // A fleet-save always keeps one reminder AFTER landing (the one an away
+    // player needs); the landed-fleet timing follows from the times. If the
+    // player removed the last after-landing time it is put back at the default.
+    const derived = deriveFsGuardian(offsets);
+    if (derived.fsOffsets !== offsets) {
+      // Reflect the re-added chip — but NOT while the user is typing in the
+      // editor: under autosave this runs mid-edit, and setFromString rebuilds
+      // every row (destroying the focused one). The PERSISTED value carries it
+      // either way; a skipped repaint surfaces on the next save or load.
+      if (!fsEditor.element.contains(document.activeElement)) {
+        fsEditor.setFromString(derived.fsOffsets);
       }
     }
     return {
-      fsEnabled: toggleChipOn(enabledInput),
+      fsEnabled: true,
       fsThreshold: threshold,
       fsMinFlightSec: minFlight,
-      fsOffsets,
-      guardianEnabled: toggleChipOn(guardianEnableInput),
-      guardianIntervalMin,
-      guardianAckIntervalMin,
+      guardianEnabled: true,
+      ...derived,
     };
   };
 

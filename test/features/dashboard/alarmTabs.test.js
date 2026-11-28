@@ -58,6 +58,7 @@ const buildDom = () => {
   document.body.innerHTML = `
     <section id="alarmClockSection">
       <span id="alarmChannelState"></span>
+      <button id="remMasterToggle"></button>
       <div id="alarmTop">
         <div id="alarmKinds">
           ${KINDS.map((k) => `
@@ -128,6 +129,7 @@ describe('Alarm clock shell — gating', () => {
     expect($('alarmTop').classList.contains('ready')).toBe(true);
     expect($('alarmTop').classList.contains('off')).toBe(false);
     expect($('alarmChannelState').textContent).toBe('ntfy connected');
+    expect($('remMasterToggle').textContent).toBe('On');
   });
 
   it('clock off: marked off, no channel state, nothing opens', async () => {
@@ -137,6 +139,7 @@ describe('Alarm clock shell — gating', () => {
     expect($('alarmTop').classList.contains('off')).toBe(true);
     expect($('alarmTop').classList.contains('ready')).toBe(false);
     expect($('alarmChannelState').textContent).toBe('');
+    expect($('remMasterToggle').textContent).toBe('Off');
   });
 
   it('clock on without a usable token: not ready, and says so', async () => {
@@ -167,13 +170,14 @@ describe('Alarm clock shell — gating', () => {
 
 describe('Alarm clock shell — tile summaries', () => {
   it('shows each kind\'s times and an on/off pill — none for ad-hoc', async () => {
-    seed({ fsOn: false });
+    seed({ waveOn: false });
     install();
     await flush();
     expect(times('adhoc')).toBe('-5m · 0m');
-    expect(times('fs')).toBe('0m · 10m'); // times stay readable while off
-    expect(times('expo')).toBe('0m · 5m');
-    expect([pill('adhoc'), pill('fs'), pill('expo')]).toEqual(['', 'off', 'on']);
+    expect(times('fs')).toBe('0m · 10m');
+    expect(times('expo')).toBe('0m · 5m'); // times stay readable while off
+    // Only Expeditions has a switch: ad-hoc and fleet-save are always on.
+    expect([pill('adhoc'), pill('fs'), pill('expo')]).toEqual(['', '', 'off']);
   });
 
   it('repaints when a kind is changed elsewhere', async () => {
@@ -193,10 +197,10 @@ describe('Alarm clock shell — tile summaries', () => {
     const api = installAlarmTabs({ getUniverseId: () => uni });
     await flush();
     uni = 's999-pl';
-    store.set(galaxyScanConfigKeyFor(uni), { fsEnabled: false });
+    store.set(galaxyScanConfigKeyFor(uni), { fsOffsets: '0m, 45m' });
     api.refresh();
     await flush();
-    expect(pill('fs')).toBe('off');
+    expect(times('fs')).toBe('0m · 45m');
   });
 });
 
