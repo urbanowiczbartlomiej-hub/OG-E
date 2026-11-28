@@ -19,7 +19,7 @@ OG-E was audited against **every** rule in `AGENTS.md`; the mapping is clean.
 | §1.1 Automation / macros (1 click = 1 action) | Structural invariant — every fleet/action button is strictly 1:1; no multi-target / "spy-all" button exists. |
 | §1.2 Scheduling / delayed **game** actions | No timer fires a game action. |
 | §1.3 Auto-refresh / polling the game | No timer reloads the game or polls the game server. The one `location.reload` (`features/abandon`) is a one-shot settle after the player's own 3-tap abandon, not a loop. The colony FAB's "has the landing been processed?" wait reads the game's own unread-messages counter from the DOM (the game refreshes it itself on its websocket push) — no request of ours, and the reload stays the player's tap. |
-| §1.4 Auto-registered alarms / webhooks | No auto-registered alarm on in-game events. The alarm-clock push is a **player-set, per-instance reminder** (§1.4's allowed case) whose fire time is derived from the player's own action; it is **presence-gated** so OG-E never tracks the game while the player is away. Grep-verified zero `Notification` / `chrome.notifications` / `document.title` / favicon / audio. |
+| §1.4 Auto-registered alarms / webhooks | No auto-registered alarm on in-game events. The alarm-clock push is a **player-set, per-instance reminder** (§1.4's allowed case) whose fire time is derived from the player's own action; it is **presence-gated** so OG-E never tracks the game while the player is away. Full reasoning, per reminder kind, with code pointers: [The alarm clock and §1.4](#the-alarm-clock-and-14--classification-green-by-the-rules-intent-read-this-first). Grep-verified zero `Notification` / `chrome.notifications` / `document.title` / favicon / audio. |
 | §1.5 Alt UI / shortcuts / lobby bypass | None. Two redirect bridges rewrite only the game's own **response** navigation target (a URL the player could type). The ajax-token keeper repairs a variable the game itself failed to update, and corrects the same spent credential in an outgoing `checkTarget` when a sender replays one — a broken credential fixed, not a shortcut; a page reload achieves the same by hand. |
 | §1.5.1 Direct probing (`miniFleet` / `sendFleet`) | **Zero `miniFleet`; OG-E never originates a `sendFleet`.** The Spyglass `sendSpy` button is 1 tap → pre-fill + one native dispatch for **one** planet. The dashboard scan surfaces are **display only** and carry **no send control** — data display is deliberately separated from the probe action, exactly the `AGENTS.md` model. |
 | §1.6 Dark Matter imitation | No Commander-queue imitation, no premium-feature rebuild. |
@@ -239,44 +239,131 @@ reads only the extension's own storage (the cached public-API `universe.xml`
 and `serverData.xml`, the decision log, stored scans). It sends no request,
 runs no timer, and starts no game action. It is a count, not an alarm.
 
-## Alarm-clock reminder kinds — classification (developer's reading of §1.4)
+## The alarm clock and §1.4 — classification (GREEN by the rule's intent; read this first)
 
-The alarm clock rings on the player's phone (ntfy) for four kinds of reminder.
-Ad-hoc is the textbook §1.4 case — the player taps one fleet. The other three
-are set **per kind**, not per fleet, so they are recorded here explicitly:
+**One-line summary for a reviewer.** OG-E's alarm clock is a *phone alarm set
+from the player's own fleet sends*. It never observes the game in the player's
+absence, and it can never tell the player about anything they did not already
+know when they sent the fleet. It is the digital form of what OGame players
+have always done: send a fleet, read its arrival time, set an alarm.
 
-- **Fleet-save** — every own fleet above the player's ship threshold and
-  minimum flight time gets reminders around its landing. No separate switch
-  since 1.76.0: it is on whenever the alarm clock is, and the thresholds are
-  the opt-out.
-- **Expedition waves** — reminders around a wave's return (own switch).
-- **Landed fleet** — one reminder after a fleet-save lands, at the first
-  after-landing time, until the player clears it.
+### What §1.4 protects
 
-**Why this is read as allowed.** §1.4 forbids a tool that *watches the game on
-its own and alerts the player to events* — its stated reason is alerting a
-player "especially while away/inactive". None of these does that:
+`AGENTS.md` §1.4 draws its line at *"who registered the notification, and
+how"*, and states its reason in one sentence:
 
-1. **Only the player's own dispatches.** A reminder exists only for a fleet the
-   player sent themselves. Its time is the flight time the game showed before
-   the send — nothing the player does not already know and could not put into
-   their phone's own alarm.
-2. **Read on the player's page load, never in their absence.** The event list
-   is read when the player loads a game page. OG-E runs no timer, no poll and
-   no background reader; with the game closed it learns nothing and sends
-   nothing. The ring is scheduled in advance at ntfy — it is a clock, not a
-   watcher. Nothing that happens while the player is away (an attack, a
-   recall by someone else, a new event) can ever produce a notification.
-3. **Player-set scope.** The alarm clock is off by default, needs the player's
-   own ntfy token, and each kind's thresholds and times are the player's.
+> Automatically registered alarms designed to alert a player to in-game events
+> (especially while away/inactive) are prohibited.
 
-**The honest difference from the letter of §1.4.** Its allowed example is one
-click per fleet; here the player sets a rule for a kind of fleet once, and the
-push goes to an external channel (the §1.4 edge note asks to confirm that with
-a ToolDev). This classification is the developer's interpretation of the
-rule's intent, decided 2026-11-28 — it has not been confirmed by the ToolDev
-team. If they read it differently, the fall-back is a per-kind opt-in switch
-(as before 1.76.0) or per-fleet arming only (the ad-hoc path).
+The forbidden thing is a **watcher**: a tool that keeps looking at the game for
+the player and reports what happens there — an incoming attack, a finished
+building, a fleet that arrived. Such a tool replaces the player's attention. It
+gives an absent player information they would otherwise have had to be present
+to get. That is the unfair advantage, and it is why the rule names webhooks and
+Discord pings: they are how a watcher reaches someone who is away.
+
+### What OG-E does instead: the analog-alarm principle
+
+OG-E holds itself to one test, stricter than the rule's wording:
+
+> **A reminder is allowed only if the player could have set the very same
+> alarm on a kitchen timer at the moment they sent the fleet.**
+
+Everything about the alarm clock follows from that:
+
+| Property | A watcher (forbidden) | OG-E's alarm clock |
+|---|---|---|
+| What triggers it | Something happening in the game | The player's own fleet send |
+| When its content is known | Only when the event occurs | Before the send: the game shows the flight time on the dispatch screen |
+| Who needs to be present | Nobody — that is the point | The player, at their own game page, at the moment it is set |
+| What runs while the player is away | The tool, reading the game | Nothing. The ring is a delayed message already stored at ntfy |
+| Can it report an attack, a recall, any surprise | Yes | No — it cannot know one happened |
+| If the game changes after it is set | It notices and reports | It still rings at the old time, like any clock |
+
+A reminder is therefore **not a notification about an event**. Nothing is
+detected at ring time; there is no event at ring time as far as OG-E knows. The
+phone rings because a clock reached a time the player's own action fixed in
+advance. It can be missed like any alarm: no signal, phone in another room,
+battery flat. OG-E gets no second chance and does not try.
+
+### "One player action, one reminder" — how each kind is registered
+
+§1.4's allowed case is the player opting in *"for a specific, individual
+event"*. In OG-E the registering act is the fleet send itself, done by hand,
+one fleet at a time:
+
+| Kind | The player's act that registers it | What gets set |
+|---|---|---|
+| **Ad-hoc** | Taps the bell on one fleet in the event list | That fleet's times |
+| **Fleet-save** | Sends one fleet that meets the size and flight-time rule they configured | That fleet's landing times |
+| **Expedition** | Sends their expeditions | The time those fleets return |
+| **Landed fleet** | The same fleet-save send (or a manual mark on one of their own planets) | One time after that fleet's landing |
+
+The design rule is that no reminder exists for anything the player did not
+dispatch themselves. Hostile fleets and every other event in the list are never
+turned into reminders (one known gap for friendly fleets is listed further
+down). The per-kind settings (which fleets count as a
+fleet-save, how many minutes before or after) are the player writing down, once,
+the alarm they would otherwise set by hand after every send. They choose the
+rule; each send is still their own individual act.
+
+### How this is guaranteed in the code (verifiable)
+
+- **No game request, ever.** The alarm clock reads the event list the *game*
+  fetched and rendered for the page in front of the player
+  (`src/features/alarmClock/producer.js`, driven by `oge:eventBoxLoaded` from
+  `src/bridges/eventBoxObserver.js`, which only observes the game's own XHR).
+  OG-E never requests the event list, never reloads, never polls.
+- **Presence gate.** `producer.js` skips the whole run while the tab is hidden
+  (`if (document.hidden) { pendingVisible = true; return; }`) — tab switch,
+  minimise, phone screen lock — and reconciles once when the player returns.
+- **No background component.** The extension has no background script, no
+  alarm API, no service worker (`manifest.json`). With the game tab closed
+  there is no OG-E code running that could look at anything.
+- **The ring is pre-scheduled.** Each reminder is a delayed message posted to
+  ntfy with a fixed delivery time (`X-Delay`, `src/sync/ntfyReconciler.js`).
+  ntfy delivers it at that time; no OG-E code runs then.
+- **Never a hostile fleet.** Fleet-save candidates are the rows the game marks
+  `friendly` (`isOwnFleet` in `src/features/alarmClock/fleetSaveScan.js`);
+  hostile rows are never read. Waves are the player's own expedition returns
+  (`src/domain/waves.js`). See the known gap below.
+- **No on-page or browser notification.** Grep-verified zero `Notification`,
+  `chrome.notifications`, title or favicon flashing, audio.
+
+### Where this sits against the letter of §1.4 (stated plainly)
+
+Three points a reviewer should weigh knowingly rather than discover — two
+differences from §1.4's textbook example and one open gap:
+
+1. **The example shows a click next to one fleet; three of the four kinds are
+   registered by the send itself under a rule the player configured.** The
+   opt-in is real and individual — no send, no reminder — but it is the
+   dispatch, not a second click.
+2. **The ring goes to an external channel (ntfy).** §1.4's edge note calls an
+   external channel "closer to the line" because it can reach an absent player,
+   and asks for a ToolDev's confirmation. A reminder that could not reach the
+   player away from the screen would not be an alarm clock at all; what keeps
+   it fair is that the *content* is something only the present player set.
+
+3. **Known gap: the game's `friendly` mark is wider than "mine".** It also
+   covers an alliance-mate's or buddy's fleet flying to the player. Such a
+   fleet, if it met the player's size and flight-time rule, would get
+   fleet-save reminders although the player did not send it. That contradicts
+   the "own dispatch" principle above and is to be closed by filtering on the
+   fleet's owner; until then it is a deviation, not a design choice.
+
+This is the developer's interpretation of the rule's intent (2026-11-28). It
+has not been confirmed by the ToolDev team; if they decide otherwise, the
+narrower fall-backs are a per-kind switch (as before 1.76.0) or the per-fleet
+tap only (the ad-hoc path).
+
+### What would break this classification (do not build)
+
+- Any reminder derived from an event the player did not cause (hostile fleets,
+  another player's actions, finished builds or research).
+- Any reading of the game while the tab is hidden, or by a background script.
+- Any reminder whose content is first learned after the player has left.
+- Re-checking the game at ring time, or a "still true?" follow-up fetch.
 
 ## What OG-E never does (all grep-verified)
 
