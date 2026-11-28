@@ -525,9 +525,11 @@ describe('fetchScheduledMessages', () => {
     await fetchScheduledMessages({ topic: 'oge-t', token: 'tk_abc', now: 0 });
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe(`https://ntfy.sh/oge-t/json?poll=1&scheduled=1&${expectedAuthParam('tk_abc')}`);
-    // Only a timeout signal — no headers (an Authorization header would fail
-    // the CORS preflight; auth rides in the query string).
-    expect(Object.keys(init)).toEqual(['signal']);
+    // No Authorization header (it would fail the CORS preflight; auth rides in
+    // the query string) — only X-Priority, which shields ntfy from the
+    // browser's own HTTP `Priority` header (Firefox Nightly 163 → 400).
+    expect(Object.keys(init).sort()).toEqual(['headers', 'signal']);
+    expect(init.headers).toEqual({ 'X-Priority': '1,2,3,4,5' });
   });
 
   it('parses NDJSON: one message per line, future-only', async () => {
@@ -612,7 +614,7 @@ describe('cancelWaveAlarmClock', () => {
       const [url, init] = fetchMock.mock.calls[i];
       expect(url).toBe(`https://ntfy.sh/t/${['a','b','c'][i]}?${expectedAuth}`);
       expect(init.method).toBe('DELETE');
-      expect(init.headers).toBeUndefined();
+      expect(init.headers).toEqual({ 'X-Priority': '3' });
     }
   });
 

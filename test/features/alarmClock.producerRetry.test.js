@@ -74,17 +74,14 @@ describe('alarmClock producer — retry after a failed sync', () => {
     expect(readPending(uni)).toHaveLength(0); // retried → drained
   });
 
-  it('waits until just past an active gist backoff before retrying', async () => {
+  it('a GitHub gist backoff does not delay the reminders (ntfy is the state)', async () => {
     backoffUntil = Date.now() + 60_000;
-    syncAlarmClock.mockRejectedValueOnce(new Error('rate limited')).mockResolvedValue(OK);
+    syncAlarmClock.mockRejectedValueOnce(new Error('ntfy poll 502')).mockResolvedValue(OK);
     const p = await installed();
     p.armAdhoc(entry);
     await flush();
     expect(syncAlarmClock).toHaveBeenCalledTimes(1);
-
-    await vi.advanceTimersByTimeAsync(30_000);
-    expect(syncAlarmClock).toHaveBeenCalledTimes(1); // still inside the backoff
-    await vi.advanceTimersByTimeAsync(31_500);
+    await vi.advanceTimersByTimeAsync(10_000);
     await flush();
     expect(syncAlarmClock).toHaveBeenCalledTimes(2);
     expect(readPending(p.universeId)).toHaveLength(0);
@@ -108,8 +105,8 @@ describe('alarmClock producer — retry after a failed sync', () => {
     expect(syncAlarmClock).toHaveBeenCalledTimes(3);
   });
 
-  it('does not retry a permanent no-token result', async () => {
-    syncAlarmClock.mockResolvedValue({ ok: false, reason: 'no-token' });
+  it('does not retry a permanent no-ntfy-token result', async () => {
+    syncAlarmClock.mockResolvedValue({ ok: false, reason: 'no-ntfy-token' });
     const p = await installed();
     p.armAdhoc(entry);
     await flush();

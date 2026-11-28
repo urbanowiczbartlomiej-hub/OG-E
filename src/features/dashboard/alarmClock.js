@@ -10,35 +10,25 @@
 // preference lives, and this page becomes a read-only "what's in the
 // queue right now" view.
 //
-// Data path: the game-origin sync mirrors the last-written state +
-// gist id + gist token into `chrome.storage.local` on every wave push.
-// We read those mirrors here and additionally do a live `fetch`
-// against the gist (using the mirrored token) so the preview is fresh
-// even when the game tab hasn't synced in a while. Mirror snapshot is
-// the fallback when the live fetch can't run (no token yet, offline,
-// rate-limited).
+// Data path: the ntfy queue is the shared reminder state
+// (docs/ntfy-queue-plan.md). The game side converges it on every sync and
+// mirrors what it did (per universe) into `chrome.storage.local`; this tab
+// renders that mirror against a live poll of the queue. No GitHub involved.
 //
 // @see ../../sync/alarmClock.js — mirror keys + filename
 // @see ../../sync/ntfyReconciler.js — offsetsForSchedule / DEFAULT_WAVE_OFFSETS_SEC
 // @see ./index.js — installAlarmClock wired into the dashboard boot
 
-/* global fetch */
-
 import { chromeStore } from '../../lib/storage.js';
 import {
   ALARM_CLOCK_MIRROR_KEY,
-  ALARM_CLOCK_GIST_ID_KEY,
-  ALARM_CLOCK_TOKEN_KEY,
   ALARM_CLOCK_NTFY_TOKEN_KEY,
-  ALARM_CLOCK_FILENAME_RE,
-  alarmClockFilenameFor,
   deriveNtfyTopic,
   maskTopic,
 } from '../../sync/alarmClock.js';
 import {
   fetchScheduledMessages,
   cancelWaveAlarmClock,
-  isGuardianTitle,
   guardianTitleFor,
   NTFY_MAX_DELAY_SEC,
 } from '../../sync/ntfyReconciler.js';
@@ -261,63 +251,6 @@ const coerceMirror = (m) => {
 };
 
 /**
- * Fetch the gist and partition alarmClock files by universeId.
- * Returns one `AlarmClockState` per universe present in the gist, plus a
- * `complete` flag: `false` when ANY alarmClock-named file could not be fully
- * read (empty content, truncated file whose raw_url resolution failed, corrupt
- * JSON). The orphan sweep keys off that flag — a universe silently dropped
- * from the dict would surrender every one of its live message ids as
- * "orphans", so an incomplete read must fail CLOSED (render what we have,
- * sweep nothing).
- *
- * @param {string} gistId
- * @param {string} gistToken
- * @returns {Promise<{ states: Record<string, AlarmClockState>, complete: boolean }>}
- */
-const fetchAllAlarmClockStates = async (gistId, gistToken) => {
-  const res = await fetch(`https://api.github.com/gists/${gistId}`, {
-    headers: {
-      Authorization: `Bearer ${gistToken}`,
-      Accept: 'application/vnd.github+json',
-    },
-  });
-  if (!res.ok) throw new Error('HTTP ' + res.status);
-  const gist = await res.json();
-  const files = gist?.files ?? {};
-  /** @type {Record<string, AlarmClockState>} */
-  const out = {};
-  let complete = true;
-  for (const [filename, file] of Object.entries(files)) {
-    const m = ALARM_CLOCK_FILENAME_RE.exec(filename);
-    if (!m) continue;
-    const f = /** @type {{ content?: string, truncated?: boolean, raw_url?: string }} */ (file);
-    let content = f?.content;
-    // GitHub inlines only files under ~1 MB; a truncated file's `content` is
-    // a useless prefix — resolve the full body via raw_url (same as
-    // sync/alarmClock.js does) or count the read as incomplete.
-    if (f?.truncated && f.raw_url) {
-      try {
-        const rawRes = await fetch(f.raw_url);
-        content = rawRes.ok ? await rawRes.text() : undefined;
-      } catch {
-        content = undefined;
-      }
-    }
-    if (!content) {
-      complete = false;
-      continue;
-    }
-    try {
-      out[m[1]] = /** @type {AlarmClockState} */ (JSON.parse(content));
-    } catch {
-      // Skip corrupt file (next write rebuilds it) — but poison the sweep.
-      complete = false;
-    }
-  }
-  return { states: out, complete };
-};
-
-/**
  * Collect every ntfy message id that belongs to a LIVE alarmClock, unioned
  * across all universes and across all three alarmClock kinds: expedition
  * waves (`notifyState`), ad-hoc fleets (`adhocNotify`) and auto-detected
@@ -371,101 +304,40 @@ export const isFleetSaveTooFarOut = (fs, scheduledCount, nowSec) => {
 };
 
 /**
- * Fetch all per-universe gist states + the ntfy.sh queue in parallel,
- * then render one section per universe with the same per-wave card
- * layout as before. Falls back to the chrome.storage mirror dict when
- * the live gist fetch can't run.
+ * Render the per-universe reminder state the game side mirrors into
+ * chrome.storage on every sync, against the live ntfy queue.
+ *
+ * The ntfy queue is the shared state (docs/ntfy-queue-plan.md): the game side
+ * reads it, converges it and mirrors what it did here. The dashboard no longer
+ * reads the GitHub gist and no longer sweeps "orphans" — any device may own a
+ * queued message, and only the game side (which sees the event list) can tell
+ * when one is provably over.
  */
 const refreshPreview = async () => {
   setPreviewStatus('loading…', 'warn');
-  const [gistId, gistToken, ntfyToken, mirrorRaw, flags] = await Promise.all([
-    chromeStore.get(ALARM_CLOCK_GIST_ID_KEY),
-    chromeStore.get(ALARM_CLOCK_TOKEN_KEY),
+  const [ntfyToken, mirrorRaw, flags] = await Promise.all([
     chromeStore.get(ALARM_CLOCK_NTFY_TOKEN_KEY),
     chromeStore.get(ALARM_CLOCK_MIRROR_KEY),
     readKindFlags(),
   ]);
-  const mirror = coerceMirror(mirrorRaw);
-
-  if (!gistId || !gistToken) {
-    renderPreviewMulti(mirror, new Map(), flags);
+  const states = coerceMirror(mirrorRaw);
+  if (typeof ntfyToken !== 'string' || !ntfyToken) {
+    renderPreviewMulti(states, new Map(), flags);
     setPreviewStatus(
-      Object.keys(mirror).length > 0 ? 'from last mirror (no token yet)' : 'no data yet',
+      Object.keys(states).length > 0 ? 'from last mirror (no ntfy token yet)' : 'no data yet — set the ntfy token and open the game',
       'warn',
     );
     return;
   }
-
   const nowSec = Math.floor(Date.now() / 1000);
-  /** @type {Promise<Map<string, { id: string, time: number, message?: string, title?: string }>>} */
-  const ntfyP = (async () => {
-    if (typeof ntfyToken !== 'string' || !ntfyToken) return new Map();
-    const topic = await deriveNtfyTopic(typeof ntfyToken === 'string' ? ntfyToken : '');
-    if (!topic) return new Map();
-    try {
-      const msgs = await fetchScheduledMessages({ topic, token: ntfyToken, now: nowSec });
-      return new Map(msgs.map((m) => [m.id, m]));
-    } catch {
-      // ntfy fetch failed (network, 401) — preview just hides the
-      // "fires at" line for each wave. Not fatal.
-      return new Map();
-    }
-  })();
-
   try {
-    const [gistRead, ntfyMap] = await Promise.all([
-      fetchAllAlarmClockStates(/** @type {string} */ (gistId), /** @type {string} */ (gistToken)),
-      ntfyP,
-    ]);
-    const states = gistRead.states;
-
-    // Orphan sweep: cancel ntfy messages that aren't claimed by ANY
-    // universe in the gist. The sweep fails CLOSED — it is skipped when:
-    //   - the gist read was incomplete (corrupt/truncated file: that
-    //     universe's live ids would look like orphans), or
-    //   - any state lacks a parseable updatedAt (its freshness can't be
-    //     judged, and the "no timestamps at all" case must not sweep), or
-    //   - any universe file is fresh (< 120 s old), to avoid cancelling
-    //     messages just posted but not yet PATCHed by a sibling device.
-    // Residual risk (accepted): a sibling that posts to ntfy right now,
-    // while its LAST gist write is already > 120 s old, loses that race —
-    // the protocol carries no per-message creation time to guard on.
-    let orphansCancelled = 0;
-    const ours = collectOurMessageIds(states);
-    let freshestAge = Infinity;
-    let allStamped = true;
-    for (const state of Object.values(states)) {
-      const t = state.updatedAt ? new Date(state.updatedAt).getTime() : NaN;
-      if (!Number.isFinite(t)) {
-        allStamped = false;
-        continue;
-      }
-      const age = nowSec - Math.floor(t / 1000);
-      if (age < freshestAge) freshestAge = age;
+    const topic = await deriveNtfyTopic(ntfyToken);
+    /** @type {Map<string, { id: string, time: number, message?: string, title?: string }>} */
+    const ntfyMap = new Map();
+    if (topic) {
+      const msgs = await fetchScheduledMessages({ topic, token: ntfyToken, now: nowSec });
+      for (const m of msgs) ntfyMap.set(m.id, m);
     }
-    if (
-      gistRead.complete && allStamped &&
-      typeof ntfyToken === 'string' && ntfyToken && ntfyMap.size > 0 &&
-      Object.keys(states).length > 0 && freshestAge > 120
-    ) {
-      const topic = await deriveNtfyTopic(typeof ntfyToken === 'string' ? ntfyToken : '');
-      if (topic) {
-        const orphanIds = [];
-        for (const [id, msg] of ntfyMap) {
-          if (ours.has(id)) continue;
-          // Guardian pushes are state-free in the gist, so they're never in
-          // `ours` — skip them by title or the sweep would cancel a live push.
-          // The in-game guardian reconcile owns their lifecycle (by title).
-          if (isGuardianTitle(msg.title)) continue;
-          orphanIds.push(id);
-        }
-        if (orphanIds.length > 0) {
-          orphansCancelled = await cancelWaveAlarmClock({ ids: orphanIds, topic, token: ntfyToken });
-          for (const id of orphanIds) ntfyMap.delete(id);
-        }
-      }
-    }
-
     renderPreviewMulti(states, ntfyMap, flags);
     // Scope the count to the SELECTED server (which is all the preview shows).
     // The ntfy topic is shared across the account's universes, so the whole
@@ -477,16 +349,10 @@ const refreshPreview = async () => {
       const ids = collectOurMessageIds({ [active]: activeState });
       for (const id of ids) if (ntfyMap.has(id)) queued += 1;
     }
-    const sweepNote = orphansCancelled > 0
-      ? ` · cleaned ${orphansCancelled} orphan${orphansCancelled === 1 ? '' : 's'}`
-      : '';
-    setPreviewStatus(
-      `as of ${new Date().toLocaleTimeString()} · ${queued} reminder${queued === 1 ? '' : 's'} set${sweepNote}`,
-      'ok',
-    );
+    setPreviewStatus(`as of ${new Date().toLocaleTimeString()} · ${queued} reminder${queued === 1 ? '' : 's'} set`, 'ok');
   } catch (err) {
-    renderPreviewMulti(mirror, new Map(), flags);
-    setPreviewStatus('couldn\'t refresh (' + /** @type {Error} */ (err).message + ') — showing last known', 'err');
+    renderPreviewMulti(states, new Map(), flags);
+    setPreviewStatus(`couldn't refresh (${/** @type {Error} */ (err).message}) — showing last known`, 'err');
   }
 };
 
@@ -540,7 +406,7 @@ const renderPreviewMulti = (states, ntfyMap, flags = { waveOn: true, fsOn: true 
 
   if (universesInGist.length === 0) {
     const p = node('p', {
-      text: 'No data yet. Enable cloud sync + the alarm clock in OG-E settings and send an expedition.',
+      text: 'No reminders yet. Turn on the alarm clock, set the ntfy token and open the game.',
     });
     p.style.color = '#888';
     root.appendChild(p);
@@ -577,104 +443,70 @@ const renderPreviewMulti = (states, ntfyMap, flags = { waveOn: true, fsOn: true 
 };
 
 /**
- * Dashboard-side cancel of one wave: DELETE its pending ntfy messages,
- * mark the wave `cancelled: true` and zero its `scheduledMessageIds` in
- * the gist file, then re-render. Tombstone the wave (rather than removing
- * it) so the game-side `reconcileWaves` matches it across subsequent
- * scans and the cancelled flag carries forward — without it, the wave
- * would look brand-new again on the next game-side sync while its DOM
- * rows are still in the eventList, and a fresh schedule would land.
- *
- * Direct GitHub PATCH from the extension origin: we already have the
- * mirrored gist token in `chrome.storage` (same one the live preview
- * fetch uses), so we don't route through `writeAlarmClockState` (which
- * reads the token from the game-origin `localStorage`).
- *
- * Best-effort: every failure mode is shown in the preview status line
- * and the dashboard re-renders so the user sees the current truth.
+ * Apply a dashboard-side cancel: DELETE the given ntfy messages, then update
+ * this universe's entry in the chrome.storage mirror — which is also the game
+ * side's device-local alarm-clock state (`sync/alarmClock.readLocalAlarmClock`),
+ * so the change sticks on THIS device. The ntfy queue is the shared state
+ * (docs/ntfy-queue-plan.md); another device that still sees a reason for the
+ * series may re-create it (accepted: better a ring too many than none).
  *
  * @param {string} universeId
- * @param {string} waveId
+ * @param {string[]} ids  ntfy message ids to cancel.
+ * @param {(state: AlarmClockState) => AlarmClockState} mutate  Mirror update.
  * @returns {Promise<void>}
  */
-const cancelWaveFromDashboard = async (universeId, waveId) => {
-  const [gistId, gistToken, ntfyToken] = await Promise.all([
-    chromeStore.get(ALARM_CLOCK_GIST_ID_KEY),
-    chromeStore.get(ALARM_CLOCK_TOKEN_KEY),
+const cancelInQueueAndMirror = async (universeId, ids, mutate) => {
+  const [ntfyToken, mirrorRaw] = await Promise.all([
     chromeStore.get(ALARM_CLOCK_NTFY_TOKEN_KEY),
+    chromeStore.get(ALARM_CLOCK_MIRROR_KEY),
   ]);
-  if (typeof gistId !== 'string' || !gistId || typeof gistToken !== 'string' || !gistToken) {
-    setPreviewStatus('cancel failed: gist not configured yet', 'err');
-    return;
-  }
-
-  /** @type {Record<string, AlarmClockState>} */
-  let states;
-  try {
-    states = (await fetchAllAlarmClockStates(gistId, gistToken)).states;
-  } catch (err) {
-    setPreviewStatus('cancel failed: ' + /** @type {Error} */ (err).message, 'err');
-    return;
-  }
-  const state = states[universeId];
-  const wave = state?.waves?.find((w) => w.id === waveId);
-  if (!state || !wave) {
-    setPreviewStatus('cancel failed: wave already gone', 'warn');
-    void refreshPreview();
-    return;
-  }
-
-  const notify = state.notifyState || {};
-  const entry = notify[waveId] || {};
-  const ids = entry.scheduledMessageIds ?? [];
-
   if (typeof ntfyToken === 'string' && ntfyToken && ids.length > 0) {
     const topic = await deriveNtfyTopic(ntfyToken);
     if (topic) {
       try {
         await cancelWaveAlarmClock({ ids, topic, token: ntfyToken });
       } catch {
-        // Per-message DELETE failures are already swallowed inside the
-        // helper; this catch is for the rare "whole call threw" path.
+        // Per-message DELETE failures are swallowed inside the helper.
       }
     }
   }
-
-  /** @type {AlarmClockState} */
-  const next = {
-    ...state,
-    updatedAt: new Date().toISOString(),
-    waves: state.waves.map((w) => (w.id === waveId ? { ...w, cancelled: true } : w)),
-    notifyState: { ...notify, [waveId]: { ...(notify[waveId] || {}), scheduledMessageIds: [] } },
-  };
-
-  /** @type {Response} */
-  let res;
-  try {
-    res = await fetch(`https://api.github.com/gists/${gistId}`, {
-      method: 'PATCH',
-      headers: {
-        Authorization: `Bearer ${gistToken}`,
-        Accept: 'application/vnd.github+json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        files: {
-          [alarmClockFilenameFor(universeId)]: { content: JSON.stringify(next, null, 2) },
-        },
-      }),
-    });
-  } catch (err) {
-    setPreviewStatus('cancel failed: ' + /** @type {Error} */ (err).message, 'err');
-    void refreshPreview();
-    return;
-  }
-  if (!res.ok) {
-    setPreviewStatus(`cancel failed: gist PATCH ${res.status}`, 'err');
-    void refreshPreview();
-    return;
+  const dict = coerceMirror(mirrorRaw);
+  const state = dict[universeId];
+  if (state) {
+    try {
+      await chromeStore.set(ALARM_CLOCK_MIRROR_KEY, { ...dict, [universeId]: mutate(state) });
+    } catch (err) {
+      setPreviewStatus('cancel failed: ' + /** @type {Error} */ (err).message, 'err');
+    }
   }
   void refreshPreview();
+};
+
+/**
+ * Dashboard-side cancel of one expedition wave: DELETE its queued ntfy
+ * messages and TOMBSTONE the wave (`cancelled: true`) in this device's local
+ * state, so the game side's `reconcileWaves` carries the flag forward instead
+ * of re-scheduling the wave while its rows are still in the event list.
+ *
+ * @param {string} universeId
+ * @param {string} waveId
+ * @returns {Promise<void>}
+ */
+const cancelWaveFromDashboard = async (universeId, waveId) => {
+  const dict = coerceMirror(await chromeStore.get(ALARM_CLOCK_MIRROR_KEY));
+  const state = dict[universeId];
+  if (!state?.waves?.some((w) => w.id === waveId)) {
+    setPreviewStatus('cancel failed: wave already gone', 'warn');
+    void refreshPreview();
+    return;
+  }
+  const ids = state.notifyState?.[waveId]?.scheduledMessageIds ?? [];
+  await cancelInQueueAndMirror(universeId, ids, (st) => ({
+    ...st,
+    updatedAt: new Date().toISOString(),
+    waves: st.waves.map((w) => (w.id === waveId ? { ...w, cancelled: true } : w)),
+    notifyState: { ...st.notifyState, [waveId]: { ...(st.notifyState?.[waveId] || {}), scheduledMessageIds: [] } },
+  }));
 };
 
 /**
@@ -1072,93 +904,33 @@ const renderGuardianInto = (section, universeId, ntfyMap) => {
 };
 
 /**
- * Dashboard-side cancel of one ad-hoc alarmClock: DELETE its pending ntfy
- * messages, then REMOVE the entry from `adhoc` + `adhocNotify` and PATCH
- * the gist. Unlike a wave we delete rather than tombstone — an ad-hoc
- * entry is only ever created by an explicit in-game arm (never derived
- * from the event list), so a concurrent game-side sync won't re-create it.
+ * Dashboard-side cancel of one ad-hoc reminder: DELETE its queued ntfy
+ * messages. Armed = "its series is on the queue", so once they are gone every
+ * device sees it disarmed; the entry also leaves this device's local mirror.
  *
  * @param {string} universeId
  * @param {string} entryId
  * @returns {Promise<void>}
  */
 const cancelAdhocFromDashboard = async (universeId, entryId) => {
-  const [gistId, gistToken, ntfyToken] = await Promise.all([
-    chromeStore.get(ALARM_CLOCK_GIST_ID_KEY),
-    chromeStore.get(ALARM_CLOCK_TOKEN_KEY),
-    chromeStore.get(ALARM_CLOCK_NTFY_TOKEN_KEY),
-  ]);
-  if (typeof gistId !== 'string' || !gistId || typeof gistToken !== 'string' || !gistToken) {
-    setPreviewStatus('cancel failed: gist not configured yet', 'err');
-    return;
-  }
-
-  /** @type {Record<string, AlarmClockState>} */
-  let states;
-  try {
-    states = (await fetchAllAlarmClockStates(gistId, gistToken)).states;
-  } catch (err) {
-    setPreviewStatus('cancel failed: ' + /** @type {Error} */ (err).message, 'err');
-    return;
-  }
-  const state = states[universeId];
-  const entry = state?.adhoc?.find((e) => e.id === entryId);
-  if (!state || !entry) {
+  const dict = coerceMirror(await chromeStore.get(ALARM_CLOCK_MIRROR_KEY));
+  const state = dict[universeId];
+  if (!state?.adhoc?.some((e) => e.id === entryId)) {
     setPreviewStatus('cancel failed: reminder already gone', 'warn');
     void refreshPreview();
     return;
   }
-
-  const notify = state.adhocNotify || {};
-  const ids = notify[entryId]?.scheduledMessageIds ?? [];
-  if (typeof ntfyToken === 'string' && ntfyToken && ids.length > 0) {
-    const topic = await deriveNtfyTopic(ntfyToken);
-    if (topic) {
-      try {
-        await cancelWaveAlarmClock({ ids, topic, token: ntfyToken });
-      } catch {
-        // Per-message DELETE failures are swallowed inside the helper.
-      }
-    }
-  }
-
-  const nextNotify = { ...notify };
-  delete nextNotify[entryId];
-  /** @type {AlarmClockState} */
-  const next = {
-    ...state,
-    updatedAt: new Date().toISOString(),
-    adhoc: state.adhoc.filter((e) => e.id !== entryId),
-    adhocNotify: nextNotify,
-  };
-
-  /** @type {Response} */
-  let res;
-  try {
-    res = await fetch(`https://api.github.com/gists/${gistId}`, {
-      method: 'PATCH',
-      headers: {
-        Authorization: `Bearer ${gistToken}`,
-        Accept: 'application/vnd.github+json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        files: {
-          [alarmClockFilenameFor(universeId)]: { content: JSON.stringify(next, null, 2) },
-        },
-      }),
-    });
-  } catch (err) {
-    setPreviewStatus('cancel failed: ' + /** @type {Error} */ (err).message, 'err');
-    void refreshPreview();
-    return;
-  }
-  if (!res.ok) {
-    setPreviewStatus(`cancel failed: gist PATCH ${res.status}`, 'err');
-    void refreshPreview();
-    return;
-  }
-  void refreshPreview();
+  const ids = state.adhocNotify?.[entryId]?.scheduledMessageIds ?? [];
+  await cancelInQueueAndMirror(universeId, ids, (st) => {
+    const nextNotify = { ...st.adhocNotify };
+    delete nextNotify[entryId];
+    return {
+      ...st,
+      updatedAt: new Date().toISOString(),
+      adhoc: st.adhoc.filter((e) => e.id !== entryId),
+      adhocNotify: nextNotify,
+    };
+  });
 };
 
 /**

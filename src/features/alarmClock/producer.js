@@ -64,11 +64,12 @@ import { settingsStore } from '../../state/settings.js';
 import { galaxyScanConfigStore } from '../../state/galaxyScanConfig.js';
 import { alarmClockConfigStore } from '../../state/alarmClockConfig.js';
 import { readFleetSaveEntries, writeFleetSaveEntries } from '../../state/fleetSaveSet.js';
-import { readFleetReminders, armFleetReminder, removeFleetReminder } from '../../state/fleetReminders.js';
+import {
+  readFleetReminders, readFleetReminderSlot, armFleetReminder, removeFleetReminder,
+} from '../../state/fleetReminders.js';
 import { writeNtfyHealth } from '../../state/ntfyHealth.js';
 import { readFsSendHints } from '../../state/fsSendHints.js';
 import { syncAlarmClock, ALARM_CLOCK_NTFY_TOKEN_KEY, isValidNtfyToken } from '../../sync/alarmClock.js';
-import { getBackoffUntil } from '../../sync/gist.js';
 import { parseUniverseId } from '../../lib/universeId.js';
 import { debounce } from '../../lib/debounce.js';
 import { logger } from '../../lib/logger.js';
@@ -339,9 +340,10 @@ export const installAlarmClockProducer = (opts = {}) => {
   let retryDelayMs = RETRY_MIN_MS;
   const scheduleRetry = () => {
     if (retryTimer !== null) return;
-    const backoffLeft = getBackoffUntil() - Date.now();
-    const delay = backoffLeft > 0 ? backoffLeft + 1000 : retryDelayMs;
-    if (backoffLeft <= 0) retryDelayMs = Math.min(retryDelayMs * 2, RETRY_MAX_MS);
+    // The reminders no longer touch GitHub (the ntfy queue is the state), so a
+    // gist rate-limit backoff must not delay them — plain exponential retry.
+    const delay = retryDelayMs;
+    retryDelayMs = Math.min(retryDelayMs * 2, RETRY_MAX_MS);
     retryTimer = setTimeout(() => {
       retryTimer = null;
       if (installed) { pendingForce = true; void run(); }
@@ -489,6 +491,8 @@ export const installAlarmClockProducer = (opts = {}) => {
           waveReturns: returns, present, adhocMutate, waveMutate,
           fleetSaveCandidates, fsCancelById, localFleetSave: localFs,
           guardianAcked, fleetReminders: readFleetReminders(),
+          fleetReminderCleared: Object.entries(readFleetReminderSlot().marks)
+            .filter(([, e]) => !e.on).map(([bodyKey]) => bodyKey),
         },
         now, universeId,
       );
@@ -520,11 +524,11 @@ export const installAlarmClockProducer = (opts = {}) => {
         retryDelayMs = RETRY_MIN_MS;
         clearRetry();
       } else {
-        // Leave the pending queue intact and re-try. `no-token` (no gist
+        // Leave the pending queue intact and re-try. `no-ntfy-token` (no ntfy
         // token configured) is permanent until the player sets one — the
         // settings subscriber forces that run, so no timer for it.
         pendingForce = true;
-        if (res.reason !== 'no-token') {
+        if (res.reason !== 'no-ntfy-token') {
           logger.warn(`alarmClock: sync not applied (${res.reason ?? 'unknown'}), will retry`);
           scheduleRetry();
         }

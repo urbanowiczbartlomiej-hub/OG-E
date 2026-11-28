@@ -189,7 +189,7 @@ export const offsetsForSchedule = (schedule) => {
 };
 
 /** ntfy's documented minimum `X-Delay` value (anything smaller would be rejected). */
-const NTFY_MIN_DELAY_SEC = 10;
+export const NTFY_MIN_DELAY_SEC = 10;
 
 /**
  * ntfy's documented MAXIMUM `X-Delay` — three days. A alarmClock whose fire
@@ -399,10 +399,11 @@ export const cancelWaveAlarmClock = async ({ ids, topic, token }) => {
  * @param {string} args.title     Push title (also the per-kind queue filter).
  * @param {string} args.body      Notification body, baked in at post time.
  * @param {number} args.priority  ntfy priority (1–5).
+ * @param {string} [args.click]   Click URL carrying the message identity.
  * @param {string} [args.icon]    Icon URL; defaults to the standard OG-E icon.
  * @returns {Promise<string>}     ntfy message id (the cancellation handle).
  */
-const postMessage = async ({ topic, token, fireAt, now, title, body, priority, icon }) => {
+const postMessage = async ({ topic, token, fireAt, now, title, body, priority, icon, click }) => {
   const delay = fireAt - now;
   /** @type {Record<string, string>} */
   const headers = {
@@ -413,6 +414,8 @@ const postMessage = async ({ topic, token, fireAt, now, title, body, priority, i
     Icon: icon || OGE_ICON_URL,
   };
   if (delay >= NTFY_MIN_DELAY_SEC) headers['X-Delay'] = String(fireAt);
+  // The message's identity (domain/ntfyQueue.js) — read back by every device's poll.
+  if (click) headers['X-Click'] = click;
 
   // `keepalive` lets the publish outlive a page unload (OGame reloads on
   // nearly every click; an arm issued right before a navigation must still
@@ -914,3 +917,141 @@ export const reconcileGuardianQueue = async ({ entries, topic, token, now, unive
   });
   return { idsByEntry: idsBySeries, posted, cancelled };
 };
+
+// ── Queue-as-state API (docs/ntfy-queue-plan.md) ─────────────────────
+
+/**
+ * One message on the topic as the queue-as-state orchestration reads it.
+ *
+ * @typedef {object} RawQueueMessage
+ * @property {string} id
+ * @property {number} time   Fire time, epoch SECONDS (past = delivered).
+ * @property {string} [title]
+ * @property {string} [click]
+ */
+
+/**
+ * Poll the WHOLE topic: queued (future) messages AND the ones ntfy still keeps
+ * after delivery (~12 h on ntfy.sh). Delivered messages matter now that the
+ * queue is the state — they prove which series exist (armed, classified) and
+ * which slot plan a series has, even after some of its slots already fired.
+ *
+ * @param {object} args
+ * @param {string} args.topic
+ * @param {string} args.token
+ * @returns {Promise<RawQueueMessage[]>}
+ */
+export const fetchQueue = async ({ topic, token }) => {
+  const url = `https://ntfy.sh/${topic}/json?poll=1&scheduled=1&${ntfyAuthParam(token)}`;
+  const res = await fetch(url, {
+    headers: { 'X-Priority': POLL_ALL_PRIORITIES },
+    signal: AbortSignal.timeout(NTFY_TIMEOUT_MS),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`ntfy poll ${res.status}: ${body.slice(0, 200)}`);
+  }
+  const text = await res.text();
+  /** @type {RawQueueMessage[]} */
+  const out = [];
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    try {
+      const obj = JSON.parse(line);
+      if (obj && typeof obj.id === 'string' && obj.event === 'message' && typeof obj.time === 'number') {
+        out.push({
+          id: obj.id,
+          time: obj.time,
+          ...(typeof obj.title === 'string' ? { title: obj.title } : {}),
+          ...(typeof obj.click === 'string' ? { click: obj.click } : {}),
+        });
+      }
+    } catch {
+      // Malformed line — skip rather than poison the whole poll.
+    }
+  }
+  return out;
+};
+
+/**
+ * Publish one identified reminder. Thin export of the module's publisher.
+ *
+ * @param {Parameters<typeof postMessage>[0]} args
+ * @returns {Promise<string>} The new message id.
+ */
+export const postReminder = (args) => postMessage(args);
+
+/**
+ * Cancel messages by id (best-effort, per-message failures swallowed).
+ *
+ * @param {{ ids: string[], topic: string, token: string }} args
+ * @returns {Promise<number>} How many DELETEs succeeded.
+ */
+export const cancelReminders = (args) => cancelWaveAlarmClock(args);
+
+/**
+ * Message body + look for one slot of one series, from the per-kind template.
+ * `i`/`total` are the slot's place in the series plan.
+ *
+ * @param {object} args
+ * @param {'ad' | 'fs' | 'wv' | 'fr'} args.kind
+ * @param {string} args.universeId
+ * @param {number} args.anchor   Arrival / wave base / landing, epoch SECONDS.
+ * @param {number} args.fireAt
+ * @param {number} args.i
+ * @param {number} args.total
+ * @param {import('../domain/alarmClockTemplates.js').AlarmClockTemplate} [args.template]
+ * @param {Parameters<typeof legCtxBase>[1]} [args.leg]  Ad-hoc / FS leg metadata.
+ * @param {string} [args.coords]  FR: the body's coordinates.
+ * @returns {{ title: string, body: string, priority: number, icon: string }}
+ */
+export const renderReminder = ({ kind, universeId, anchor, fireAt, i, total, template, leg, coords }) => {
+  const defaults = defaultAlarmClockTemplates();
+  if (kind === 'wv') {
+    const t = template ?? defaults.wave;
+    return {
+      title: titleFor(universeId),
+      body: renderTemplate(t.body, waveCtx(universeId, anchor, i, total)),
+      priority: t.priority,
+      icon: resolveIconUrl(t.icon),
+    };
+  }
+  if (kind === 'fr') {
+    return {
+      title: guardianTitleFor(universeId),
+      body: `Bare fleet exposed at [${coords ?? ''}] — re-save it.`,
+      priority: 5,
+      icon: resolveIconUrl(defaults.fleetSave.icon),
+    };
+  }
+  const e = leg ?? { label: '', arrivalAt: anchor };
+  if (kind === 'ad') {
+    const t = template ?? defaults.adhoc;
+    return {
+      title: adhocTitleFor(universeId),
+      body: renderTemplate(t.body, adhocCtx(universeId, e, fireAt, i, total)),
+      priority: t.priority,
+      icon: resolveIconUrl(t.icon),
+    };
+  }
+  const t = template ?? defaults.fleetSave;
+  return {
+    title: fsTitleFor(universeId),
+    body: renderTemplate(t.body, fsCtx(universeId, e, fireAt, i, total)),
+    priority: t.priority,
+    icon: resolveIconUrl(t.icon),
+  };
+};
+
+/**
+ * The push title each reminder kind is published under for this universe.
+ *
+ * @param {string} universeId
+ * @returns {Record<'ad' | 'fs' | 'wv' | 'fr', string>}
+ */
+export const titlesFor = (universeId) => ({
+  ad: adhocTitleFor(universeId),
+  fs: fsTitleFor(universeId),
+  wv: titleFor(universeId),
+  fr: guardianTitleFor(universeId),
+});
