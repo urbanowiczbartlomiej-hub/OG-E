@@ -1514,13 +1514,11 @@
 
   .sync-intro { color: #888; font-size: 13px; margin-bottom: 16px; line-height: 1.5; }
   .sync-empty { color: #888; font-size: 14px; }
-  /* Per-universe inventory: a responsive grid so wide screens show several
-     cards per row instead of one tall column. Collapses to a single column
-     below ~320px-per-card. */
-  #syncBody {
-    display: grid; gap: 14px; align-items: start; justify-content: start;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 440px));
-  }
+  /* Per-universe inventory: ONE list, a row per universe (see .sync-row). The
+     opened detail keeps a readable measure instead of stretching a three-column
+     table across the whole page. */
+  #syncBody { display: block; }
+  .sync-detail > * { max-width: 560px; }
   .sync-subhead { color: #4a9eff; font-size: 16px; margin: 0 0 12px; }
   .sync-controls-card { margin-bottom: 20px; }
 
