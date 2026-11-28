@@ -24,6 +24,7 @@
 // @see ../../state/bodies.js / ../../state/dailyRunRoutes.js — per-universe keys.
 
 import { chromeStore } from '../../lib/storage.js';
+import { MOON_ICON_URL } from '../../lib/gameDom.js';
 import { createAutosave } from './autosave.js';
 import { dailyRunRoutesKeyFor, dailyRunRoutesTsKeyFor } from '../../state/dailyRunRoutes.js';
 import { bodiesKeyFor } from '../../state/bodies.js';
@@ -180,13 +181,21 @@ export const installRoutes = ({ getUniverseId }) => {
    *  has no captured match. Custom (external) coords are never stale. */
   const isStale = (coord) => !coord.custom && model.hasInventory && !model.bodyByKey.has(coordTypeKey(coord));
 
-  /** @param {TargetCoord} coord @returns {string} Human label for a chip. */
+  /** @param {TargetCoord} coord @returns {string} Human label for a chip:
+   *  the body's name + coords (custom / unresolved: coords only). A moon also
+   *  gets the game's moon picture after it ({@link moonIcon}); a planet none. */
   const labelForCoord = (coord) => {
-    const icon = isMoon(coord) ? '🌙' : '🪐';
-    // Custom (external) coords have no inventory name — show just icon + coords.
-    if (coord.custom) return `${icon} [${short(coord)}]`;
+    if (coord.custom) return `[${short(coord)}]`;
     const b = model.bodyByKey.get(coordTypeKey(coord));
-    return b ? `${icon} ${b.name} [${short(coord)}]` : `${icon} [${short(coord)}]`;
+    return b ? `${b.name} [${short(coord)}]` : `[${short(coord)}]`;
+  };
+
+  /** The game's moon picture (same as on the in-game Daily Run button). */
+  const moonIcon = () => {
+    const img = /** @type {HTMLImageElement} */ (mk('img', 'width:16px;height:16px;flex:none;'));
+    img.src = MOON_ICON_URL;
+    img.alt = 'moon';
+    return img;
   };
 
   // ── chip + picker builders ───────────────────────────────────────────
@@ -210,6 +219,7 @@ export const installRoutes = ({ getUniverseId }) => {
     );
     for (const l of lead) c.appendChild(l);
     c.appendChild(mk('span', '', (stale ? '⚠ ' : '') + labelForCoord(coord)));
+    if (isMoon(coord)) c.appendChild(moonIcon());
     const x = mk('button', 'background:none;border:none;color:inherit;cursor:pointer;font-size:13px;line-height:1;padding:0;', '×');
     // ≥36px touch hit-box (coarse pointers only) — the ✕ is the chip's only
     // control, so the pad's bleed is harmless.
@@ -261,7 +271,7 @@ export const installRoutes = ({ getUniverseId }) => {
     const available = sortBodies(model.bodies).filter((b) => !chosenKeys.has(coordTypeKey(b)));
     for (const b of available) {
       const o = /** @type {HTMLOptionElement} */ (
-        mk('option', '', `${isMoon(b) ? '🌙' : '🪐'} ${b.name} [${short(b)}]`)
+        mk('option', '', `${b.name} [${short(b)}]${isMoon(b) ? ' · moon' : ''}`)
       );
       o.value = coordTypeKey(b);
       sel.appendChild(o);
@@ -317,7 +327,7 @@ export const installRoutes = ({ getUniverseId }) => {
     const typeSel = /** @type {HTMLSelectElement} */ (
       mk('select', 'background:#0d1620;color:#cfe;border:1px solid #244;border-radius:5px;padding:3px 4px;font-size:12px;')
     );
-    for (const [val, lab] of [['1', '🪐 planet'], ['3', '🌙 moon']]) {
+    for (const [val, lab] of [['1', 'Planet'], ['3', 'Moon']]) {
       const o = /** @type {HTMLOptionElement} */ (mk('option', '', lab));
       o.value = val;
       typeSel.appendChild(o);

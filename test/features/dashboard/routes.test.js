@@ -21,6 +21,7 @@ vi.mock('../../../src/lib/storage.js', () => ({
 
 import { chromeStore } from '../../../src/lib/storage.js';
 import { installRoutes } from '../../../src/features/dashboard/routes.js';
+import { MOON_ICON_URL } from '../../../src/lib/gameDom.js';
 import { TARGET_PLANET, TARGET_MOON, SHIP_LARGE_CARGO, SHIP_SMALL_CARGO, MISSION_TRANSPORT, MISSION_DEPLOYMENT } from '../../../src/domain/rules.js';
 
 const mockStore = /** @type {{ get: import('vitest').Mock, set: import('vitest').Mock }} */ (
@@ -125,6 +126,22 @@ describe('render from storage', () => {
     expect(txt).toContain('⚠');
     expect(txt).toContain('9:9:9');
     expect($('#routesInvStatus').textContent).toContain('2 planet(s) + 1 moon(s)');
+  });
+
+  it('marks a moon chip with the game moon picture and a planet chip with nothing', async () => {
+    seedBodies([
+      { cp: 100, name: 'P1', ...planet(4, 467, 15) },
+      { cp: 101, name: 'K1', ...moon(4, 467, 15) },
+    ]);
+    seedRoutes([{ sources: [moon(4, 467, 15)], targets: [planet(4, 467, 15)], fleet: [{ shipId: SHIP_LARGE_CARGO, count: 1 }] }]);
+    install().refresh();
+    await flush();
+    const imgs = [...list().querySelectorAll('img')];
+    expect(imgs).toHaveLength(1);
+    expect(imgs[0].getAttribute('src')).toBe(MOON_ICON_URL);
+    expect(imgs[0].closest('span')?.textContent).toContain('K1');
+    // No decorative emoji left on the chips or in the pickers.
+    expect(list().textContent).not.toMatch(/🌙|🪐/u);
   });
 
   it('shows the "open the game" hint and disables pickers when no inventory exists', async () => {

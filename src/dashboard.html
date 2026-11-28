@@ -596,6 +596,8 @@
     letter-spacing: .02em; color: #a7b8cb;
   }
   .cmd-unit { font-size: 11px; color: #5f6c7b; }
+  /* A keyword + its control that must wrap as ONE unit (Daily Run settings). */
+  .cmd-pair { display: inline-flex; align-items: center; gap: 6px; }
   /* One-line visible description inside a cell (wraps under the control) —
      tooltips explain, but on touch they don't exist, so the essence lives
      here. The channel tag wears the dossier's Watch-via chip hue. */
@@ -2140,14 +2142,57 @@
 
 <section id="routesSection" class="tab-section">
   <h1>Daily Run</h1>
-  <p style="color:#888;font-size:13px;margin-bottom:8px;">
-    Each route sends a fixed micro-fleet from one or more <strong>source</strong> bodies
-    (planets and/or moons) to an ordered list of <strong>targets</strong>. Standing on any
-    source, the <strong>Send</strong> zone of the Daily Run button scatters the
-    fleet to the targets in order. Pick everything from your own planets and moons.
-    The collect target is set in-game by <strong>holding the Send All zone</strong>
-    of the button, not here.
-  </p>
+  <p style="color:#888;font-size:13px;margin:0 0 12px;">Routes for the in-game Daily Run button: a fixed micro-fleet from your source bodies to an ordered list of targets.</p>
+
+  <!-- Settings: ONE always-open command block on top, the same idiom as the
+       Colonizations config (cmd-grid). Chip values: mission ids 4 = Deployment /
+       3 = Transport (MISSION_DEPLOYMENT / MISSION_TRANSPORT in
+       src/domain/rules.js); ships + resources map to AGR's "send/load most"
+       (#sendmost / #mostresources) vs "all" (#sendall / #allresources); Next =
+       walk on to the next body after a Drop / Up. Saved instantly; wired by
+       features/dashboard/routes.js (the chip-group ids are the contract). -->
+  <div class="gv-card gv-config cmd-grid" id="routesConfig">
+    <div class="cmd-cell cmd-wide" id="routesCollectRow"
+      title="What the in-game Send All zone does when tapped. The collect target is set in game by holding the Send All zone.">
+      <span class="cmd-cap">Send All</span>
+      <span class="cmd-pair"><span class="cmd-unit">Mission</span>
+      <div class="chip-group seg" id="routesCollectMission" data-value="4">
+        <button type="button" data-value="4" title="Fleet stays at the collect target (default)">Deployment</button>
+        <button type="button" data-value="3" title="Drop the resources and fly back">Transport</button>
+      </div></span>
+      <span class="cmd-pair"><span class="cmd-unit">Ships</span>
+      <div class="chip-group seg" id="routesCollectShips" data-value="most">
+        <button type="button" data-value="most" title="Leave a small reserve on the source (default)">Most</button>
+        <button type="button" data-value="all" title="Send every ship">All</button>
+      </div></span>
+      <span class="cmd-pair"><span class="cmd-unit">Resources</span>
+      <div class="chip-group seg" id="routesCollectResources" data-value="most">
+        <button type="button" data-value="most" title="Leave some resources behind (default)">Most</button>
+        <button type="button" data-value="all" title="Load everything the fleet can carry">All</button>
+      </div></span>
+      <span class="cmd-note">Target: hold Send All in game</span>
+    </div>
+    <div class="cmd-cell cmd-wide" id="routesPairRow"
+      title="The in-game Drop / Up zone: everything from a moon down to its planet, or from a planet up to its moon.">
+      <span class="cmd-cap">Drop / Up</span>
+      <span class="cmd-pair"><span class="cmd-unit">Ships</span>
+      <div class="chip-group seg" id="routesPairShips" data-value="most">
+        <button type="button" data-value="most" title="Leave a small reserve (default)">Most</button>
+        <button type="button" data-value="all" title="Send every ship">All</button>
+      </div></span>
+      <span class="cmd-pair"><span class="cmd-unit">Resources</span>
+      <div class="chip-group seg" id="routesPairResources" data-value="most">
+        <button type="button" data-value="most" title="Leave some resources behind (default)">Most</button>
+        <button type="button" data-value="all" title="Load everything the fleet can carry">All</button>
+      </div></span>
+      <span class="cmd-pair"><span class="cmd-unit">Next</span>
+      <div class="chip-group seg" id="routesPairNext" data-value="on">
+        <button type="button" data-value="on" title="After a send, go to the next moon / planet (default)">On</button>
+        <button type="button" data-value="off" title="Stay on this body after a send">Off</button>
+      </div></span>
+    </div>
+  </div>
+
   <p id="routesInvStatus" style="color:#888;font-size:12px;margin-bottom:12px;"></p>
 
   <div id="routesList"></div>
@@ -2159,78 +2204,6 @@
     <span id="routesStatus" style="color:#888;font-size:13px;margin-left:12px;"></span>
   </div>
 
-  <details class="settings-panel">
-    <summary>⚙ Settings</summary>
-    <div class="settings-body">
-      <p class="settings-desc">
-        <strong>Send All (collect) — this universe.</strong> What the in-game
-        <strong>Send All</strong> zone uses when you tap it: the fleet mission, and
-        whether ships / resources go via AGR's “most” (leave a reserve) or “all”.
-        Saved instantly.
-      </p>
-      <!-- Chip values (segmented groups, same pattern as the Spyglass Scan
-           chips): mission = ids 4 = Deployment / 3 = Transport
-           (MISSION_DEPLOYMENT / MISSION_TRANSPORT in src/domain/rules.js); ships +
-           resources map to AGR's "send/load most" (#sendmost / #mostresources)
-           vs "all" (#sendall / #allresources). The per-option hints live as
-           button tooltips. Wired by features/dashboard/routes.js. -->
-      <div id="routesCollectRow">
-        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:8px;">
-          <span style="color:#8aa;font-size:13px;min-width:80px;">Mission</span>
-          <div class="chip-group seg" id="routesCollectMission" data-value="4">
-            <button type="button" data-value="4" title="Fleet stays at the collect target (default)">Deployment</button>
-            <button type="button" data-value="3" title="Drop the resources and fly back">Transport</button>
-          </div>
-        </div>
-
-        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:8px;">
-          <span style="color:#8aa;font-size:13px;min-width:80px;">Ships</span>
-          <div class="chip-group seg" id="routesCollectShips" data-value="most">
-            <button type="button" data-value="most" title="Leave a small reserve on the source (default)">Most</button>
-            <button type="button" data-value="all" title="Send every ship">All</button>
-          </div>
-        </div>
-
-        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
-          <span style="color:#8aa;font-size:13px;min-width:80px;">Resources</span>
-          <div class="chip-group seg" id="routesCollectResources" data-value="most">
-            <button type="button" data-value="most" title="Leave some resources behind (default)">Most</button>
-            <button type="button" data-value="all" title="Load everything the fleet can carry">All</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Drop / Up (lower-left zone): own moon ↔ own planet, same slot.
-           Same "most"/"all" mapping as Send All; Next = walk on to the next
-           body after a send. Wired by features/dashboard/routes.js. -->
-      <p class="settings-desc" style="margin-top:16px;"><strong>Drop / Up</strong></p>
-      <div id="routesPairRow">
-        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:8px;">
-          <span style="color:#8aa;font-size:13px;min-width:80px;">Ships</span>
-          <div class="chip-group seg" id="routesPairShips" data-value="most">
-            <button type="button" data-value="most" title="Leave a small reserve (default)">Most</button>
-            <button type="button" data-value="all" title="Send every ship">All</button>
-          </div>
-        </div>
-
-        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:8px;">
-          <span style="color:#8aa;font-size:13px;min-width:80px;">Resources</span>
-          <div class="chip-group seg" id="routesPairResources" data-value="most">
-            <button type="button" data-value="most" title="Leave some resources behind (default)">Most</button>
-            <button type="button" data-value="all" title="Load everything the fleet can carry">All</button>
-          </div>
-        </div>
-
-        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
-          <span style="color:#8aa;font-size:13px;min-width:80px;">Next</span>
-          <div class="chip-group seg" id="routesPairNext" data-value="on">
-            <button type="button" data-value="on" title="After a send, go to the next moon / planet (default)">On</button>
-            <button type="button" data-value="off" title="Stay on this body after a send">Off</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  </details>
 </section>
 
 <section id="syncSection" class="tab-section">
