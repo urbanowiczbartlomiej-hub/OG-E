@@ -52,6 +52,15 @@ export const ACTIVE_PLANET_CLASS = 'hightlightPlanet';
 export const ACTIVE_MOON_CLASS = 'hightlightMoon';
 
 /**
+ * The game's own moon picture (30×30 GIF with a TRANSPARENT background) on the
+ * game's CDN — OG-E's marker for "this body is a moon" (the Daily Run button
+ * caption, the dashboard's Daily Run chips). Deliberately not the fleet form's
+ * planet/moon sprite sheet: that one is opaque (each icon sits on a near-black
+ * square). Planets get no icon — the name already says which body it is.
+ */
+export const MOON_ICON_URL = 'https://gf3.geo.gfsrv.net/cdn87/c9643df71b262232a4d66e591f7543.gif';
+
+/**
  * Shared OGame-native selectors, grouped by the surface they live on.
  * Compose relative ones with `el.querySelector(...)` against a row/planet
  * node; absolute ones (those starting with `#`) against `document`.

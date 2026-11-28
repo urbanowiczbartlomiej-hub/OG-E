@@ -70,6 +70,7 @@
 import { settingsStore } from '../../state/settings.js';
 import { parseUniverseId } from '../../lib/universeId.js';
 import { safeLS } from '../../lib/storage.js';
+import { MOON_ICON_URL } from '../../lib/gameDom.js';
 import {
   dailyRunRoutesStore,
   flushDailyRunRoutesStore,
@@ -174,16 +175,6 @@ const EVENTBOX_SETTLE_MS = 150;
 
 /** @param {string} name */
 const urlParam = (name) => new URLSearchParams(location.search).get(name);
-/**
- * The game's own moon picture (30×30 GIF with a TRANSPARENT background),
- * served from the game's CDN — this button only ever renders on a game page,
- * which loads from that CDN anyway. Deliberately not the fleet form's
- * planet/moon/debris sprite sheet: that one is opaque (each icon sits on a
- * near-black square that shows on the green rim), so moons get this picture
- * and planets get no icon — the planet's name already says which body it is.
- */
-const MOON_ICON_URL = 'https://gf3.geo.gfsrv.net/cdn87/c9643df71b262232a4d66e591f7543.gif';
-
 /** The caption icon for a target: the game's moon picture for a moon, none
  * for a planet.
  * @param {import('../../state/dailyRunRoutes.js').TargetCoord | null | undefined} t
@@ -210,11 +201,11 @@ const namedTargetLabel = (t) => {
   return name ? `→ ${name}` : targetLabel(t);
 };
 
-/** The micro zone's caption: a moon reads as the game's own word for it
- * (the micro run walks many moons whose stored names are often the same
- * localised default; the moon icon marks the kind), a planet by its name.
+/** The micro zone's caption: the target body by its NAME — planet and moon
+ * alike (the moon icon after it marks the kind); coords when the name can't be
+ * resolved. Same as Send All / Drop / Up.
  * @param {import('../../state/dailyRunRoutes.js').TargetCoord | null | undefined} t */
-const microTargetLabel = (t) => (t && t.type === TARGET_MOON ? '→ moon' : namedTargetLabel(t));
+const microTargetLabel = (t) => namedTargetLabel(t);
 
 /**
  * URL of the OG-E Dashboard extension page, resolved once via
