@@ -1489,6 +1489,11 @@
   .onoff-chip.on::after { content: 'On'; }
   .sync-more { position: relative; font-size: 11px; color: #8a97a3; }
   .sync-more > summary { cursor: pointer; list-style-position: inside; width: max-content; }
+  #allyPoolCard > summary { cursor: pointer; list-style: none; }
+  #allyPoolCard > summary::-webkit-details-marker { display: none; }
+  #allyPoolCard > summary::before { content: '\25B8\00A0'; color: #5f6c7b; font-weight: normal; }
+  #allyPoolCard[open] > summary::before { content: '\25BE\00A0'; }
+  #allyPoolCard[open] > summary { margin-bottom: 8px; }
   #allyPoolCard:has(#allySharePanel[hidden]),
   #syncChannels:has(#allyShareToggle:not(.on)) ~ #allyPoolCard { display: none; }
   /* Universes: one row each; the row opens its category table + Abandon. */
@@ -2397,11 +2402,12 @@
   </div>
 
   <!-- The alliance pool table (scroll-capped; filled by allianceShare.js).
-       Hidden while it has nothing to show or the share is off. -->
-  <div class="gv-card" id="allyPoolCard">
-    <div class="gv-card-head"><span class="gv-card-title">Alliance pool</span></div>
+       Folded by default — it runs to hundreds of rows. Hidden altogether
+       while it has nothing to show or the share is off. -->
+  <details class="gv-card" id="allyPoolCard">
+    <summary class="gv-card-title">Alliance pool</summary>
     <div id="allySharePanel" hidden></div>
-  </div>
+  </details>
 
   <div class="gv-card" id="syncStoreCard">
     <div class="gv-card-head">
