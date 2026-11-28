@@ -4,6 +4,15 @@ All notable changes to this project will be documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 version numbers follow [Semantic Versioning](https://semver.org).
 
+## [1.76.1] — 2026-11-28
+
+### Fixed
+
+- **Fleet-save reminders only for fleets you sent.** A big fleet an
+  alliance-mate or buddy sent to one of your planets could be taken for your
+  own fleet-save and get reminders. A fleet now counts only when it was
+  launched from one of your own planets or moons.
+
 ## [1.76.0] — 2026-11-28
 
 ### Added
