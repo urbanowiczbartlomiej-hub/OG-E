@@ -183,7 +183,7 @@ export const installRoutes = ({ getUniverseId }) => {
 
   /** @param {TargetCoord} coord @returns {string} Human label for a chip:
    *  the body's name + coords (custom / unresolved: coords only). A moon also
-   *  gets the game's moon picture after it ({@link moonIcon}); a planet none. */
+   *  gets the game's moon picture right before the name ({@link moonIcon}); a planet none. */
   const labelForCoord = (coord) => {
     if (coord.custom) return `[${short(coord)}]`;
     const b = model.bodyByKey.get(coordTypeKey(coord));
@@ -218,8 +218,9 @@ export const installRoutes = ({ getUniverseId }) => {
           : 'background:#16252f;border:1px solid #2a4a5a;color:#cfe;'),
     );
     for (const l of lead) c.appendChild(l);
-    c.appendChild(mk('span', '', (stale ? '⚠ ' : '') + labelForCoord(coord)));
+    if (stale) c.appendChild(mk('span', '', '⚠'));
     if (isMoon(coord)) c.appendChild(moonIcon());
+    c.appendChild(mk('span', '', labelForCoord(coord)));
     const x = mk('button', 'background:none;border:none;color:inherit;cursor:pointer;font-size:13px;line-height:1;padding:0;', '×');
     // ≥36px touch hit-box (coarse pointers only) — the ✕ is the chip's only
     // control, so the pad's bleed is harmless.
