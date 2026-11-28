@@ -299,10 +299,10 @@ one fleet at a time:
 | **Expedition** | Sends their expeditions | The time those fleets return |
 | **Landed fleet** | The same fleet-save send (or a manual mark on one of their own planets) | One time after that fleet's landing |
 
-The design rule is that no reminder exists for anything the player did not
-dispatch themselves. Hostile fleets and every other event in the list are never
-turned into reminders (one known gap for friendly fleets is listed further
-down). The per-kind settings (which fleets count as a
+No reminder exists for anything the player did not dispatch themselves. A
+fleet counts only if it was launched from one of the player's own planets or
+moons; hostile fleets, an alliance-mate's fleet flying to the player, and every
+other event in the list are never turned into reminders. The per-kind settings (which fleets count as a
 fleet-save, how many minutes before or after) are the player writing down, once,
 the alarm they would otherwise set by hand after every send. They choose the
 rule; each send is still their own individual act.
@@ -323,17 +323,26 @@ rule; each send is still their own individual act.
 - **The ring is pre-scheduled.** Each reminder is a delayed message posted to
   ntfy with a fixed delivery time (`X-Delay`, `src/sync/ntfyReconciler.js`).
   ntfy delivers it at that time; no OG-E code runs then.
-- **Never a hostile fleet.** Fleet-save candidates are the rows the game marks
-  `friendly` (`isOwnFleet` in `src/features/alarmClock/fleetSaveScan.js`);
-  hostile rows are never read. Waves are the player's own expedition returns
-  (`src/domain/waves.js`). See the known gap below.
+- **Only the player's own dispatches.** A fleet-save candidate must carry the
+  game's `friendly` mark AND be launched from one of the player's own bodies
+  (`isOwnFleet` + `isOwnDispatch` in
+  `src/features/alarmClock/fleetSaveScan.js`; own bodies are read from the
+  planet list). The `friendly` mark alone also covers an ally's fleet flying to
+  the player, so it is not enough on its own. Waves are the player's own
+  expedition returns (`src/domain/waves.js`).
+- **Why the event list and not the Send click.** The reminder is set when the
+  game shows the sent fleet in the event list on the player's next page, not
+  inside the click on "Send fleet". Functionally it is the same moment — the
+  send reloads the page and the fleet is the first new row — but a click
+  handler would be cut off by that very reload. The event list is simply the
+  game's own receipt for the player's send.
 - **No on-page or browser notification.** Grep-verified zero `Notification`,
   `chrome.notifications`, title or favicon flashing, audio.
 
 ### Where this sits against the letter of §1.4 (stated plainly)
 
-Three points a reviewer should weigh knowingly rather than discover — two
-differences from §1.4's textbook example and one open gap:
+Two details differ from §1.4's textbook example, and a reviewer should weigh
+them knowingly rather than discover them:
 
 1. **The example shows a click next to one fleet; three of the four kinds are
    registered by the send itself under a rule the player configured.** The
@@ -344,13 +353,6 @@ differences from §1.4's textbook example and one open gap:
    and asks for a ToolDev's confirmation. A reminder that could not reach the
    player away from the screen would not be an alarm clock at all; what keeps
    it fair is that the *content* is something only the present player set.
-
-3. **Known gap: the game's `friendly` mark is wider than "mine".** It also
-   covers an alliance-mate's or buddy's fleet flying to the player. Such a
-   fleet, if it met the player's size and flight-time rule, would get
-   fleet-save reminders although the player did not send it. That contradicts
-   the "own dispatch" principle above and is to be closed by filtering on the
-   fleet's owner; until then it is a deviation, not a design choice.
 
 This is the developer's interpretation of the rule's intent (2026-11-28). It
 has not been confirmed by the ToolDev team; if they decide otherwise, the
