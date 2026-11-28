@@ -8,18 +8,16 @@
 //
 //  - **Drawers.** A tile opens its kind's settings drawer in the same block; at
 //    most one is open, clicking the open tile closes it, and the choice is
-//    remembered. The kind's own switch sits ON the tile (parked there by
-//    `alarmClockConfig.js`), so a click on it must not toggle the drawer.
-//  - **Gating.** Nothing past the channel bar works without a push channel:
+//    remembered.
+//  - **Gating.** Nothing past the channel grid works without a push channel:
 //    the clock switched on AND a syntactically usable ntfy token. `#alarmTop`
-//    carries `off` (clock off — only the switch remains) or `ready`; without
-//    `ready` the tiles dim and go inert and the queue card hides (CSS).
-//  - **Setup fold.** The token form + privacy text are needed once. The fold
-//    opens by itself only while the token is missing; otherwise the Setup
-//    button toggles it.
-//  - **State on the tiles.** Each tile shows its reminder times (or "off") so
-//    the shape of the whole setup reads without opening anything. Word +
-//    colour, never a glyph (see CLAUDE.md).
+//    carries `off` (clock off — the whole block hides, only the switch on the
+//    intro line remains) or `ready`; without `ready` the tiles dim and go
+//    inert and the queue card hides (CSS).
+//  - **State on the tiles.** Each tile shows an on/off pill and its reminder
+//    times, so the shape of the whole setup reads without opening anything.
+//    The switch itself lives inside the drawer. Word + colour, never a glyph
+//    (see CLAUDE.md).
 //
 // Everything is READ-ONLY here: the master switch + token are owned by
 // `settingsControls.js`, the per-kind config by `alarmClockConfig.js`, the
@@ -49,9 +47,6 @@ let wired = false;
 
 /** @type {(() => void) | null} */
 let unsubscribeStorage = null;
-
-/** The player toggled the Setup fold by hand — stop auto-opening/closing it. */
-let setupTouched = false;
 
 /** @returns {HTMLElement | null} */
 const top = () => document.getElementById('alarmTop');
@@ -89,22 +84,6 @@ const openDrawer = (key) => {
 const openKind = () => tiles().find((t) => t.classList.contains('open'))?.dataset.kind ?? '';
 
 /**
- * Show / hide the Setup fold.
- *
- * @param {boolean} open
- * @returns {void}
- */
-const setSetup = (open) => {
-  const fold = document.getElementById('alarmSetup');
-  const btn = document.getElementById('alarmSetupBtn');
-  if (fold) fold.hidden = !open;
-  if (btn) {
-    btn.classList.toggle('on', open);
-    btn.setAttribute('aria-expanded', String(open));
-  }
-};
-
-/**
  * A stored schedule ("-5m, 0m, 10m") as the tile's one-line summary.
  *
  * @param {string} schedule
@@ -121,6 +100,21 @@ const timesLine = (schedule) =>
 const setTimes = (kind, text) => {
   const el = top()?.querySelector(`[data-kind-times="${kind}"]`);
   if (el) el.textContent = text;
+};
+
+/**
+ * The tile's state pill: green "on", amber "off", nothing for `null` (ad-hoc
+ * has no switch — it is armed per fleet in game).
+ *
+ * @param {string} kind
+ * @param {boolean | null} on
+ * @returns {void}
+ */
+const setKindState = (kind, on) => {
+  const el = top()?.querySelector(`[data-kind-state="${kind}"]`);
+  if (!el) return;
+  el.textContent = on === null ? '' : on ? 'on' : 'off';
+  el.classList.toggle('warn', on === false);
 };
 
 /**
@@ -148,15 +142,13 @@ const paint = async () => {
     state.textContent = masterOn ? (hasToken ? 'ntfy connected' : 'Set up ntfy') : '';
     state.classList.toggle('warn', masterOn && !hasToken);
   }
-  // Setup is needed once: open by itself only while the token is missing.
-  if (!setupTouched) setSetup(masterOn && !hasToken);
   // No channel — no inert drawer left on screen.
   if (!ready) openDrawer('');
 
   // Per-kind config is per-universe: the tiles follow the server selector.
   const uni = getActiveUniverseId();
   if (!uni) {
-    for (const k of KINDS) setTimes(k, '');
+    for (const k of KINDS) { setTimes(k, ''); setKindState(k, null); }
     return;
   }
   const [rc, gs] = await Promise.all([
@@ -167,8 +159,11 @@ const paint = async () => {
   const fs = normalizeGalaxyScanConfig(gs);
   // Ad-hoc has no enable flag (it is armed per fleet in game).
   setTimes('adhoc', timesLine(ac.adhocSchedule));
-  setTimes('fs', fs.fsEnabled ? timesLine(fs.fsOffsets) : 'off');
-  setTimes('expo', ac.alarmClockEnabled ? timesLine(ac.alarmClockSchedule) : 'off');
+  setTimes('fs', timesLine(fs.fsOffsets));
+  setTimes('expo', timesLine(ac.alarmClockSchedule));
+  setKindState('adhoc', null);
+  setKindState('fs', fs.fsEnabled);
+  setKindState('expo', ac.alarmClockEnabled);
 };
 
 /**
@@ -190,22 +185,13 @@ export const installAlarmTabs = (opts = {}) => {
       openDrawer(next);
       safeLS.set(ALARM_SUBTAB_LS_KEY, next);
     };
-    tile.addEventListener('click', (e) => {
-      // The kind's own switch lives on the tile — flipping it is not "open".
-      const target = e.target instanceof Element ? e.target : null;
-      if (target?.closest('.ak-switch')) return;
-      toggle();
-    });
+    tile.addEventListener('click', toggle);
     tile.addEventListener('keydown', (e) => {
       if (e.target !== tile || (e.key !== 'Enter' && e.key !== ' ')) return;
       e.preventDefault();
       toggle();
     });
   }
-  document.getElementById('alarmSetupBtn')?.addEventListener('click', () => {
-    setupTouched = true;
-    setSetup(Boolean(document.getElementById('alarmSetup')?.hidden));
-  });
 
   // Paint the gating BEFORE restoring the remembered drawer, so a drawer is
   // never reopened behind a missing channel.
@@ -235,6 +221,5 @@ export const _resetAlarmTabsForTest = () => {
   unsubscribeStorage?.();
   unsubscribeStorage = null;
   wired = false;
-  setupTouched = false;
   getActiveUniverseId = () => '';
 };

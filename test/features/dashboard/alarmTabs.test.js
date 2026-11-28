@@ -43,6 +43,8 @@ const $ = (id) => document.getElementById(id);
 /** @param {string} kind @returns {any} */
 const tile = (kind) => document.querySelector(`.alarm-kind[data-kind="${kind}"]`);
 /** @param {string} kind @returns {string} */
+const pill = (kind) => document.querySelector(`[data-kind-state="${kind}"]`)?.textContent ?? '';
+/** @param {string} kind @returns {string} */
 const times = (kind) => document.querySelector(`[data-kind-times="${kind}"]`)?.textContent ?? '';
 /** @returns {string[]} kinds whose drawer is open. */
 const openDrawers = () => [...document.querySelectorAll('.alarm-drawer.open')]
@@ -55,16 +57,12 @@ const KINDS = ['adhoc', 'fs', 'expo'];
 const buildDom = () => {
   document.body.innerHTML = `
     <section id="alarmClockSection">
+      <span id="alarmChannelState"></span>
       <div id="alarmTop">
-        <div id="alarmBar">
-          <span id="alarmChannelState"></span>
-          <button id="alarmSetupBtn"></button>
-        </div>
-        <div id="alarmSetup" hidden></div>
         <div id="alarmKinds">
           ${KINDS.map((k) => `
             <div class="alarm-kind" data-kind="${k}" tabindex="0">
-              <span class="ak-switch" data-kind-switch="${k}"><button class="toggle-chip"></button></span>
+              <span data-kind-state="${k}"></span>
               <div data-kind-times="${k}"></div>
             </div>
             <div class="alarm-drawer" data-kind="${k}"></div>`).join('')}
@@ -130,7 +128,6 @@ describe('Alarm clock shell — gating', () => {
     expect($('alarmTop').classList.contains('ready')).toBe(true);
     expect($('alarmTop').classList.contains('off')).toBe(false);
     expect($('alarmChannelState').textContent).toBe('ntfy connected');
-    expect($('alarmSetup').hidden).toBe(true); // set up once, folded away
   });
 
   it('clock off: marked off, no channel state, nothing opens', async () => {
@@ -140,10 +137,9 @@ describe('Alarm clock shell — gating', () => {
     expect($('alarmTop').classList.contains('off')).toBe(true);
     expect($('alarmTop').classList.contains('ready')).toBe(false);
     expect($('alarmChannelState').textContent).toBe('');
-    expect($('alarmSetup').hidden).toBe(true);
   });
 
-  it('clock on without a usable token: not ready, says so, Setup opens by itself', async () => {
+  it('clock on without a usable token: not ready, and says so', async () => {
     for (const token of ['', 'not-a-token']) {
       _resetAlarmTabsForTest();
       buildDom();
@@ -152,7 +148,6 @@ describe('Alarm clock shell — gating', () => {
       await flush();
       expect($('alarmTop').classList.contains('ready')).toBe(false);
       expect($('alarmChannelState').textContent).toBe('Set up ntfy');
-      expect($('alarmSetup').hidden).toBe(false);
     }
   });
 
@@ -168,39 +163,28 @@ describe('Alarm clock shell — gating', () => {
     expect(openDrawers()).toEqual([]);
   });
 
-  it('the Setup button toggles the fold, and a manual choice sticks', async () => {
-    seed();
-    install();
-    await flush();
-    $('alarmSetupBtn').click();
-    expect($('alarmSetup').hidden).toBe(false);
-    fireChange([SHARED_SETTINGS_KEY]); // a repaint must not fold it back
-    await flush();
-    expect($('alarmSetup').hidden).toBe(false);
-    $('alarmSetupBtn').click();
-    expect($('alarmSetup').hidden).toBe(true);
-  });
 });
 
 describe('Alarm clock shell — tile summaries', () => {
-  it('shows each kind\'s times, and "off" for a switched-off kind only', async () => {
+  it('shows each kind\'s times and an on/off pill — none for ad-hoc', async () => {
     seed({ fsOn: false });
     install();
     await flush();
     expect(times('adhoc')).toBe('-5m · 0m');
-    expect(times('fs')).toBe('off');
+    expect(times('fs')).toBe('0m · 10m'); // times stay readable while off
     expect(times('expo')).toBe('0m · 5m');
+    expect([pill('adhoc'), pill('fs'), pill('expo')]).toEqual(['', 'off', 'on']);
   });
 
   it('repaints when a kind is changed elsewhere', async () => {
     seed();
     install();
     await flush();
-    expect(times('expo')).toBe('0m · 5m');
+    expect(pill('expo')).toBe('on');
     seed({ waveOn: false });
     fireChange([alarmClockConfigKeyFor(UNI)]);
     await flush();
-    expect(times('expo')).toBe('off');
+    expect(pill('expo')).toBe('off');
   });
 
   it('refresh() re-reads the newly selected universe', async () => {
@@ -212,7 +196,7 @@ describe('Alarm clock shell — tile summaries', () => {
     store.set(galaxyScanConfigKeyFor(uni), { fsEnabled: false });
     api.refresh();
     await flush();
-    expect(times('fs')).toBe('off');
+    expect(pill('fs')).toBe('off');
   });
 });
 
@@ -233,14 +217,6 @@ describe('Alarm clock shell — drawers', () => {
     // Read the attribute: happy-dom's .style cache goes stale after a ''→'none' flip.
     expect($('alarmCfgFooter').getAttribute('style')).toContain('none');
     expect(mockLS.set).toHaveBeenLastCalledWith('oge_alarmSubtab', '');
-  });
-
-  it('a click on the kind\'s own switch does not open the drawer', async () => {
-    seed();
-    install();
-    await flush();
-    tile('fs').querySelector('.toggle-chip').click();
-    expect(openDrawers()).toEqual([]);
   });
 
   it('Enter on a focused tile opens it', async () => {

@@ -551,81 +551,40 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
   footer.textContent = '';
 
   /**
-   * @param {string} labelText
-   * @param {HTMLElement} control
-   * @param {string} [hint]
+   * One settings cell — the dashboard's command-block idiom (`cmd-grid`, as in
+   * Colonizations / Daily Run): a muted keyword, its control(s), and an
+   * optional quiet one-line note. `wide` spans both columns (schedule and
+   * message editors want the whole width).
+   *
+   * @param {string} cap
+   * @param {HTMLElement[]} controls
+   * @param {{ note?: string, wide?: boolean, grow?: boolean }} [o]
+   *   `grow`: let the (single) control take the rest of the row.
    * @returns {HTMLElement}
    */
-  const row = (labelText, control, hint) => {
-    const r = mk('div');
-    r.className = 'cfg-row';
-    const lbl = mk('label', undefined, labelText);
-    lbl.className = 'cfg-label';
-    r.appendChild(lbl);
-    const field = mk('div');
-    field.className = 'cfg-field';
-    field.appendChild(control);
-    if (hint) {
-      const h = mk('span', undefined, hint);
-      h.className = 'cfg-hint';
-      field.appendChild(h);
+  const cell = (cap, controls, o = {}) => {
+    const c = mk('div');
+    c.className = o.wide ? 'cmd-cell cmd-wide' : 'cmd-cell';
+    const capEl = mk('span', undefined, cap);
+    capEl.className = 'cmd-cap';
+    c.appendChild(capEl);
+    for (const ctl of controls) {
+      if (o.grow) ctl.classList.add('alarm-ctl');
+      c.appendChild(ctl);
     }
-    r.appendChild(field);
-    return r;
-  };
-
-  /**
-   * A full-width "label + hint over control" block — used for the chip-style
-   * schedule editor, which wants the card's whole width to flow its chips.
-   *
-   * @param {string} labelText
-   * @param {HTMLElement} control
-   * @param {string} [hint]
-   * @returns {HTMLElement}
-   */
-  const block = (labelText, control, hint) => {
-    const b = mk('div', 'margin-bottom:10px;');
-    const head = mk('div');
-    head.className = 'cfg-block-label';
-    head.appendChild(mk('span', undefined, labelText));
-    if (hint) {
-      const h = mk('span', 'margin-left:6px;', hint);
-      h.className = 'cfg-hint';
-      head.appendChild(h);
+    if (o.note) {
+      const n = mk('span', undefined, o.note);
+      n.className = 'cmd-note';
+      c.appendChild(n);
     }
-    b.append(head, control);
-    return b;
+    return c;
   };
 
   /**
-   * One titled section inside a pane's single card. Sections are what the
-   * column grid flows: a frame per group would draw three or four boxes for
-   * what is really one form, so the pane keeps ONE card (matching the
-   * Colonization & abandon settings panel) and the groups are headings inside.
-   *
-   * @param {string} title
-   * @param {HTMLElement[]} children
-   * @param {boolean} [wide]  Span every column (only takes effect in a
-   *   three-column pane — see `.alarm-sec-wide`).
-   * @returns {HTMLElement}
-   */
-  const section = (title, children, wide = false) => {
-    const sec = mk('div');
-    sec.className = wide ? 'alarm-sec alarm-sec-wide' : 'alarm-sec';
-    const h = mk('div', undefined, title);
-    h.className = 'alarm-sec-title';
-    sec.append(h, ...children);
-    return sec;
-  };
-
-  /**
-   * Collapse `host` whenever `chip` is off. With a kind switched off there is
-   * nothing to configure, so its knobs go away instead of sitting there inert
-   * — the same shape the General tab's master switch gives (`#remBody`).
-   *
-   * The widgets stay MOUNTED (`display:none`, not detached): the autosave
-   * below collects every pane on every save, so a detached field would
-   * persist as empty and silently wipe a schedule the user still has.
+   * Hide `host` whenever `chip` is off. The widgets stay MOUNTED
+   * (`display:none`, not detached): the autosave below collects every pane on
+   * every save, so a detached field would persist as empty and silently wipe
+   * a value the user still has.
    *
    * Returned re-sync must run after a programmatic fill — `setToggleChip`
    * only flips the class, it fires no click.
@@ -643,99 +602,61 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
 
   /** @type {(() => void)[]} */
   const collapsers = [];
-  /** Kind switches parked on their tiles — outside the panes' autosave listeners. */
-  /** @type {HTMLButtonElement[]} */
-  const tileSwitches = [];
 
   /**
-   * Fill a pane: an optional master switch row, then one card of sections.
-   *
-   * The switch row lives OUTSIDE the card and the CARD is what collapses, so
-   * a switched-off kind leaves a single compact line rather than an empty
-   * framed box reserving height for content that isn't there.
-   *
-   * `cols` is the MAXIMUM column count (the grid collapses to fewer on
-   * narrower viewports); 1 pins the pane to a single column at every width —
-   * right for the two panes whose only content is a schedule and a message
-   * editor, both of which want the full width to breathe.
+   * Fill a drawer with ONE settings grid. A kind's own switch is just its
+   * first cell — the rest stays editable while the kind is off, so a schedule
+   * can be prepared before switching it on.
    *
    * @param {HTMLElement} pane
-   * @param {{ chip: HTMLButtonElement, hint: string } | null} master
-   * @param {1 | 2 | 3} cols
-   * @param {HTMLElement[]} sections
+   * @param {HTMLElement[]} cells
    * @returns {void}
    */
-  const paneCard = (pane, master, cols, sections) => {
-    const cardEl = mk('div');
-    cardEl.className = 'rem-card';
-    const secGrid = mk('div');
-    secGrid.className = cols > 1 ? `alarm-sections cols-${cols}` : 'alarm-sections';
-    secGrid.append(...sections);
-    cardEl.appendChild(secGrid);
-    // One-view layout: the kind's tile carries its switch (and its settings
-    // stay reachable while the kind is off, so they can be prepared first).
-    const tileSlot = master
-      ? document.querySelector(`[data-kind-switch="${pane.dataset.kind ?? ''}"]`)
-      : null;
-    if (master && tileSlot) {
-      master.chip.title = master.hint;
-      tileSlot.textContent = '';
-      tileSlot.appendChild(master.chip);
-      tileSwitches.push(master.chip);
-    } else if (master) {
-      const switchRow = mk('div');
-      switchRow.className = 'alarm-switch-row';
-      const hint = mk('span', undefined, master.hint);
-      hint.className = 'cfg-hint';
-      switchRow.append(master.chip, hint);
-      pane.appendChild(switchRow);
-      collapsers.push(collapseWith(master.chip, cardEl));
-    }
-    pane.appendChild(cardEl);
+  const paneGrid = (pane, cells) => {
+    const grid = mk('div');
+    grid.className = 'gv-config cmd-grid';
+    grid.append(...cells);
+    pane.appendChild(grid);
   };
 
-  paneCard(adhocPane, null, 2, [
-    section('Reminder times', [
-      block('Offsets', adhocEditor.element, 'each relative to arrival (− before, 0 at, + after)'),
-    ]),
-    section('Message', [adhocTplEditor.element]),
+  /** A small inline "label + input" pair inside one cell. @param {string} label @param {HTMLElement} input */
+  const inline = (label, input) => {
+    const w = mk('span');
+    w.className = 'alarm-inline';
+    const l = mk('span', undefined, label);
+    l.className = 'cmd-unit';
+    w.append(l, input);
+    return w;
+  };
+
+  paneGrid(adhocPane, [
+    cell('Times', [adhocEditor.element], { wide: true, grow: true, note: 'relative to arrival: − before, 0 at, + after' }),
+    cell('Message', [adhocTplEditor.element], { wide: true, grow: true }),
   ]);
 
-  // The landed-fleet guardian is a switch INSIDE a switched pane, so it wears
-  // the same shape as a pane's own switch: a bare chip + hint on one line,
-  // NOT a labelled row (an "Enable" label beside an "Enabled" chip said the
-  // same word twice), with its knobs collapsing under it — one rule, at both
-  // levels.
-  const guardianSwitch = mk('div');
-  guardianSwitch.className = 'alarm-switch-row';
-  const guardianHint = mk('span', undefined, 'a landing+interval reminder for your own bare fleet-save');
-  guardianHint.className = 'cfg-hint';
-  guardianSwitch.append(guardianEnableInput, guardianHint);
-
-  const guardianBody = mk('div');
-  guardianBody.append(
-    row('Interval', guardianIntervalInput, 'minutes after landing the reminder rings'),
-    row('ACK interval', guardianAckIntervalInput, 'minutes idle before the button asks for an ACK'),
+  // Landed-fleet guardian: its switch and its two intervals share one cell;
+  // the intervals fold away while it is off.
+  const guardianKnobs = mk('span');
+  guardianKnobs.className = 'alarm-inline';
+  guardianKnobs.append(
+    inline('ring after (min)', guardianIntervalInput),
+    inline('ACK after (min)', guardianAckIntervalInput),
   );
-  collapsers.push(collapseWith(guardianEnableInput, guardianBody));
+  collapsers.push(collapseWith(guardianEnableInput, guardianKnobs));
 
-  paneCard(fsPane, { chip: enabledInput, hint: 'sets a series of reminders per detected fleet-save' }, 3, [
-    section('Detection', [
-      row('Ship threshold', thresholdInput, 'ships that make a fleet-save'),
-      row('Min flight time', minFlightInput, 'minutes-first, e.g. 10m · 0 = off'),
-    ]),
-    section('Reminder times', [
-      block('Offsets', fsEditor.element, 'each relative to landing (− before, 0 at, + after)'),
-    ]),
-    section('Landed-fleet reminder', [guardianSwitch, guardianBody]),
-    section('Message', [fsTplEditor.element], true),
+  paneGrid(fsPane, [
+    cell('Reminders', [enabledInput], { note: 'a series of reminders per detected fleet-save' }),
+    cell('Ships', [thresholdInput], { note: 'fleet size that counts as a fleet-save' }),
+    cell('Min flight', [minFlightInput], { note: 'e.g. 10m · 0 = off' }),
+    cell('Landed fleet', [guardianEnableInput, guardianKnobs], { note: 'rings when your fleet sits exposed after landing' }),
+    cell('Times', [fsEditor.element], { wide: true, grow: true, note: 'relative to landing: − before, 0 at, + after' }),
+    cell('Message', [fsTplEditor.element], { wide: true, grow: true }),
   ]);
 
-  paneCard(wavePane, { chip: waveEnabledInput, hint: 'sets a series of reminders per returning wave' }, 2, [
-    section('Reminder times', [
-      block('Offsets', waveEditor.element, 'each rings relative to the wave’s return'),
-    ]),
-    section('Message', [waveTplEditor.element]),
+  paneGrid(wavePane, [
+    cell('Reminders', [waveEnabledInput], { note: 'a series of reminders per returning wave' }),
+    cell('Times', [waveEditor.element], { grow: true, note: 'relative to the wave’s return' }),
+    cell('Message', [waveTplEditor.element], { wide: true, grow: true }),
   ]);
 
   /** Re-run every collapse rule — call after a programmatic fill. @returns {void} */
@@ -978,7 +899,6 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
   // status and simply don't persist until fixed.
   const SAVE_TRIGGER =
     '.toggle-chip, .oge-offset-add, .oge-offset-remove, .oge-icon-swatch, .oge-prio-seg, .oge-tpl-token';
-  for (const chip of tileSwitches) chip.addEventListener('click', autosave.schedule);
   for (const pane of panes) {
     pane.addEventListener('change', autosave.schedule);
     pane.addEventListener('click', (e) => {
