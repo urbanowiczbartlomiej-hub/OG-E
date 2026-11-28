@@ -1309,6 +1309,55 @@
     .cfg-field { flex-basis: 100%; }
   }
 
+  /* ── Alarm clock: one view (channel bar · kind tiles + drawers · list) ── */
+  #alarmTop { padding: 0; overflow: hidden; }
+  .alarm-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; }
+  .alarm-bar #alarmSetupBtn { margin-left: auto; }
+  .alarm-state { font-size: 12px; padding: 2px 8px; border-radius: 10px; background: #14301f; color: #7fd49b; }
+  .alarm-state.warn { background: #3a3320; color: #d8b45a; }
+  .alarm-state:empty { display: none; }
+  #alarmTop:not(.ready) .alarm-when-ready { display: none; }
+  #alarmTop.off #alarmSetupBtn { display: none; }
+  .alarm-setup { padding: 12px; border-top: 1px solid #1a2735; background: #0f1a26; }
+  .alarm-setup[hidden], #alarmTop.off .alarm-setup { display: none; }
+  .alarm-setup details.rem-privacy > summary { cursor: pointer; color: #9cf; font-size: 13px; }
+  /* Tiles in row 1, the open drawer full-width in row 2. In the DOM each
+     drawer follows its tile, so on phones (one column) it opens right under it. */
+  .alarm-kinds { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid #1a2735; }
+  #alarmTop.off .alarm-kinds { display: none; }
+  #alarmTop:not(.ready) .alarm-kinds { opacity: .45; pointer-events: none; }
+  .alarm-kind { grid-row: 1; padding: 10px 12px; cursor: pointer; border-left: 1px solid #1a2735; min-width: 0; }
+  .alarm-kind:first-child { border-left: none; }
+  .alarm-kind.open { background: #0f1a26; }
+  .alarm-kind:focus-visible { outline: 1px solid #4a9eff; outline-offset: -1px; }
+  @media (hover: hover) { .alarm-kind:hover { background: #0f1a26; } }
+  .ak-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .ak-name { color: #c9d4de; font-size: 14px; font-weight: bold; }
+  .ak-name::before { content: '\25B8\00A0'; color: #5f6c7b; }
+  .alarm-kind.open .ak-name::before { content: '\25BE\00A0'; }
+  .ak-switch:empty { display: none; }
+  .ak-count { margin-left: auto; font-size: 12px; color: #8a97a3; font-variant-numeric: tabular-nums; }
+  .ak-times { margin-top: 3px; font-size: 12px; color: #66788a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .alarm-drawer { display: none; grid-column: 1 / -1; grid-row: 2; padding: 12px; border-top: 1px solid #1a2735; background: #0f1a26; }
+  .alarm-drawer.open { display: block; }
+  .alarm-drawer .rem-card { background: none; border: none; padding: 0; }
+  #alarmCfgFooter { grid-column: 1 / -1; grid-row: 3; padding: 0 12px 10px; background: #0f1a26; }
+  #alarmCfgFooter .controls { margin: 0 !important; }
+  @media (max-width: 640px) {
+    .alarm-kinds { grid-template-columns: minmax(0, 1fr); }
+    .alarm-kind, .alarm-drawer, #alarmCfgFooter { grid-row: auto; }
+    .alarm-kind { border-left: none; border-top: 1px solid #1a2735; }
+    .alarm-kind:first-child { border-top: none; }
+  }
+  /* The queue: every kind in ONE time-ordered flow of cards. */
+  #alarmTop:not(.ready) ~ #alarmRemCard { display: none; }
+  .rem-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 8px; align-items: start; }
+  .rem-list .rem-wave { margin-bottom: 0; }
+  .rem-kind { font-size: 11px; padding: 1px 7px; border-radius: 10px; background: #17395d; color: #cfe4ff; }
+  .rem-kind.fs { background: #3a3320; color: #e6c877; }
+  .rem-kind.fr { background: #3a1f1f; color: #f3b0b0; }
+  .rem-kind.wv { background: #14301f; color: #9fdcb4; }
+
   /* AlarmClock tab — preview-only surface. Setup form lives in the
      in-game Settings panel, so this tab is intentionally compact. */
   .rem-intro { color: #aaa; font-size: 13px; margin-bottom: 14px; line-height: 1.5; }
@@ -2037,65 +2086,52 @@
 
 <section id="alarmClockSection" class="tab-section">
   <h1>Alarm clock</h1>
-  <p class="rem-intro">
-    Set a reminder for a time you choose. It never monitors in-game events —
-    set the clock, close the game, and the alarm rings on your phone.
-  </p>
+  <p style="color:#888;font-size:13px;margin:0 0 12px;">Reminders that ring on your phone — set the clock, close the game.</p>
 
-  <!-- One sub-tab strip for the whole feature: the channel setup (General),
-       what is currently queued (Reminders set), and one pane per reminder kind
-       — instead of the old "everything stacked, settings buried in a ⚙ details
-       at the very bottom" shape. features/dashboard/alarmTabs.js locks
-       everything past General until the clock is on AND has a usable token,
-       and stamps each kind's on/off state onto its own tab. -->
-  <div class="subtabs" id="alarmSubtabs" role="tablist">
-    <button type="button" class="subtab active" data-subtab="general" role="tab">General</button>
-    <button type="button" class="subtab" data-subtab="reminders" role="tab">Reminders set</button>
-    <button type="button" class="subtab" data-subtab="adhoc" role="tab">Ad-hoc</button>
-    <button type="button" class="subtab" data-subtab="fs" role="tab">Fleet-save</button>
-    <button type="button" class="subtab" data-subtab="expo" role="tab">Expeditions</button>
-  </div>
-
-  <div class="subtabpane active" data-subtab="general">
-    <div class="alarm-switch-row">
-      <button type="button" class="toggle-chip" id="remMasterToggle">Enable alarm clock</button>
-      <span class="cfg-hint">reminders ring on your phone via ntfy.sh</span>
+  <!-- ONE view, no sub-tabs. Top block: the push channel on one line (its
+       setup folds away once it works), then one tile per reminder kind —
+       state, times and queued count readable at a glance — whose settings open
+       as a drawer in the same block. Below: every queued reminder in ONE
+       time-ordered list. features/dashboard/alarmTabs.js owns the tiles,
+       drawers and gating; alarmClockConfig.js fills the three drawers and
+       parks each kind's switch on its tile (data-kind-switch). -->
+  <div class="gv-card" id="alarmTop">
+    <div class="alarm-bar" id="alarmBar">
+      <button type="button" class="toggle-chip" id="remMasterToggle">Alarm clock</button>
+      <span class="alarm-state" id="alarmChannelState"></span>
+      <span class="rem-field-row alarm-when-ready" title="Subscribe to this topic in the ntfy app on your phone.">
+        <span id="remTopic" class="rem-mono">—</span>
+        <button id="remRevealTopic" class="rem-eye" type="button"
+          title="Show topic" aria-label="Show topic" aria-pressed="false">👁</button>
+        <button id="remCopyTopic" type="button">Copy</button>
+      </span>
+      <button type="button" class="toggle-chip" id="alarmSetupBtn" aria-expanded="false" aria-controls="alarmSetup">Setup</button>
     </div>
-    <!-- #remBody IS the card grid: settingsControls.js hides it wholesale when
-         the master switch is off, so nothing but the switch row survives. -->
-    <div id="remBody" class="alarm-grid cols-2">
-      <div class="rem-card">
-        <p class="rem-hint" style="margin-top:0">
-          Log in to <a href="https://ntfy.sh/" target="_blank" rel="noopener"
-            style="color:#f2c877;text-decoration:underline;">ntfy.sh</a> → Account →
-          Access tokens → Create access token (Token never expires) → copy the token
-          (like <code>tk_…</code>) and paste it below.
-        </p>
-        <div class="rem-field">
-          <label for="remNtfyToken">ntfy.sh access token</label>
-          <div class="rem-field-row">
-            <input id="remNtfyToken" class="rem-mono" type="password" autocomplete="off" spellcheck="false" placeholder="tk_…">
-            <button id="remRevealNtfy" class="rem-eye" type="button"
-              title="Show token" aria-label="Show token" aria-pressed="false">👁</button>
-            <button id="remValidateBtn" type="button">Validate</button>
-          </div>
-          <div id="remTokenStatus" class="rem-status">—</div>
-        </div>
-        <div class="rem-field">
-          <label>Your ntfy topic</label>
-          <div class="rem-field-row">
-            <span id="remTopic" class="rem-mono">—</span>
-            <button id="remRevealTopic" class="rem-eye" type="button"
-              title="Show topic" aria-label="Show topic" aria-pressed="false">👁</button>
-            <button id="remCopyTopic" type="button">Copy</button>
-          </div>
-          <span class="rem-substatus">Subscribe to this on your phone.</span>
-        </div>
-      </div>
 
-      <div class="rem-card">
-        <h2 class="rem-card-title">Privacy</h2>
-        <p class="rem-hint" style="margin-top:0">
+    <!-- #remBody: settingsControls.js hides it wholesale while the master
+         switch is off. #alarmSetup is the fold alarmTabs.js opens by itself
+         only while the token is missing. -->
+    <div class="alarm-setup" id="alarmSetup" hidden>
+      <div id="remBody" class="alarm-grid cols-2">
+        <div>
+          <p class="rem-hint" style="margin-top:0">
+            <a href="https://ntfy.sh/" target="_blank" rel="noopener"
+              style="color:#f2c877;text-decoration:underline;">ntfy.sh</a> → Account →
+            Access tokens → Create (never expires) → paste the <code>tk_…</code> token here.
+          </p>
+          <div class="rem-field" style="margin-top:8px">
+            <div class="rem-field-row">
+              <input id="remNtfyToken" class="rem-mono" type="password" autocomplete="off" spellcheck="false" placeholder="tk_…" aria-label="ntfy.sh access token">
+              <button id="remRevealNtfy" class="rem-eye" type="button"
+          title="Show token" aria-label="Show token" aria-pressed="false">👁</button>
+              <button id="remValidateBtn" type="button">Validate</button>
+            </div>
+            <div id="remTokenStatus" class="rem-status">—</div>
+          </div>
+        </div>
+        <details class="rem-privacy">
+          <summary>Privacy</summary>
+                  <p class="rem-hint" style="margin-top:0">
           OG-E derives this topic from your ntfy <strong>access token</strong> (SHA-256, 88
           random bits). Nobody can guess it — that's roughly 3×10²⁶ possibilities — and ntfy.sh
           does not let anyone list or browse topics, so it can only be found if you reveal it.
@@ -2107,7 +2143,7 @@
           That instantly derives a brand-new topic — the old one goes silent on its own, no
           other cleanup needed.
         </p>
-        <details class="rem-privacy">
+        <details class="rem-privacy" style="margin-top:8px">
           <summary>Lock the topic to your account</summary>
           <p class="rem-hint">
             Want absolute certainty that only you can read it? Lock the topic to your account
@@ -2126,27 +2162,50 @@
             self-hosted ntfy server.)
           </p>
         </details>
+        </details>
       </div>
+    </div>
+
+    <div class="alarm-kinds" id="alarmKinds">
+      <div class="alarm-kind" data-kind="adhoc" role="button" tabindex="0" aria-expanded="false">
+        <div class="ak-head">
+          <span class="ak-name">Ad-hoc</span>
+          <span class="ak-switch" data-kind-switch="adhoc"></span>
+          <span class="ak-count" data-kind-count="adhoc"></span>
+        </div>
+        <div class="ak-times" data-kind-times="adhoc"></div>
+      </div>
+      <div class="alarm-drawer settings-panel" data-kind="adhoc" id="alarmPaneAdhoc"></div>
+      <div class="alarm-kind" data-kind="fs" role="button" tabindex="0" aria-expanded="false">
+        <div class="ak-head">
+          <span class="ak-name">Fleet-save</span>
+          <span class="ak-switch" data-kind-switch="fs"></span>
+          <span class="ak-count" data-kind-count="fs"></span>
+        </div>
+        <div class="ak-times" data-kind-times="fs"></div>
+      </div>
+      <div class="alarm-drawer settings-panel" data-kind="fs" id="alarmPaneFs"></div>
+      <div class="alarm-kind" data-kind="expo" role="button" tabindex="0" aria-expanded="false">
+        <div class="ak-head">
+          <span class="ak-name">Expeditions</span>
+          <span class="ak-switch" data-kind-switch="expo"></span>
+          <span class="ak-count" data-kind-count="expo"></span>
+        </div>
+        <div class="ak-times" data-kind-times="expo"></div>
+      </div>
+      <div class="alarm-drawer settings-panel" data-kind="expo" id="alarmPaneExpo"></div>
+      <div class="settings-panel" id="alarmCfgFooter" style="display:none"></div>
     </div>
   </div>
 
-  <div class="subtabpane" data-subtab="reminders">
-    <div class="rem-card">
-      <div class="rem-row" style="margin-bottom:10px">
-        <span id="remPreviewStatus" class="rem-status" style="flex:1"></span>
-        <button id="remRefresh">Refresh</button>
-      </div>
-      <div id="remPreview"></div>
+  <div class="gv-card" id="alarmRemCard">
+    <div class="gv-card-head">
+      <span class="gv-card-title">Reminders set</span>
+      <span id="remPreviewStatus" class="rem-status"></span>
+      <button type="button" class="toggle-chip" id="remRefresh" style="margin-left:auto;">Refresh</button>
     </div>
+    <div id="remPreview"></div>
   </div>
-
-  <!-- The three config panes are filled by features/dashboard/alarmClockConfig.js.
-       `settings-panel` is carried for its INPUT/BUTTON styling only (the class
-       used to come from the ⚙ <details> wrapper these panes replaced). -->
-  <div class="subtabpane settings-panel" data-subtab="adhoc" id="alarmPaneAdhoc"></div>
-  <div class="subtabpane settings-panel" data-subtab="fs" id="alarmPaneFs"></div>
-  <div class="subtabpane settings-panel" data-subtab="expo" id="alarmPaneExpo"></div>
-  <div class="settings-panel" id="alarmCfgFooter" style="display:none"></div>
 </section>
 
 <section id="routesSection" class="tab-section">

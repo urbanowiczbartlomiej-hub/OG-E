@@ -439,7 +439,45 @@ const renderPreviewMulti = (states, ntfyMap, flags = { waveOn: true, fsOn: true 
   renderAdhocInto(section, active, state, ntfyMap);
   renderFleetSavesInto(section, state, ntfyMap, flags.fsOn);
   renderGuardianInto(section, active, ntfyMap);
-  root.appendChild(section);
+
+  // ONE list: every kind's cards in the order the phone will ring, each
+  // tagged with its kind. The per-kind renderers above still build the cards
+  // (and their headings / notes, which the single list has no use for).
+  const cards = /** @type {HTMLElement[]} */ ([...section.querySelectorAll('.rem-wave')]);
+  cards.sort((a, b) => Number(a.dataset.when) - Number(b.dataset.when));
+  paintKindCounts(cards);
+  if (cards.length === 0) {
+    const p = node('p', { text: 'Nothing set. Reminders appear here as fleets fly.' });
+    p.style.color = '#888';
+    root.appendChild(p);
+    return;
+  }
+  const list = node('div', { class: 'rem-list' });
+  list.append(...cards);
+  root.appendChild(list);
+};
+
+/**
+ * Stamp "N set" onto each kind's tile (`[data-kind-count]` in the top block).
+ * Landed-fleet pushes count under Fleet-save — that is where their settings
+ * live. Cancelled / nothing-queued cards don't count.
+ *
+ * @param {HTMLElement[]} cards
+ * @returns {void}
+ */
+const paintKindCounts = (cards) => {
+  const n = { adhoc: 0, fs: 0, expo: 0 };
+  for (const c of cards) {
+    if (c.classList.contains('cancelled')) continue;
+    const k = c.dataset.kind;
+    if (k === 'ad') n.adhoc++;
+    else if (k === 'wv') n.expo++;
+    else n.fs++;
+  }
+  for (const [kind, count] of Object.entries(n)) {
+    const slot = document.querySelector(`[data-kind-count="${kind}"]`);
+    if (slot) slot.textContent = count ? `${count} set` : '';
+  }
 };
 
 /**
@@ -509,6 +547,9 @@ const cancelWaveFromDashboard = async (universeId, waveId) => {
   }));
 };
 
+/** Short kind tag shown on every card of the unified list. */
+const KIND_LABEL = { wv: 'Expedition', ad: 'Ad-hoc', fs: 'Fleet-save', fr: 'Landed fleet' };
+
 /**
  * Build the shared alarmClock-card shell: a `rem-wave` card plus its head with
  * the formatted arrival/fire time. Each render function appends its own badge,
@@ -516,11 +557,16 @@ const cancelWaveFromDashboard = async (universeId, waveId) => {
  *
  * @param {number} whenSec  Epoch-seconds shown as the card's "when".
  * @param {string} cardClass  Full class string (callers vary the modifier).
+ * @param {'wv' | 'ad' | 'fs' | 'fr'} kind  Which reminder kind — the card's tag,
+ *   and what the unified list sorts / counts by.
  * @returns {{ card: HTMLElement, head: HTMLElement }}
  */
-const buildAlarmClockCard = (whenSec, cardClass) => {
+const buildAlarmClockCard = (whenSec, cardClass, kind) => {
   const card = node('div', { class: cardClass });
+  card.dataset.when = String(whenSec);
+  card.dataset.kind = kind;
   const head = node('div', { class: 'wave-head' });
+  head.appendChild(node('span', { class: `rem-kind ${kind}`, text: KIND_LABEL[kind] }));
   head.appendChild(node('span', {
     class: 'wave-when',
     text: new Date(whenSec * 1000).toLocaleString(),
@@ -647,7 +693,7 @@ const renderWavesInto = (section, universeId, state, ntfyMap, kindOn = true) => 
       .sort((a, b) => a.time - b.time);
 
     const cardClass = 'rem-wave' + (cancelled ? ' cancelled' : due ? ' due' : '');
-    const { card, head } = buildAlarmClockCard(w.nextWaveAt, cardClass);
+    const { card, head } = buildAlarmClockCard(w.nextWaveAt, cardClass, 'wv');
     const badge = alarmClockBadge({
       cancelled,
       scheduledCount: totalScheduled,
@@ -726,7 +772,7 @@ const renderAdhocInto = (section, universeId, state, ntfyMap) => {
       .filter(/** @returns {m is { id: string, time: number, message?: string }} */ (m) => Boolean(m));
     const queued = stillQueued.length > 0;
 
-    const { card, head } = buildAlarmClockCard(e.arrivalAt, 'rem-wave' + (queued ? '' : ' cancelled'));
+    const { card, head } = buildAlarmClockCard(e.arrivalAt, 'rem-wave' + (queued ? '' : ' cancelled'), 'ad');
     const badge = alarmClockBadge({
       scheduledCount: ids.length,
       pendingCount: stillQueued.length,
@@ -804,7 +850,7 @@ const renderFleetSavesInto = (section, state, ntfyMap, kindOn = true) => {
     // sync pending) so the badge explains the wait.
     const tooFar = isFleetSaveTooFarOut(e, totalScheduled, nowSec);
 
-    const { card, head } = buildAlarmClockCard(e.arrivalAt, 'rem-wave' + (queued ? '' : ' cancelled'));
+    const { card, head } = buildAlarmClockCard(e.arrivalAt, 'rem-wave' + (queued ? '' : ' cancelled'), 'fs');
     const badge = alarmClockBadge({
       scheduledCount: totalScheduled,
       pendingCount: stillQueued.length,
@@ -885,7 +931,7 @@ const renderGuardianInto = (section, universeId, ntfyMap) => {
   if (!beginAlarmClockSection(section, mine, 'Landed-fleet reminders')) return;
 
   for (const m of mine) {
-    const { card, head } = buildAlarmClockCard(m.time, 'rem-wave');
+    const { card, head } = buildAlarmClockCard(m.time, 'rem-wave', 'fr');
     const badge = alarmClockBadge({
       scheduledCount: 1,
       pendingCount: 1,

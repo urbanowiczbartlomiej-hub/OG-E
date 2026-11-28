@@ -1,30 +1,31 @@
 // @ts-check
-
-// AlarmClock section sub-tabs — the strip that turned the tab from one long
-// stacked form (with the real settings buried in a ⚙ <details> at the very
-// bottom) into General / Reminders set / Ad-hoc / Fleet-save / Expeditions.
+// Alarm clock section — the ONE-view shell: channel bar, three kind tiles and
+// their settings drawers. (The file keeps its historical name; it used to drive
+// a five-tab strip — General / Reminders set / Ad-hoc / Fleet-save /
+// Expeditions — which this layout replaced.)
 //
-// The strip itself is trivial (flip `.active` classes, remember the choice).
-// What justifies a module is the two things a plain tab bar can't do:
+// What this module owns:
 //
-//  - **Gating.** Every pane past General is inert until the alarm clock is
-//    switched on AND carries a syntactically usable ntfy token — with no push
-//    channel there is nothing for an expedition schedule to ring on. Those
-//    tabs therefore LOCK (greyed, unclickable) until the channel is set up,
-//    and an active tab that becomes locked falls back to General instead of
-//    leaving the player staring at a form that cannot do anything.
-//  - **State on the tab itself.** "Expeditions is off" has to be visible
-//    WITHOUT opening the pane — otherwise the only way to learn the shape of
-//    your own setup is to click through every tab. So each gated kind stamps
-//    its per-universe enable flag onto its own tab as a short word (never a
-//    glyph — see CLAUDE.md), and General reports whether the channel is off
-//    or merely unconfigured.
+//  - **Drawers.** A tile opens its kind's settings drawer in the same block; at
+//    most one is open, clicking the open tile closes it, and the choice is
+//    remembered. The kind's own switch sits ON the tile (parked there by
+//    `alarmClockConfig.js`), so a click on it must not toggle the drawer.
+//  - **Gating.** Nothing past the channel bar works without a push channel:
+//    the clock switched on AND a syntactically usable ntfy token. `#alarmTop`
+//    carries `off` (clock off — only the switch remains) or `ready`; without
+//    `ready` the tiles dim and go inert and the queue card hides (CSS).
+//  - **Setup fold.** The token form + privacy text are needed once. The fold
+//    opens by itself only while the token is missing; otherwise the Setup
+//    button toggles it.
+//  - **State on the tiles.** Each tile shows its reminder times (or "off") so
+//    the shape of the whole setup reads without opening anything. Word +
+//    colour, never a glyph (see CLAUDE.md).
 //
 // Everything is READ-ONLY here: the master switch + token are owned by
-// `settingsControls.js`, the per-kind flags by `alarmClockConfig.js`. This
-// module only mirrors them, repainting from `chrome.storage.onChanged` (both
-// writers land in storage, and the event fires in this same page) and from the
-// host's `refresh()` on a universe switch.
+// `settingsControls.js`, the per-kind config by `alarmClockConfig.js`, the
+// queued counts by `alarmClock.js`. This module mirrors them, repainting from
+// `chrome.storage.onChanged` and from the host's `refresh()` on a universe
+// switch.
 
 import { chromeStore, safeLS } from '../../lib/storage.js';
 import { SHARED_SETTINGS_KEY } from '../../state/sharedSettings.js';
@@ -34,16 +35,11 @@ import { isValidNtfyToken } from '../../sync/alarmClock.js';
 import { normalizeAlarmClockConfig } from '../../domain/alarmClockConfig.js';
 import { normalizeGalaxyScanConfig } from '../../domain/galaxyScanConfig.js';
 
-/** Remembered sub-tab, so a reload reopens where the player was working. */
+/** Remembered open drawer (`''` = none), so a reload reopens where the player was. */
 const ALARM_SUBTAB_LS_KEY = 'oge_alarmSubtab';
 
-/**
- * The tabs that need a working push channel. General is deliberately NOT in
- * here: it is where the channel gets set up, so it can never lock.
- *
- * @type {string[]}
- */
-const GATED = ['reminders', 'expo', 'adhoc', 'fs'];
+/** The three reminder kinds that have a tile + drawer. */
+const KINDS = ['adhoc', 'fs', 'expo'];
 
 /** @type {() => string} */
 let getActiveUniverseId = () => '';
@@ -54,74 +50,87 @@ let wired = false;
 /** @type {(() => void) | null} */
 let unsubscribeStorage = null;
 
+/** The player toggled the Setup fold by hand — stop auto-opening/closing it. */
+let setupTouched = false;
+
 /** @returns {HTMLElement | null} */
-const bar = () => document.getElementById('alarmSubtabs');
+const top = () => document.getElementById('alarmTop');
 
-/**
- * The buttons of the strip, as an array (a live NodeList is awkward to reuse).
- *
- * @returns {HTMLButtonElement[]}
- */
-const buttons = () => {
-  const b = bar();
-  return b ? /** @type {HTMLButtonElement[]} */ ([...b.querySelectorAll('.subtab')]) : [];
+/** @returns {HTMLElement[]} */
+const tiles = () => {
+  const t = top();
+  return t ? /** @type {HTMLElement[]} */ ([...t.querySelectorAll('.alarm-kind')]) : [];
 };
 
 /**
- * Show one pane. Refuses unknown keys and LOCKED tabs, so a stale remembered
- * key or a mis-click can't open an inert pane.
- *
- * @param {string | undefined} key
- * @returns {boolean}  whether the switch happened
- */
-const activate = (key) => {
-  const btns = buttons();
-  const target = btns.find((b) => b.dataset.subtab === key);
-  if (!key || !target || target.classList.contains('locked')) return false;
-  for (const b of btns) b.classList.toggle('active', b.dataset.subtab === key);
-  // Direct children only (a nested `.subtabpane` inside a pane would belong to
-  // some other strip). Walked rather than `:scope > ` — happy-dom, which the
-  // behavioural tests run in, does not implement that selector.
-  const section = document.getElementById('alarmClockSection');
-  for (const child of section?.children ?? []) {
-    if (!child.classList.contains('subtabpane')) continue;
-    child.classList.toggle('active', /** @type {HTMLElement} */ (child).dataset.subtab === key);
-  }
-  // The shared "Reset to defaults" footer belongs to the three config panes
-  // only — under General or Reminders set there is nothing for it to reset.
-  const footer = document.getElementById('alarmCfgFooter');
-  if (footer) footer.style.display = key === 'expo' || key === 'adhoc' || key === 'fs' ? '' : 'none';
-  return true;
-};
-
-/**
- * Set (or clear) a tab's state marker. An empty string removes it from view —
- * `.subtab-state:empty` is `display:none`, so a tab in its normal state stays
- * a plain word and the strip doesn't turn into a wall of badges.
+ * Open one kind's drawer, or close them all (`''` / unknown key).
  *
  * @param {string} key
+ * @returns {void}
+ */
+const openDrawer = (key) => {
+  const t = top();
+  if (!t) return;
+  const target = KINDS.includes(key) ? key : '';
+  for (const tile of tiles()) {
+    const on = tile.dataset.kind === target;
+    tile.classList.toggle('open', on);
+    tile.setAttribute('aria-expanded', String(on));
+  }
+  for (const d of t.querySelectorAll('.alarm-drawer')) {
+    d.classList.toggle('open', /** @type {HTMLElement} */ (d).dataset.kind === target);
+  }
+  // The shared "Reset to defaults" row belongs to an open drawer only.
+  const footer = document.getElementById('alarmCfgFooter');
+  if (footer) footer.style.display = target ? '' : 'none';
+};
+
+/** @returns {string} The open drawer's kind, or `''`. */
+const openKind = () => tiles().find((t) => t.classList.contains('open'))?.dataset.kind ?? '';
+
+/**
+ * Show / hide the Setup fold.
+ *
+ * @param {boolean} open
+ * @returns {void}
+ */
+const setSetup = (open) => {
+  const fold = document.getElementById('alarmSetup');
+  const btn = document.getElementById('alarmSetupBtn');
+  if (fold) fold.hidden = !open;
+  if (btn) {
+    btn.classList.toggle('on', open);
+    btn.setAttribute('aria-expanded', String(open));
+  }
+};
+
+/**
+ * A stored schedule ("-5m, 0m, 10m") as the tile's one-line summary.
+ *
+ * @param {string} schedule
+ * @returns {string}
+ */
+const timesLine = (schedule) =>
+  schedule.split(',').map((s) => s.trim()).filter(Boolean).join(' · ');
+
+/**
+ * @param {string} kind
  * @param {string} text
  * @returns {void}
  */
-const setState = (key, text) => {
-  const btn = buttons().find((b) => b.dataset.subtab === key);
-  if (!btn) return;
-  let mark = btn.querySelector('.subtab-state');
-  if (!mark) {
-    mark = document.createElement('span');
-    mark.className = 'subtab-state';
-    btn.appendChild(mark);
-  }
-  mark.textContent = text;
+const setTimes = (kind, text) => {
+  const el = top()?.querySelector(`[data-kind-times="${kind}"]`);
+  if (el) el.textContent = text;
 };
 
 /**
- * Read the two sources of truth and repaint the strip's locks + markers.
+ * Read the sources of truth and repaint gating, channel state and the tiles.
  *
  * @returns {Promise<void>}
  */
 const paint = async () => {
-  if (!bar()) return;
+  const t = top();
+  if (!t) return;
   const raw = await chromeStore.get(SHARED_SETTINGS_KEY);
   const shared = raw && typeof raw === 'object' && !Array.isArray(raw)
     ? /** @type {Record<string, unknown>} */ (raw)
@@ -129,46 +138,41 @@ const paint = async () => {
   const masterOn = shared.alarmClockMasterEnabled === true;
   const hasToken = isValidNtfyToken(shared.alarmClockNtfyToken);
   const ready = masterOn && hasToken;
+  t.classList.toggle('off', !masterOn);
+  t.classList.toggle('ready', ready);
 
-  // General says WHICH prerequisite is missing, so the lock on the other tabs
-  // is self-explaining: "Off" = flip the switch, "Set up" = paste a token.
-  setState('general', masterOn ? (hasToken ? '' : 'Set up') : 'Off');
-
-  for (const btn of buttons()) {
-    const key = btn.dataset.subtab ?? '';
-    const locked = GATED.includes(key) && !ready;
-    btn.classList.toggle('locked', locked);
-    btn.disabled = locked;
-    btn.setAttribute('aria-disabled', String(locked));
-    btn.title = locked
-      ? 'Enable the alarm clock and set a valid ntfy token on the General tab first.'
-      : '';
+  // The channel state says WHICH prerequisite is missing; nothing when off
+  // (the switch itself already says so).
+  const state = document.getElementById('alarmChannelState');
+  if (state) {
+    state.textContent = masterOn ? (hasToken ? 'ntfy connected' : 'Set up ntfy') : '';
+    state.classList.toggle('warn', masterOn && !hasToken);
   }
+  // Setup is needed once: open by itself only while the token is missing.
+  if (!setupTouched) setSetup(masterOn && !hasToken);
+  // No channel — no inert drawer left on screen.
+  if (!ready) openDrawer('');
 
-  // Per-kind flags are per-universe: the strip follows the dashboard's server
-  // selector, same as every other surface here. Ad-hoc has no enable flag at
-  // all (it is armed per entry in-game), so it never carries a marker.
+  // Per-kind config is per-universe: the tiles follow the server selector.
   const uni = getActiveUniverseId();
-  if (uni) {
-    const [rc, gs] = await Promise.all([
-      chromeStore.get(alarmClockConfigKeyFor(uni)),
-      chromeStore.get(galaxyScanConfigKeyFor(uni)),
-    ]);
-    setState('expo', normalizeAlarmClockConfig(rc).alarmClockEnabled ? '' : 'Off');
-    setState('fs', normalizeGalaxyScanConfig(gs).fsEnabled ? '' : 'Off');
-  } else {
-    setState('expo', '');
-    setState('fs', '');
+  if (!uni) {
+    for (const k of KINDS) setTimes(k, '');
+    return;
   }
-
-  // A tab the player was sitting on may have just locked (they switched the
-  // clock off, or cleared the token) — don't leave an inert pane on screen.
-  const active = buttons().find((b) => b.classList.contains('active'));
-  if (active?.classList.contains('locked')) activate('general');
+  const [rc, gs] = await Promise.all([
+    chromeStore.get(alarmClockConfigKeyFor(uni)),
+    chromeStore.get(galaxyScanConfigKeyFor(uni)),
+  ]);
+  const ac = normalizeAlarmClockConfig(rc);
+  const fs = normalizeGalaxyScanConfig(gs);
+  // Ad-hoc has no enable flag (it is armed per fleet in game).
+  setTimes('adhoc', timesLine(ac.adhocSchedule));
+  setTimes('fs', fs.fsEnabled ? timesLine(fs.fsOffsets) : 'off');
+  setTimes('expo', ac.alarmClockEnabled ? timesLine(ac.alarmClockSchedule) : 'off');
 };
 
 /**
- * Wire the strip. Idempotent; the host installs once at boot.
+ * Wire the shell. Idempotent; the host installs once at boot.
  *
  * @param {{ getUniverseId?: () => string }} [opts]
  * @returns {{ refresh: () => void }}
@@ -176,20 +180,38 @@ const paint = async () => {
 export const installAlarmTabs = (opts = {}) => {
   if (opts.getUniverseId) getActiveUniverseId = opts.getUniverseId;
   if (wired) return { refresh: () => { void paint(); } };
-  if (!bar()) return { refresh: () => {} };
+  if (!top()) return { refresh: () => {} };
   wired = true;
 
-  for (const btn of buttons()) {
-    btn.addEventListener('click', () => {
-      const key = btn.dataset.subtab;
-      if (!activate(key)) return;
-      safeLS.set(ALARM_SUBTAB_LS_KEY, key ?? '');
+  for (const tile of tiles()) {
+    const toggle = () => {
+      const key = tile.dataset.kind ?? '';
+      const next = openKind() === key ? '' : key;
+      openDrawer(next);
+      safeLS.set(ALARM_SUBTAB_LS_KEY, next);
+    };
+    tile.addEventListener('click', (e) => {
+      // The kind's own switch lives on the tile — flipping it is not "open".
+      const target = e.target instanceof Element ? e.target : null;
+      if (target?.closest('.ak-switch')) return;
+      toggle();
+    });
+    tile.addEventListener('keydown', (e) => {
+      if (e.target !== tile || (e.key !== 'Enter' && e.key !== ' ')) return;
+      e.preventDefault();
+      toggle();
     });
   }
+  document.getElementById('alarmSetupBtn')?.addEventListener('click', () => {
+    setupTouched = true;
+    setSetup(Boolean(document.getElementById('alarmSetup')?.hidden));
+  });
 
-  // Paint the locks BEFORE restoring the remembered tab: `activate` refuses a
-  // locked tab, so restoring first would silently keep General anyway.
-  void paint().then(() => { activate(safeLS.get(ALARM_SUBTAB_LS_KEY) || undefined); });
+  // Paint the gating BEFORE restoring the remembered drawer, so a drawer is
+  // never reopened behind a missing channel.
+  void paint().then(() => {
+    if (top()?.classList.contains('ready')) openDrawer(safeLS.get(ALARM_SUBTAB_LS_KEY) || '');
+  });
 
   unsubscribeStorage = chromeStore.onChanged((changes) => {
     if (SHARED_SETTINGS_KEY in changes) { void paint(); return; }
@@ -213,5 +235,6 @@ export const _resetAlarmTabsForTest = () => {
   unsubscribeStorage?.();
   unsubscribeStorage = null;
   wired = false;
+  setupTouched = false;
   getActiveUniverseId = () => '';
 };

@@ -643,6 +643,9 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
 
   /** @type {(() => void)[]} */
   const collapsers = [];
+  /** Kind switches parked on their tiles — outside the panes' autosave listeners. */
+  /** @type {HTMLButtonElement[]} */
+  const tileSwitches = [];
 
   /**
    * Fill a pane: an optional master switch row, then one card of sections.
@@ -669,7 +672,17 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
     secGrid.className = cols > 1 ? `alarm-sections cols-${cols}` : 'alarm-sections';
     secGrid.append(...sections);
     cardEl.appendChild(secGrid);
-    if (master) {
+    // One-view layout: the kind's tile carries its switch (and its settings
+    // stay reachable while the kind is off, so they can be prepared first).
+    const tileSlot = master
+      ? document.querySelector(`[data-kind-switch="${pane.dataset.kind ?? ''}"]`)
+      : null;
+    if (master && tileSlot) {
+      master.chip.title = master.hint;
+      tileSlot.textContent = '';
+      tileSlot.appendChild(master.chip);
+      tileSwitches.push(master.chip);
+    } else if (master) {
       const switchRow = mk('div');
       switchRow.className = 'alarm-switch-row';
       const hint = mk('span', undefined, master.hint);
@@ -681,7 +694,7 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
     pane.appendChild(cardEl);
   };
 
-  paneCard(adhocPane, null, 1, [
+  paneCard(adhocPane, null, 2, [
     section('Reminder times', [
       block('Offsets', adhocEditor.element, 'each relative to arrival (− before, 0 at, + after)'),
     ]),
@@ -702,13 +715,13 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
   const guardianBody = mk('div');
   guardianBody.append(
     row('Interval', guardianIntervalInput, 'minutes after landing the reminder rings'),
-    row('ACK interval', guardianAckIntervalInput, 'minutes idle (no reload) before the button pulses for an ACK'),
+    row('ACK interval', guardianAckIntervalInput, 'minutes idle before the button asks for an ACK'),
   );
   collapsers.push(collapseWith(guardianEnableInput, guardianBody));
 
   paneCard(fsPane, { chip: enabledInput, hint: 'sets a series of reminders per detected fleet-save' }, 3, [
     section('Detection', [
-      row('Ship threshold', thresholdInput, 'total ships that count as a "big" fleet'),
+      row('Ship threshold', thresholdInput, 'ships that make a fleet-save'),
       row('Min flight time', minFlightInput, 'minutes-first, e.g. 10m · 0 = off'),
     ]),
     section('Reminder times', [
@@ -718,7 +731,7 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
     section('Message', [fsTplEditor.element], true),
   ]);
 
-  paneCard(wavePane, { chip: waveEnabledInput, hint: 'sets a series of reminders per returning wave' }, 1, [
+  paneCard(wavePane, { chip: waveEnabledInput, hint: 'sets a series of reminders per returning wave' }, 2, [
     section('Reminder times', [
       block('Offsets', waveEditor.element, 'each rings relative to the wave’s return'),
     ]),
@@ -965,6 +978,7 @@ export const installAlarmClockConfig = ({ getUniverseId }) => {
   // status and simply don't persist until fixed.
   const SAVE_TRIGGER =
     '.toggle-chip, .oge-offset-add, .oge-offset-remove, .oge-icon-swatch, .oge-prio-seg, .oge-tpl-token';
+  for (const chip of tileSwitches) chip.addEventListener('click', autosave.schedule);
   for (const pane of panes) {
     pane.addEventListener('change', autosave.schedule);
     pane.addEventListener('click', (e) => {
