@@ -282,7 +282,6 @@ const renderUniverseCard = (u, now) => {
   const toggleOpen = () => {
     if (openUniverses.has(u.universeId)) openUniverses.delete(u.universeId);
     else openUniverses.add(u.universeId);
-    closedByUser.add(u.universeId);
     void render();
   };
   row.addEventListener('click', toggleOpen);
@@ -379,31 +378,14 @@ const renderUniverseCard = (u, now) => {
 /** Universes whose detail is open. */
 /** @type {Set<string>} */
 const openUniverses = new Set();
-/** Universes the player toggled by hand — the default-open rule no longer applies to them. */
-/** @type {Set<string>} */
-const closedByUser = new Set();
-
-/** The universe the dashboard was opened for (`?host=`) — open by default. */
-const hostUniverse = () => {
-  try {
-    return new URLSearchParams(location.search).get('host') ?? '';
-  } catch {
-    return '';
-  }
-};
-
 /**
- * Is this universe's detail open? By hand-toggle when there was one; otherwise
- * open for the dashboard's own universe and whenever Abandon is in progress.
+ * Is this universe's detail open? Every row starts closed; a row opens by a
+ * click, and whenever its Abandon is in progress.
  *
  * @param {string} universeId
  * @returns {boolean}
  */
-const isOpen = (universeId) => {
-  if (abandonOpenFor === universeId) return true;
-  if (closedByUser.has(universeId)) return openUniverses.has(universeId);
-  return universeId === hostUniverse();
-};
+const isOpen = (universeId) => abandonOpenFor === universeId || openUniverses.has(universeId);
 
 /**
  * The Sync tab's section is not the active tab. Its inventory needs the FULL
@@ -492,6 +474,5 @@ export const _resetSyncForTest = () => {
   abandonOpenFor = '';
   abandonFlows.clear();
   openUniverses.clear();
-  closedByUser.clear();
   staleWhileHidden = false;
 };
