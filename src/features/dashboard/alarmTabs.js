@@ -151,7 +151,9 @@ const paint = async () => {
   // (the switch itself already says so).
   const state = document.getElementById('alarmChannelState');
   if (state) {
-    state.textContent = masterOn ? (hasToken ? 'ntfy connected' : 'Set up ntfy') : '';
+    // Only the PROBLEM speaks: a token that merely looks valid proves no
+    // connection (the Validate button does), so there is no "connected" badge.
+    state.textContent = masterOn && !hasToken ? 'Set up ntfy' : '';
     state.classList.toggle('warn', masterOn && !hasToken);
   }
   // No channel — no inert drawer left on screen.

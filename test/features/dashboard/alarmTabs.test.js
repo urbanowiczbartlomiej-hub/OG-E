@@ -128,7 +128,7 @@ describe('Alarm clock shell — gating', () => {
     await flush();
     expect($('alarmTop').classList.contains('ready')).toBe(true);
     expect($('alarmTop').classList.contains('off')).toBe(false);
-    expect($('alarmChannelState').textContent).toBe('ntfy connected');
+    expect($('alarmChannelState').textContent).toBe(''); // no badge when all is well
     expect($('remMasterToggle').textContent).toBe('On');
   });
 
